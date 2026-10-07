@@ -4,7 +4,7 @@
 
 | 会话 | 内容 | 状态 | tag | 门槛 |
 |---|---|---|---|---|
-| S0 | 编排准备（派发工具） | 完成 | s00-done | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py，见下） |
+| S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后，S1 从这里起） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py，见下） |
 | S1 | Phase 0 冻结基线与仓库整理 | 未开始 | | |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 未开始 | | |
 | S3 | Phase 1b 其余三类 oracle | 未开始 | | |
@@ -25,7 +25,7 @@
 - 派发脚本 `tools/orch/grok_worker.py`（只用标准库）：`spawn`、`status`、`review`、`resume`、`merge`、`cleanup`、`list`。
 - 任务说明模板 `framework/surprise/docs/orch/BRIEF_TEMPLATE.md`；编排流程与审查清单 `framework/surprise/docs/ORCHESTRATION.md`。
 - `SESSIONS.md` 加了 S0 一节；本文件状态表加了 S0 一行。`.gitignore` 在基线提交里已经有 `.worktrees/` 与 `.orch/`，没有再改。
-- CLAUDE.md"执行者模式"一节只出了草稿（在 S0 的收尾消息里），没有写入，等用户同意。
+- CLAUDE.md 加了"执行者模式"一节，"收尾协议"改名为"收尾协议（编排者）"并写明门槛在派发前写好，"命令"一节加了编排命令一行。草稿经用户 2026-10-08 同意后写入，tag `s00-done-r2`。写入之后没有再派发过工作包，新的一节还没有被执行者实际读过。
 - 没有碰 S1 的范围，没有写任何框架代码。
 
 ### 门槛结果
@@ -75,7 +75,7 @@ S0 新发现：
 4. 仓库根有 `duckdb/`、`datafusion/` 两个目录（放复现 SQL）。在仓库根执行 `import duckdb` 时，真包没装也会导入成功（当成命名空间包）。`gates/s01.py` 检查环境时要看 `__version__`，或者换个工作目录。
 5. tag `v1-baseline` 已经存在，指向基线提交 55c5512。S1 不用再打，核对即可。
 6. 仓库没有配置远端（`git remote -v` 为空）。RUNBOOK 准备清单建议有异地备份，这是用户的事。
-7. CLAUDE.md 还没有"执行者模式"一节。现在执行者只靠任务说明约束（模板已经自带全部禁令），S0 两个包都守住了。用户同意草稿后写入。
+7. （已关闭）CLAUDE.md 的"执行者模式"已写入，见 tag `s00-done-r2`。S0 的两个冒烟包是在写入之前跑的，当时只靠任务说明约束。
 8. 新会话里 Claude Code 的安全分类器可能再次拒绝启动 grok（本会话里拒了三次，用户明确批准后才放行）。用户的长期批准记在 `DECISIONS.md`；再被拒就停下来问用户，不要绕过。
 9. deny 规则挡不住包一层再执行的命令（`cmd /c …`、`powershell -Command …`、`python -c …`），也挡不住用 shell 写禁区文件。靠审查兜底，见 `ORCHESTRATION.md` 第 10 节。
 10. 执行者的 shell 是 Windows PowerShell 5.1：没有 `&&`，中文输出乱码。模板已注明。
@@ -93,6 +93,6 @@ S0 新发现：
 
 ### 下一会话的起点
 
-- 先请用户看 CLAUDE.md"执行者模式"草稿，同意后写入；再处理未决问题第 1 条（测试基线）。
-- S1 用 `RUNBOOK.md` 第 5 节的编排版开场提示词，从 tag `s00-done` 建分支 `session/s01`。S1 是纯移动，按 `ORCHESTRATION.md` 第 8 节串行单包。
+- 先处理未决问题第 1 条（测试基线不绿），需要用户拍板。
+- S1 用 `RUNBOOK.md` 第 5 节的编排版开场提示词，从 tag `s00-done-r2` 建分支 `session/s01`（`s00-done` 不含 CLAUDE.md 的"执行者模式"，不要从它起）。S1 是纯移动，按 `ORCHESTRATION.md` 第 8 节串行单包。
 - 派发脚本一律用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`。

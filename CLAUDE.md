@@ -21,13 +21,27 @@
 - 测试：`pytest -q testing tests`
   （不要直接 `pytest -q`：`framework/test_api.py` 在设置了密钥时会真的调用 DeepSeek API）
 - 门槛：`python -m surprise.gates.all`（每个 `gates/sNN.py` 退出码 0 = 通过；由 S1 建立）
+- 编排（在仓库根执行）：`.venv/Scripts/python.exe tools/orch/grok_worker.py {spawn|status|review|resume|merge|cleanup|list}`（流程见 `framework/surprise/docs/ORCHESTRATION.md`）
 - 引擎环境：{S1 填写各 venv 的路径与版本：DuckDB 1.5.5、DuckDB 1.1.3、DataFusion 54.0.0、DataFusion 旧版、SQLite}
 - PostgreSQL 相关注意事项见 `framework/AGENTS.md`。
 
-## 收尾协议
+## 收尾协议（编排者）
 
-1. 新增 `framework/surprise/gates/sNN.py`，跑测试与全部门槛，贴出结果。
+1. `framework/surprise/gates/sNN.py` 在派发前写好；收尾时跑测试与全部门槛，贴出结果。
 2. 更新 `HANDOFF.md`，追加 `DECISIONS.md`。
 3. git commit，打 tag `sNN-done`（修复会话打 `sNN-done-r2`）。
 4. 最后一条消息只写：门槛结果、与计划的偏差、需要用户人工检查的 3–5 处（文件路径或命令）。
 5. 上下文快用完时，先把 `HANDOFF.md` 标为"进行中"并提交 WIP；下一个会话沿用同一编号接着做。
+
+## 执行者模式
+
+任务说明（`.orch/brief.md`）第一行是"角色：执行者"时适用。此时你是某个工作包的执行者，不是编排者：下面的规则替代"收尾协议"一节，"不可违反"一节照旧有效。
+
+- 只做 `.orch/brief.md` 里的工作包，只改其中"允许改动的路径"列出的路径。说明与本文件冲突时，以说明为准。
+- 不改 `framework/surprise/gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`tools/orch/`，也不碰自己 worktree 以外的任何文件。
+- 不靠改测试让测试通过：不新增 skip / xfail，不删断言、不放宽断言，不用宽泛的 try/except 吞掉失败，不改 conftest。认为某个测试本身有错，就写进报告，停下。
+- 被权限规则拒绝的操作不要换写法重试，也不要改用 shell、脚本或别的工具达到同样效果；确实需要它才能完成任务时，写进报告，停下。
+- 收尾：把改动提交到当前分支（`grok/<包号>`）；写 `.orch/report.md`（不入库），内容为改了哪些文件、跑了哪些命令及输出末 20 行、与说明的偏差、未决问题。
+- 不打 tag、不合并、不 rebase、不 push、不切换或删除分支，不改 `HANDOFF.md` 与 `DECISIONS.md`。
+- 说明有矛盾、缺前置条件或做不完：写进报告，停下，不自行扩大范围。
+- shell 是 Windows PowerShell 5.1（没有 `&&`，用 `;`）；`python` 与 `pytest` 已指向项目解释器，不要换。
