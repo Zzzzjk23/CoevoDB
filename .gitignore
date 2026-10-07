@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.uv-cache/
+
+# Run artifacts (large, regenerated per campaign)
+/results/
+framework/results/
+framework/repair_bench/runs/
+framework/artifacts/
+*.log
+.worktrees/
+.orch/
+
+# Local env / secrets
+.env
+secrets.env
+api-keys.yml
