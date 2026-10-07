@@ -6,6 +6,23 @@
 
 ---
 
+## S0 · 编排准备
+
+不计入 12 个会话：只搭派发工具，为 S1 起的"Claude Code 编排 + grok 执行"模式做准备（见 `RUNBOOK.md` 第 2 节、`ORCHESTRATION.md`）。
+
+范围：
+- 派发脚本 `tools/orch/grok_worker.py`（只用标准库）：`spawn`、`status`、`review`、`resume`、`merge`、`cleanup`，另有 `list`。
+- 任务说明模板 `framework/surprise/docs/orch/BRIEF_TEMPLATE.md`。
+- 编排流程与审查清单 `framework/surprise/docs/ORCHESTRATION.md`。
+- CLAUDE.md"执行者模式"一节的草稿：只给用户看，用户同意后才写入。
+- `.gitignore` 加 `.worktrees/` 与 `.orch/`；本文件加这一节；`HANDOFF.md` 状态表加 S0 一行。
+
+门槛（没有 `gates/s00.py`：`surprise.gates` 由 S1 建立，S0 用冒烟包验收）：无害的工作包 `s00-smoke`（在 worktree 里新建 `scratch/hello.txt` 并提交）走完 `spawn → status → review → cleanup --abandon`，并确认四件事：grok 无交互跑完；让它试一次 `git tag`，被 deny 规则拦下；日志可读；子进程里没有 `DEEPSEEK_API_KEY`。
+
+不做：S1 的任何范围；任何框架代码。
+
+---
+
 ## S1 · Phase 0 · 冻结基线与仓库整理
 
 范围：
