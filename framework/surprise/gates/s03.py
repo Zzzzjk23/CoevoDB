@@ -250,6 +250,52 @@ def check_version():
     for engine in ('duckdb', 'datafusion'):
         unknown = case(engine, query='SELECT version()', predicate=None, setup=())
         label_is(judge(unknown, 'version_differential', reference_factories={}), 'invalid', 'direction_unknown')
+    for query in ("SELECT DATE '2020-01-02' AS d",
+                  "SELECT arrow_cast('hi', 'Binary') AS b",
+                  "SELECT CAST(1.25 AS DECIMAL(10,2)) AS n"):
+        label_is(judge(case('datafusion', query, None, ()), 'version_differential'), 'pass')
+    label_is(judge(case(query='SELECT missing FROM t', predicate=None), 'version_differential'),
+             'invalid', 'query_error')
+
+    from targets.duckdb_runner import DuckDBRunner
+    order_query = 'SELECT a,b FROM t'
+    calls = []
+    class Permuted(DuckDBRunner):
+        def run(self, sql, timeout_s=10.0):
+            result = super().run(sql, timeout_s)
+            if sql == order_query:
+                calls.append(sql)
+                if len(calls) % 2 == 0:
+                    result.rows.reverse()
+            return result
+    ordered_case = case(query=order_query, predicate=None)
+    first = judge(ordered_case, 'version_differential', runner_factory=Permuted)
+    second = judge(ordered_case, 'version_differential', runner_factory=Permuted)
+    label_is(first, 'pass')
+    label_is(second, 'pass')
+    require(len(calls) == 2 and first.to_dict() == second.to_dict(),
+            'version evidence changes with unordered row permutation or ignores factory')
+
+    import subprocess
+    from unittest.mock import patch
+    from surprise.harness.oracles import version_differential as implementation
+    old_python = ROOT / '.venvs/duckdb-1.1.3/Scripts/python.exe'
+    worker = Path(implementation.__file__).with_name('version_worker.py')
+    payload = {'engine': 'duckdb', 'setup': list(ordered_case.setup), 'query': order_query}
+    completed = subprocess.run([str(old_python), '-I', str(worker)], input=json.dumps(payload),
+                               capture_output=True, text=True, timeout=10)
+    require(completed.returncode == 0, 'could not build real successful worker response')
+    valid = json.loads(completed.stdout)
+    missing_version = dict(valid)
+    missing_version.pop('engine_version')
+    responses = (
+        subprocess.CompletedProcess([], 7, stdout=completed.stdout, stderr='injected failure'),
+        subprocess.CompletedProcess([], 0, stdout=json.dumps(missing_version), stderr=''),
+    )
+    for response in responses:
+        with patch.object(implementation, '_run_worker', return_value=response):
+            label_is(judge(ordered_case, 'version_differential', old_python=str(old_python)),
+                     'invalid', 'harness_error')
     require(not (ROOT / '.venvs/datafusion-50.0.0/Lib/site-packages/duckdb').exists(), 'old DF environment polluted with DuckDB')
     return 'F2 old/new measured bags and regression direction; both old venvs work; directionless mismatch invalid'
 

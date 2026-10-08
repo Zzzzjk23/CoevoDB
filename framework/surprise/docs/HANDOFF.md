@@ -41,6 +41,7 @@
 - PostgreSQL 恢复命令（根目录）：`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`。已有服务器时只查 status。参照 runner 默认此连接，`COEVO_REFERENCE_PG_DSN` 可覆盖；参照用例由独立事务隔离，close 回滚，禁止注册服务、改全局 PATH。
 - 恢复命令：`git status --short --branch`、`git log -8 --oneline`、`.venv/Scripts/python.exe tools/orch/grok_worker.py list`。
 - 三包合并后的主检出区集成复跑：209 passed, 3 skipped；`-m surprise.gates.s03 --only registry local cross` PASS 3/3（最终all尚待version）。最近集成基线c391423。
+- version草稿预读后的独立反例在`.orch/scratch/s3_version_review_probe.py`：DF50/54原始DATE/bytes/Decimal一致，但草稿DATE假fail、bytes假invalid；行序变化使pass标签不同；双方Binder错误、非零退出带合法JSON、缺engine_version都被错误判pass。已补主门槛，待提交后review再派第1轮反馈，不能提前合并。
 
 ### 预定拆包（门槛提交后才派发）
 
