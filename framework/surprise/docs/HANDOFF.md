@@ -24,6 +24,8 @@
 
 Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s04` 从 `s03-done`（499291b）建立；起点独立复跑 242 passed, 3 skipped 与 GATES PASS 3/3；S3 四包 cleaned，PG 16.15 在 127.0.0.1:55432 运行。
 
+用户在会话中追加的指示（2026-10-09）：S4 完成后编排者自行开始 S5；需要确认的事项一律按编排者的推荐确认，逐项记入 DECISIONS。接手的会话沿用这条指示，S4 收尾消息发出后不等答复，直接按 SESSIONS 的 S5 一节开工。
+
 断线恢复只看三样：本节、`git log session/s04`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态为 running / finished 而本节写"未派发"时，以 gw list 为准，先 `gw status <包号>`。
 
 ### 拆包清单（串行，同一时间只跑一包）
