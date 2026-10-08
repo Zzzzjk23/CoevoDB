@@ -224,7 +224,7 @@ def _from_crash(case: SqlCase, oracle: str, *, exit_code: int, isolation: str, *
             runner_factory=kwargs["runner_factory"],
         )
         if confirmed.status != "crash":
-            cve = _skipped_cve(0, isolation, _raw(label), "unattributed_crash")
+            cve = _skipped_cve(1, isolation, _raw(label), "unattributed_crash")
             return Label(
                 y="invalid",
                 oracle=oracle,

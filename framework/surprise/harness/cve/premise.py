@@ -140,7 +140,7 @@ def _parse_asof(sql: str, start: int) -> tuple[str, bool, list[str]] | None:
     condition = _read_condition(sql, on_end)
     if condition is None:
         return None
-    columns = _qualified_columns(condition, names)
+    columns = _join_key_columns(condition, names)
     if not columns:
         return None
     return relation, is_subquery, columns
@@ -159,21 +159,234 @@ def _optional_alias(sql: str, index: int) -> tuple[str, int] | None:
     return peeked, _next
 
 
-def _qualified_columns(condition: str, names: list[str]) -> list[str]:
+# Words that can appear in a comparison without being a column reference.
+_NOT_A_COLUMN = frozenset({
+    "AND", "OR", "NOT", "IS", "NULL", "TRUE", "FALSE",
+    "IN", "LIKE", "ILIKE", "BETWEEN", "AS", "DISTINCT",
+})
+_CMP_TWO = ("<=", ">=", "<>", "!=")
+_CMP_ONE = ("=", "<", ">")
+_CMP_JOIN = ("<=", ">=", "=", "<", ">")
+
+
+def _join_key_columns(condition: str, right_names: list[str]) -> list[str] | None:
+    """Right-table columns of the join-key comparisons, or None if unparseable.
+
+    The ON text is split on top-level AND. A conjunct counts only when it is
+    one comparison and the two sides name the right table and some other
+    table. Anything else, including a filter on the right table alone, is
+    unparseable: the premise is violated rather than checked against the
+    wrong key.
+    """
+    parts = _split_top_level_and(condition)
+    if not parts:
+        return None
+    right = {name.lower() for name in right_names}
     found: list[str] = []
     seen: set[str] = set()
-    for name in names:
-        pattern = re.compile(
-            rf"\b{re.escape(name)}\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)",
-            re.IGNORECASE,
-        )
-        for match in pattern.finditer(condition):
-            column = match.group(1)
+    for part in parts:
+        columns = _right_key_columns(part, right)
+        if columns is None:
+            return None
+        for column in columns:
             key = column.lower()
             if key not in seen:
                 seen.add(key)
                 found.append(column)
+    if not found:
+        return None
     return found
+
+
+def _split_top_level_and(condition: str) -> list[str] | None:
+    """Conjuncts of ``condition``. None when a top-level OR appears."""
+    current = _fully_unwrapped(condition)
+    masked = _mask_code(current)
+    if masked is None:
+        return None
+    ranges: list[tuple[int, int]] = []
+    start = 0
+    index = 0
+    depth = 0
+    length = len(masked)
+    while index < length:
+        char = masked[index]
+        if char == "(":
+            depth += 1
+            index += 1
+            continue
+        if char == ")":
+            if depth == 0:
+                return None
+            depth -= 1
+            index += 1
+            continue
+        if depth == 0:
+            if _keyword_end(masked, index, "OR") is not None:
+                return None
+            and_end = _keyword_end(masked, index, "AND")
+            if and_end is not None:
+                ranges.append((start, index))
+                index = and_end
+                start = and_end
+                continue
+        index += 1
+    ranges.append((start, length))
+    parts = [current[begin:end].strip() for begin, end in ranges]
+    if not parts or any(not part for part in parts):
+        return None
+    return parts
+
+
+def _right_key_columns(conjunct: str, right: set[str]) -> list[str] | None:
+    text = _fully_unwrapped(conjunct)
+    span = _one_comparison(text)
+    if span is None:
+        return None
+    left = _column_refs(text[:span[0]])
+    other = _column_refs(text[span[1]:])
+    if left is None or other is None:
+        return None
+    return _pick_right_columns(left, other, right)
+
+
+def _one_comparison(text: str) -> tuple[int, int] | None:
+    """Span of the only top-level join comparison. None when the shape differs."""
+    masked = _mask_code(text)
+    if masked is None:
+        return None
+    found: list[tuple[int, int]] = []
+    index = 0
+    depth = 0
+    length = len(masked)
+    while index < length:
+        char = masked[index]
+        if char == "(":
+            depth += 1
+            index += 1
+            continue
+        if char == ")":
+            if depth == 0:
+                return None
+            depth -= 1
+            index += 1
+            continue
+        if depth == 0:
+            if (
+                _keyword_end(masked, index, "AND") is not None
+                or _keyword_end(masked, index, "OR") is not None
+            ):
+                return None
+            op = _operator_at(masked, index)
+            if op is not None:
+                if op not in _CMP_JOIN:
+                    return None
+                found.append((index, index + len(op)))
+                index += len(op)
+                continue
+        index += 1
+    if len(found) != 1:
+        return None
+    return found[0]
+
+
+def _operator_at(text: str, index: int) -> str | None:
+    pair = text[index:index + 2]
+    if pair in _CMP_TWO:
+        return pair
+    char = text[index:index + 1]
+    if char in _CMP_ONE:
+        return char
+    return None
+
+
+def _pick_right_columns(
+    left: tuple[list[tuple[str, str]], bool],
+    other: tuple[list[tuple[str, str]], bool],
+    right: set[str],
+) -> list[str] | None:
+    left_pairs, left_bare = left
+    right_pairs, right_bare = other
+    if left_bare or right_bare:
+        return None
+    left_own, left_rest = _split_owned(left_pairs, right)
+    right_own, right_rest = _split_owned(right_pairs, right)
+    if left_own and not left_rest and right_rest and not right_own:
+        return left_own
+    if right_own and not right_rest and left_rest and not left_own:
+        return right_own
+    return None
+
+
+def _split_owned(pairs: list[tuple[str, str]], right: set[str]) -> tuple[list[str], list[str]]:
+    own: list[str] = []
+    rest: list[str] = []
+    for qualifier, column in pairs:
+        if qualifier.lower() in right:
+            own.append(column)
+        else:
+            rest.append(column)
+    return own, rest
+
+
+def _column_refs(text: str) -> tuple[list[tuple[str, str]], bool] | None:
+    """Qualified ``(qualifier, column)`` pairs, and whether a bare name appears."""
+    masked = _mask_code(text)
+    if masked is None:
+        return None
+    pairs: list[tuple[str, str]] = []
+    bare = False
+    index = 0
+    length = len(masked)
+    while index < length:
+        char = masked[index]
+        if char.isspace():
+            index += 1
+            continue
+        if not (char.isalpha() or char == "_" or char == '"'):
+            index += 1
+            continue
+        name, after = _read_ident(masked, index)
+        if not name or after <= index:
+            if char == '"':
+                return None
+            index += 1
+            continue
+        nxt = _skip_ws(masked, after)
+        if nxt is None:
+            return None
+        if nxt < length and masked[nxt] == ".":
+            column, after_col = _read_ident(masked, nxt + 1)
+            if not column or after_col <= nxt + 1:
+                return None
+            nxt2 = _skip_ws(masked, after_col)
+            if nxt2 is None:
+                return None
+            if nxt2 < length and masked[nxt2] == ".":
+                return None
+            pairs.append((name, column))
+            index = after_col
+            continue
+        if nxt < length and masked[nxt] == "(":
+            index = after
+            continue
+        if name.upper() not in _NOT_A_COLUMN:
+            bare = True
+        index = after
+    return pairs, bare
+
+
+def _fully_unwrapped(text: str) -> str:
+    """Drop parentheses that enclose the whole text and nothing else."""
+    current = text.strip()
+    for _ in range(32):
+        if not current.startswith("("):
+            return current
+        end = _balanced(current, 0)
+        if end != len(current):
+            return current
+        current = current[1:-1].strip()
+    return current
 
 
 def _read_condition(sql: str, start: int) -> str | None:
@@ -197,6 +410,9 @@ def _read_condition(sql: str, start: int) -> str | None:
         if char == "(":
             depth += 1
         elif char == ")":
+            # A join written inside a subquery ends when this scan leaves it.
+            if depth == 0:
+                break
             depth -= 1
         elif depth == 0:
             if _keyword_end(sql, index, "JOIN") is not None:

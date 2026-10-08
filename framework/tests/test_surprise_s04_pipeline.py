@@ -43,6 +43,14 @@ _ASOF = (
     "SELECT px.p FROM ev ASOF JOIN px ON ev.id = px.id AND ev.ts >= px.ts "
     "ORDER BY ev.id, ev.ts, px.p"
 )
+_ASOF_FILTER = (
+    "SELECT r.p FROM ev l ASOF JOIN px r ON l.id = r.id AND l.ts >= r.ts "
+    "AND r.p > 0 ORDER BY l.id, l.ts, r.p"
+)
+_ASOF_SUBQUERY = (
+    "SELECT * FROM (SELECT px.p FROM ev ASOF JOIN px "
+    "ON ev.id = px.id AND ev.ts >= px.ts) q ORDER BY q.p"
+)
 _F10_SETUP = (
     "CREATE TABLE t1(id INT, ch VARCHAR, v INT)",
     "INSERT INTO t1 VALUES (1,'A',10),(2,'A',20),(3,'A',20),(4,'B',30),(5,'B',10),(6,'B',40),"
@@ -167,6 +175,68 @@ def test_unparseable_asof_is_a_violation() -> None:
     label = Label(y="fail", oracle="plan_variant", fail_kind="wrong_result")
     result = check_premises(case, "plan_variant", label, probe)
     assert result["violations"] == ["unspecified_semantics"]
+
+
+def _fail_label() -> Label:
+    return Label(y="fail", oracle="plan_variant", fail_kind="wrong_result")
+
+
+def test_asof_on_clause_must_be_join_keys_only() -> None:
+    """A right-table filter, a top-level OR, or a bare column is unparseable."""
+    seen: list[str] = []
+
+    def probe(sql: str) -> tuple[str, Any]:
+        seen.append(sql)
+        return "ok", 1
+
+    label = _fail_label()
+    filtered = SqlCase("duckdb", _F3_SETUP, _ASOF_FILTER)
+    result = check_premises(filtered, "plan_variant", label, probe)
+    assert result["violations"] == ["unspecified_semantics"]
+    assert seen == []
+
+    disjunction = SqlCase(
+        "duckdb", (),
+        "SELECT r.p FROM ev l ASOF JOIN px r ON l.id = r.id OR l.ts >= r.ts",
+    )
+    bare = SqlCase(
+        "duckdb", (),
+        "SELECT r.p FROM ev l ASOF JOIN px r ON l.id = r.id AND l.ts >= ts",
+    )
+    for case in (disjunction, bare):
+        again = check_premises(case, "plan_variant", label, probe)
+        assert again["violations"] == ["unspecified_semantics"]
+    assert seen == []
+
+
+def test_asof_inside_a_subquery_still_groups_the_join_key() -> None:
+    seen: list[str] = []
+
+    def probe(sql: str) -> tuple[str, Any]:
+        seen.append(sql)
+        return "ok", 1
+
+    case = SqlCase("duckdb", _F3_SETUP, _ASOF_SUBQUERY)
+    held = check_premises(case, "plan_variant", _fail_label(), probe)
+    assert held["violations"] == []
+    assert len(seen) == 1
+    group = seen[0].split("GROUP BY", 1)[1]
+    assert '"id"' in group and '"ts"' in group and '"p"' not in group
+    assert "ORDER BY" not in seen[0].upper()
+
+    runner = DuckDBRunner()
+    try:
+        runner.setup(list(_F3_SETUP))
+        tied = runner.run(seen[0])
+    finally:
+        runner.close()
+    assert tied.ok and int(tied.rows[0][0]) > 1
+
+    def tied_probe(sql: str) -> tuple[str, Any]:
+        return "ok", int(tied.rows[0][0])
+
+    violated = check_premises(case, "plan_variant", _fail_label(), tied_probe)
+    assert violated["violations"] == ["unspecified_semantics"]
 
 
 def _scripted(
@@ -394,6 +464,25 @@ def test_premises_on_real_statements() -> None:
     assert cve["premise"]["violations"] == []
     assert cve["rerun"]["status"] == "ran"
 
+    # r.p > 0 is not a join key. Tied or not, the ON clause is unparseable.
+    filtered = certify(SqlCase("duckdb", _F3_SETUP, _ASOF_FILTER), "plan_variant", isolation="inline")
+    cve = _shape(filtered, "inline")
+    assert (filtered.y, filtered.invalid_reason) == ("invalid", "unspecified_semantics")
+    assert cve["tier"] == 1 and cve["raw"]["y"] == "fail"
+    assert cve["rerun"] == {"status": "skipped", "reason": "premise_violated"}
+
+    filtered_factory, _filtered_state = _duckdb_scripted(_ASOF_FILTER, [[10], [30]])
+    filtered_free = certify(
+        SqlCase("duckdb", _ASOF_NO_TIES, _ASOF_FILTER),
+        "plan_variant",
+        runner_factory=filtered_factory,
+        isolation="inline",
+    )
+    cve = _shape(filtered_free, "inline")
+    assert (filtered_free.y, filtered_free.invalid_reason) == ("invalid", "unspecified_semantics")
+    assert cve["raw"]["y"] == "fail"
+    assert cve["rerun"]["status"] == "skipped"
+
     deleted = certify(
         SqlCase("duckdb", _WRITE_SETUP, "DELETE FROM t WHERE a = 1 RETURNING a"),
         "plan_variant",
@@ -589,6 +678,12 @@ def test_execute_isolated_statuses_and_prelude() -> None:
     dead = execute_isolated(SqlCase("duckdb", _F10_SETUP, _F10_QUERY))
     assert dead.status == "crash" and dead.rows == [] and dead.exit_code not in (None, 0)
 
+    silent = execute_isolated(
+        SqlCase("duckdb", (), f"SELECT {runners.ZERO_EXIT_MARK}"),
+        runner_factory=runners.ZeroExitRunner,
+    )
+    assert silent.status == "crash" and silent.rows == [] and silent.exit_code == 0
+
     merge = SqlCase("duckdb", _F11_SETUP, _F11_QUERY)
     assert execute_isolated(merge).status == "ok"
     forced = execute_isolated(merge, prelude=("SET disabled_optimizers='build_side_probe_side'",))
@@ -638,7 +733,7 @@ def test_process_isolation_pass_crash_hang_and_reference() -> None:
     cve = _shape(orphan, "process")
     assert orphan.invalid_reason == "unattributed_crash"
     assert orphan.identity == IdentityEvidence()
-    assert cve["tier"] == 0 and cve["raw"]["y"] == "fail"
+    assert cve["tier"] == 1 and cve["raw"]["y"] == "fail"
     assert cve["raw"]["identity"]["error_class"] == "ProcessExit"
     _skipped(cve, "unattributed_crash")
 

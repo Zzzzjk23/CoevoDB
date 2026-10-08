@@ -126,10 +126,12 @@ def call_worker(payload: dict[str, Any], wall_timeout_s: float) -> dict[str, Any
         data = _parse_json(stdout)
         if data is not None:
             return {"kind": "ok", "data": data}
+        # No parseable result, including a clean exit 0, is a crash. The
+        # caller must get a result rather than an exception.
         code = proc.returncode
-        if code not in (0, None):
-            return {"kind": "crash", "exit_code": int(code)}
-        raise RuntimeError("isolated worker returned no result")
+        if isinstance(code, bool) or not isinstance(code, int):
+            code = 0
+        return {"kind": "crash", "exit_code": int(code)}
     finally:
         if proc.poll() is None:
             _kill(proc)

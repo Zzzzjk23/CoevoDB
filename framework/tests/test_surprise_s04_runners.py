@@ -15,6 +15,7 @@ from targets.duckdb_runner import DuckDBRunner
 
 EXIT_MARK = "770077"
 SLEEP_MARK = "880088"
+ZERO_EXIT_MARK = "660066"
 EXIT_CODE = 77
 
 
@@ -65,6 +66,21 @@ class SleepingRunner(DuckDBRunner):
         if SLEEP_MARK in sql:
             time.sleep(600)
         return super().run(sql, timeout_s=timeout_s)
+
+
+class ZeroExitRunner:
+    """Leaves the process with status 0 and writes no result."""
+
+    def setup(self, statements: Any) -> list[tuple[str, None]]:
+        return [(statement, None) for statement in statements]
+
+    def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
+        if ZERO_EXIT_MARK in sql:
+            os._exit(0)
+        return QueryResult(rows=[[1]])
+
+    def close(self) -> None:
+        pass
 
 
 class ExitingReference:
