@@ -39,11 +39,10 @@ _DUCK_TYPES = (
     "SELECT CAST(1.50 AS DECIMAL(10,2)), DATE '2020-01-02', "
     "TIMESTAMP '2020-01-02 03:04:05', 'hi'::BLOB"
 )
-_DF_TYPES = (
-    "SELECT arrow_cast(1.50, 'Decimal128(10, 2)'), "
-    "arrow_cast('2020-01-02', 'Date32'), "
-    "arrow_cast('2020-01-02T03:04:05', 'Timestamp(Microsecond, None)'), "
-    "arrow_cast('hi', 'Binary')"
+_DF_QUERIES = (
+    ("SELECT DATE '2020-01-02' AS d", "2020-01-02"),
+    ("SELECT arrow_cast('hi', 'Binary') AS b", "0x6869"),
+    ("SELECT CAST(1.25 AS DECIMAL(10,2)) AS n", 1.25),
 )
 
 
@@ -108,6 +107,7 @@ def _index_fail() -> Label:
         oracle="index_presence",
         fail_kind="wrong_result",
         identity=IdentityEvidence(switches=("art",), behavior={"missing": 1, "extra": 1}),
+        detail={"full_query": "SELECT a FROM t", "q2": "SELECT a FROM t USE INDEX"},
     )
 
 
@@ -215,10 +215,14 @@ def test_f2_regression_matches_the_measured_bags() -> None:
     evidence = first.detail["direction_evidence"]
     assert set(evidence["majority"]) >= {"datafusion", "sqlite"}
     assert set(evidence["majority"]) <= {"datafusion", "sqlite", "postgres"}
-    assert any(
-        item["oracle"] == "plan_variant" and item["switches"] == ["no_optimizer"]
-        for item in evidence["witnesses"]
+    plan_witness = next(
+        item for item in evidence["witnesses"] if item["oracle"] == "plan_variant"
     )
+    assert plan_witness["switches"] == ["no_optimizer"]
+    assert plan_witness["label"]["y"] == "fail"
+    assert plan_witness["label"]["identity"]["switches"] == ["no_optimizer"]
+    assert "q1" in plan_witness["label"]["detail"]
+    assert plan_witness["label"]["detail"]["q1"]
 
     witnessed = judge(case, "version_differential", reference_factories={})
     assert witnessed.y == "fail"
@@ -229,7 +233,7 @@ def test_f2_regression_matches_the_measured_bags() -> None:
     assert witnessed.detail["direction_evidence"]["witnesses"]
 
 
-def test_both_engines_erroring_is_a_pass(monkeypatch) -> None:
+def test_both_query_errors_are_invalid(monkeypatch) -> None:
     consulted = {"n": 0}
 
     def boom():
@@ -240,18 +244,19 @@ def test_both_engines_erroring_is_a_pass(monkeypatch) -> None:
         raise AssertionError("witnesses consulted")
 
     monkeypatch.setattr(vd, "_collect_witnesses", witnesses)
-    case = _case(query="SELECT * FROM no_such", predicate=None, setup=())
+    case = _case(query="SELECT missing FROM t", predicate=None)
     label = judge(
         case,
         "version_differential",
         reference_factories={"datafusion": boom, "sqlite": boom},
     )
-    assert label.y == "pass", label.to_dict()
-    assert label.detail["direction"] == "agree"
+    assert (label.y, label.invalid_reason) == ("invalid", "query_error"), label.to_dict()
+    assert label.detail["direction"] == "unknown"
     assert label.detail["old_rows"] == []
     assert label.detail["new_rows"] == []
     assert consulted["n"] == 0
     assert label.cve == {}
+    assert label.fail_kind is None
 
 
 def test_same_wrong_rows_do_not_consult_references_or_witnesses(monkeypatch) -> None:
@@ -460,31 +465,18 @@ def test_duckdb_type_transport_preserves_normalized_cells() -> None:
     assert isinstance(label.detail["new_rows"][0][0], float)
 
 
-def test_datafusion_type_transport_preserves_normalized_cells() -> None:
-    python = vd._resolve_old_python("datafusion", None)
-    assert python is not None
-    old = vd._query_old(python, "datafusion", [], _DF_TYPES, 20)
-    assert old.protocol_error is None
-    assert old.error is None
-    assert old.setup_error is None
-    assert old.version == "50.0.0"
-    assert old.rows == [_TYPED]
-    assert isinstance(old.rows[0][0], float)
-
-    decimal = judge(
-        _case(
-            "datafusion",
-            query="SELECT arrow_cast(1.50, 'Decimal128(10, 2)')",
-            predicate=None,
-            setup=(),
-        ),
-        "version_differential",
-    )
-    assert decimal.y == "pass", decimal.to_dict()
-    assert decimal.detail["old_rows"] == [[1.5]]
-    assert decimal.detail["new_rows"] == [[1.5]]
-    assert decimal.detail["old_version"] == "50.0.0"
-    assert decimal.detail["new_version"] == "54.0.0"
+def test_datafusion_type_labels_match_the_runner_normalization() -> None:
+    for query, cell in _DF_QUERIES:
+        label = judge(
+            _case("datafusion", query=query, predicate=None, setup=()),
+            "version_differential",
+        )
+        assert label.y == "pass", (query, label.to_dict())
+        assert label.detail["old_version"] == "50.0.0"
+        assert label.detail["new_version"] == "54.0.0"
+        assert label.detail["old_rows"] == [[cell]]
+        assert label.detail["new_rows"] == [[cell]]
+        assert type(label.detail["new_rows"][0][0]) is type(cell)
 
 
 def test_two_supporters_direct_a_regression_without_witnesses(monkeypatch) -> None:
@@ -604,7 +596,10 @@ def test_index_presence_import_error_is_not_harness_error(monkeypatch) -> None:
 
     def call(case, oracle_id, factory, timeout_s):
         if oracle_id == "index_presence":
-            raise ModuleNotFoundError("surprise.harness.oracles.index_presence")
+            raise ModuleNotFoundError(
+                "No module named surprise.harness.oracles.index_presence",
+                name="surprise.harness.oracles.index_presence",
+            )
         return _pass(oracle_id)
 
     monkeypatch.setattr(vd, "_call_public_judge", call)
@@ -638,6 +633,7 @@ def test_index_presence_failure_is_carried_on_the_version_label(monkeypatch) -> 
     assert label.detail["direction"] == "regression"
     assert label.identity.switches == ("art",)
     recorded = label.detail["direction_evidence"]["witnesses"]
+    witness_label = _index_fail().to_dict()
     assert recorded == [{
         "oracle": "index_presence",
         "y": "fail",
@@ -645,7 +641,9 @@ def test_index_presence_failure_is_carried_on_the_version_label(monkeypatch) -> 
         "switches": ["art"],
         "error_class": None,
         "behavior": {"missing": 1, "extra": 1},
+        "label": witness_label,
     }]
+    assert recorded[0]["label"]["detail"]["q2"] == "SELECT a FROM t USE INDEX"
 
 
 def test_version_alias_is_rejected() -> None:
@@ -663,6 +661,185 @@ def test_version_alias_reaches_reference_collection_on_a_mismatch(monkeypatch) -
             timeout_s=5,
             options=make_options(reference_factories={"duckdb_old": _fixed([[1]])}),
         )
+
+
+def test_both_value_dependent_errors_are_invalid(monkeypatch) -> None:
+    def witnesses(*args, **kwargs):
+        raise AssertionError("witnesses consulted")
+
+    monkeypatch.setattr(vd, "_collect_witnesses", witnesses)
+    monkeypatch.setattr(
+        vd,
+        "_query_old",
+        lambda *args, **kwargs: _old_rows([], error="division by zero"),
+    )
+    label = judge_case(
+        _case(query="SELECT 1/0", predicate=None, setup=()),
+        factory=_fixed(error="numeric overflow"),
+        timeout_s=5,
+        options=make_options(reference_factories={}),
+    )
+    assert (label.y, label.invalid_reason) == ("invalid", "value_dependent_error")
+    assert label.cve == {}
+    assert label.detail["direction"] == "unknown"
+
+    mixed = judge_case(
+        _case(query="SELECT missing FROM t", predicate=None),
+        factory=_fixed(error="Catalog Error: column missing"),
+        timeout_s=5,
+        options=make_options(reference_factories={}),
+    )
+    assert (mixed.y, mixed.invalid_reason) == ("invalid", "query_error")
+
+
+def test_row_permutation_keeps_one_stable_label(monkeypatch) -> None:
+    base = [[1.0], [1], [None], [1]]
+    calls = {"n": 0}
+
+    def factory():
+        class Runner:
+            engine_version = "fixture"
+
+            def setup(self, statements):
+                return [(statement, None) for statement in statements]
+
+            def run(self, sql, timeout_s=10.0):
+                calls["n"] += 1
+                rows = base if calls["n"] % 2 else list(reversed(base))
+                return QueryResult(rows=[list(row) for row in rows])
+
+            def close(self):
+                pass
+
+        return Runner()
+
+    monkeypatch.setattr(
+        vd,
+        "_query_old",
+        lambda *args, **kwargs: _old_rows(list(reversed(base))),
+    )
+    first = judge_case(
+        _case(query="SELECT a FROM t", predicate=None),
+        factory=factory,
+        timeout_s=5,
+        options=make_options(reference_factories={}),
+    )
+    second = judge_case(
+        _case(query="SELECT a FROM t", predicate=None),
+        factory=factory,
+        timeout_s=5,
+        options=make_options(reference_factories={}),
+    )
+    assert first.y == "pass", first.to_dict()
+    assert second.y == "pass"
+    assert calls["n"] == 2
+    assert first.to_dict() == second.to_dict()
+    kinds = [type(row[0]) for row in first.detail["new_rows"]]
+    assert kinds == [float, int, int, type(None)]
+    assert [type(row[0]) for row in first.detail["old_rows"]] == kinds
+    assert first.detail["new_rows"][3][0] is None
+
+
+def _worker_success() -> str:
+    return json.dumps({
+        "engine_version": "1.1.3",
+        "setup_error": None,
+        "error": None,
+        "columns": ["a"],
+        "rows": [[{"t": "int", "v": 1}]],
+    })
+
+
+def test_failed_process_and_missing_version_are_harness_errors(monkeypatch) -> None:
+    valid = json.loads(_worker_success())
+    missing = dict(valid)
+    missing.pop("engine_version")
+    query_error = {
+        "setup_error": None,
+        "error": "CatalogException: missing",
+        "rows": [],
+    }
+    cases = (
+        (subprocess.CompletedProcess(["python"], 7, _worker_success(), "injected failure"),
+         "worker process failed"),
+        (subprocess.CompletedProcess(["python"], 0, json.dumps(missing), ""),
+         "worker output is missing engine_version"),
+        (subprocess.CompletedProcess(["python"], 0, json.dumps({**valid, "engine_version": "  "}), ""),
+         "worker output is missing engine_version"),
+        (subprocess.CompletedProcess(["python"], 0, json.dumps(query_error), ""),
+         "worker output is missing engine_version"),
+    )
+    for response, message in cases:
+        monkeypatch.setattr(
+            vd,
+            "_run_worker",
+            lambda *args, response=response, **kwargs: response,
+        )
+        label = judge_case(
+            _case(query="SELECT 1", predicate=None, setup=()),
+            factory=_fixed([[1]]),
+            timeout_s=5,
+            options=make_options(),
+        )
+        assert (label.y, label.invalid_reason) == ("invalid", "harness_error"), message
+        assert label.detail["error"] == message
+        dumped = json.dumps(label.to_dict())
+        assert "injected" not in dumped
+        if message == "worker process failed":
+            assert "1.1.3" not in dumped
+
+
+def test_corrupt_cells_and_garbage_stdout_are_protocol_errors(monkeypatch) -> None:
+    payloads = (
+        json.dumps({
+            "engine_version": "1.1.3",
+            "setup_error": None,
+            "error": None,
+            "rows": [[{"t": "decimal", "v": "not-a-number"}]],
+        }),
+        "noise before json\n" + _worker_success(),
+    )
+    for stdout in payloads:
+        monkeypatch.setattr(
+            vd,
+            "_run_worker",
+            lambda *args, stdout=stdout, **kwargs: subprocess.CompletedProcess(
+                ["python"], 0, stdout, "stderr-secret",
+            ),
+        )
+        label = judge_case(
+            _case(query="SELECT 1", predicate=None, setup=()),
+            factory=_fixed([[1]]),
+            timeout_s=5,
+            options=make_options(),
+        )
+        assert (label.y, label.invalid_reason) == ("invalid", "harness_error")
+        assert label.detail["error"] == "worker output is not valid JSON"
+        dumped = json.dumps(label.to_dict())
+        assert "not-a-number" not in dumped
+        assert "InvalidOperation" not in dumped
+        assert "noise before json" not in dumped
+        assert "stderr-secret" not in dumped
+
+
+def test_index_presence_dependency_error_propagates(monkeypatch) -> None:
+    monkeypatch.setattr(vd, "_query_old", lambda *args, **kwargs: _old_rows([[1]]))
+    monkeypatch.setattr(vd, "_index_presence_available", lambda: True)
+
+    def call(case, oracle_id, factory, timeout_s):
+        if oracle_id == "index_presence":
+            raise ModuleNotFoundError("No module named pyarrow", name="pyarrow")
+        return _pass(oracle_id)
+
+    monkeypatch.setattr(vd, "_call_public_judge", call)
+    with pytest.raises(ModuleNotFoundError) as caught:
+        judge_case(
+            _case(query="SELECT a FROM t", predicate=None),
+            factory=_fixed([[2]]),
+            timeout_s=5,
+            options=make_options(reference_factories={}),
+        )
+    assert caught.value.name == "pyarrow"
 
 
 def test_worker_imports_stay_inside_the_engine_functions() -> None:

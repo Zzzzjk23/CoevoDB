@@ -1,11 +1,12 @@
 """Version differential: a newer engine is a regression only with direction.
 
 The same statement runs on the current target and on an older interpreter.
-Matching outcomes are a pass, including when both are wrong. A mismatch is a
-fail only when the old result has two independent engines behind it and the
-new result is the only dissenter, or when TLP, NoREC, plan variant, or index
-presence fails on the new version. Otherwise the label is invalid. An old
-crash is not itself a new regression.
+Matching successful bags are a pass, including when both bags are wrong.
+Query failures are not that case: both sides raising is invalid. A mismatch
+is a fail only when the old result has two independent engines behind it and
+the new result is the only dissenter, or when TLP, NoREC, plan variant, or
+index presence fails on the new version. Otherwise the label is invalid. An
+old crash is not itself a new regression.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from .tlp import tlp_form
 
 _ORACLE = "version_differential"
 _WITNESSES = ("tlp", "norec", "plan_variant", "index_presence")
+_INDEX_MODULE = "surprise.harness.oracles.index_presence"
 _OLD_VENVS = {
     "duckdb": "duckdb-1.1.3",
     "datafusion": "datafusion-50.0.0",
@@ -63,7 +65,7 @@ def judge_case(
     """Label ``case`` by comparing the current engine with its older build."""
     full = full_query(case)
     new_version, new_result, new_setup = _run_new(case, factory, timeout_s, full)
-    new_rows = _rows_of(new_result)
+    new_rows = _rows_of(new_result, case.engine)
     if new_setup is not None:
         return _invalid(
             "setup_error",
@@ -130,7 +132,24 @@ def judge_case(
         )
 
     assert new_result is not None
-    if _same_outcome(old, new_result):
+    if old.error is not None and not new_result.ok:
+        # Both sides failed to return a bag. That is not "the same wrong result".
+        reason = (
+            "value_dependent_error"
+            if _both_value_dependent(old, new_result)
+            else "query_error"
+        )
+        error = new_result.error or old.error
+        return _invalid(
+            reason,
+            full,
+            old_version=old.version,
+            new_version=new_version,
+            old_rows=old.rows,
+            new_rows=new_rows,
+            error=error,
+        )
+    if _same_outcome(old, new_result, new_rows):
         return pass_label(
             _ORACLE,
             full,
@@ -165,7 +184,7 @@ def judge_case(
             old_rows=old.rows,
             new_rows=new_rows,
         )
-    kind, behavior, error_class = _fail_parts(old, new_result, witnesses)
+    kind, behavior, error_class = _fail_parts(old, new_result, new_rows, witnesses)
     return Label(
         y="fail",
         oracle=_ORACLE,
@@ -246,10 +265,12 @@ def _collect_witnesses(case: SqlCase, factory, timeout_s: float) -> list[Label]:
             continue
         try:
             label = _call_public_judge(case, oracle_id, factory, timeout_s)
-        except ModuleNotFoundError:
-            if oracle_id != "index_presence":
-                raise
-            continue
+        except ModuleNotFoundError as exc:
+            # Only the optional oracle module itself may be absent. A missing
+            # dependency imported by that module is a real harness failure.
+            if oracle_id == "index_presence" and exc.name == _INDEX_MODULE:
+                continue
+            raise
         if label.y == "fail":
             found.append(label)
     return found
@@ -268,9 +289,11 @@ def _call_public_judge(case: SqlCase, oracle_id: str, factory, timeout_s: float)
 
 def _index_presence_available() -> bool:
     try:
-        spec = importlib.util.find_spec("surprise.harness.oracles.index_presence")
-    except ModuleNotFoundError:
-        return False
+        spec = importlib.util.find_spec(_INDEX_MODULE)
+    except ModuleNotFoundError as exc:
+        if exc.name == _INDEX_MODULE:
+            return False
+        raise
     return spec is not None
 
 
@@ -285,11 +308,12 @@ def _premise(case: SqlCase, oracle_id: str) -> bool:
 def _fail_parts(
     old: _OldResult,
     new_result: QueryResult,
+    new_rows: list[list[Any]],
     witnesses: list[Label],
 ) -> tuple[str, dict[str, Any], str | None]:
     """fail_kind, behavior, and error class for a directed regression."""
     if old.error is None and new_result.ok:
-        return "wrong_result", _behavior(old.rows, _rows_of(new_result)), None
+        return "wrong_result", _behavior(old.rows, new_rows), None
     if old.error is None and _internal(new_result):
         return "crash", {}, _error_class(new_result.error)
     if old.error is None and not new_result.ok:
@@ -301,6 +325,7 @@ def _fail_parts(
 
 
 def _witness_record(label: Label) -> dict[str, Any]:
+    """Flat identity plus the witness label, including its detail and SQL."""
     return {
         "oracle": label.oracle,
         "y": label.y,
@@ -308,6 +333,7 @@ def _witness_record(label: Label) -> dict[str, Any]:
         "switches": list(label.identity.switches),
         "error_class": label.identity.error_class,
         "behavior": dict(label.identity.behavior),
+        "label": label.to_dict(),
     }
 
 
@@ -324,12 +350,15 @@ def _behavior(old_rows: list[list[Any]], new_rows: list[list[Any]]) -> dict[str,
     return multiset_difference(QueryResult(rows=old_rows), QueryResult(rows=new_rows))
 
 
-def _same_outcome(old: _OldResult, new_result: QueryResult) -> bool:
-    if old.error is not None and not new_result.ok:
-        return True
-    if old.error is None and new_result.ok:
-        return loose_rows_equal(old.rows, _rows_of(new_result))
-    return False
+def _same_outcome(old: _OldResult, new_result: QueryResult, new_rows: list[list[Any]]) -> bool:
+    """True when both sides successfully returned the same bag."""
+    if old.error is not None or not new_result.ok:
+        return False
+    return loose_rows_equal(old.rows, new_rows)
+
+
+def _both_value_dependent(old: _OldResult, new_result: QueryResult) -> bool:
+    return is_value_dependent_error(old.error) and is_value_dependent_error(new_result.error)
 
 
 def _value_dependent_split(old: _OldResult, new_result: QueryResult) -> bool:
@@ -351,10 +380,31 @@ def _internal(result: QueryResult) -> bool:
     return bool(result.is_internal_error or is_internal_error(result.error))
 
 
-def _rows_of(result: QueryResult | None) -> list[list[Any]]:
+def _rows_of(result: QueryResult | None, engine: str) -> list[list[Any]]:
     if result is None or not result.ok or result.timed_out:
         return []
-    return normalize_rows(result.rows)
+    return _compatible_rows(engine, result.rows)
+
+
+def _compatible_rows(engine: str, rows: list[list[Any]]) -> list[list[Any]]:
+    """Convert cells the way the target runner does, then use shared normalize.
+
+    DataFusion's runner stringifies dates and prefixes bytes before the shared
+    normalizer runs. The old worker still sends typed values; applying that
+    same ``_norm`` here keeps the two sides comparable. Strings are not parsed
+    back into dates or bytes.
+    """
+    if engine == "datafusion":
+        from targets.datafusion_runner import _norm
+
+        rows = [[_norm(cell) for cell in row] for row in rows]
+    return normalize_rows(rows)
+
+
+def _canonical_rows(rows: list[list[Any]]) -> list[list[Any]]:
+    """Stable bag order. Duplicates, NULL, and value types stay as they are."""
+    copied = [list(row) for row in rows]
+    return sorted(copied, key=lambda row: json.dumps(row, sort_keys=True, default=str))
 
 
 def _error_class(error: str | None) -> str | None:
@@ -397,13 +447,13 @@ def _query_old(
 ) -> _OldResult:
     payload = {"setup": setup, "query": query, "engine": engine}
     completed = _run_worker(python, payload, timeout_s)
+    if completed.returncode != 0:
+        return _OldResult(None, [], None, None, "worker process failed")
     text = (completed.stdout or "").strip()
     try:
         document = json.loads(text) if text else None
-        if not isinstance(document, dict):
-            document = _last_json_object(text)
     except json.JSONDecodeError:
-        document = _last_json_object(text)
+        document = None
     if not isinstance(document, dict):
         return _OldResult(None, [], None, None, "worker output is not valid JSON")
     if document.get("protocol_error"):
@@ -411,22 +461,26 @@ def _query_old(
     version = document.get("engine_version")
     if version is not None and not isinstance(version, str):
         return _OldResult(None, [], None, None, "worker output is not valid JSON")
+    version_text = version.strip() if isinstance(version, str) and version.strip() else None
     setup_error = document.get("setup_error")
     error = document.get("error")
-    version_text = version if isinstance(version, str) else None
     if setup_error is not None and not isinstance(setup_error, str):
         return _OldResult(version_text, [], None, None, "worker output is not valid JSON")
     if error is not None and not isinstance(error, str):
         return _OldResult(version_text, [], None, None, "worker output is not valid JSON")
     if setup_error:
         return _OldResult(version_text, [], None, setup_error, None)
+    if version_text is None:
+        return _OldResult(None, [], None, None, "worker output is missing engine_version")
     if error:
         return _OldResult(version_text, [], error, None, None)
     try:
-        rows = normalize_rows(_decode_rows(document.get("rows")))
-    except (TypeError, ValueError):
+        decoded = _decode_rows(document.get("rows"))
+    except (TypeError, ValueError, ArithmeticError):
+        # A damaged tagged cell, such as a non-decimal decimal string, is a
+        # protocol failure. The message stays fixed so the bad text is not echoed.
         return _OldResult(version_text, [], None, None, "worker output is not valid JSON")
-    return _OldResult(version_text, rows, None, None, None)
+    return _OldResult(version_text, _compatible_rows(engine, decoded), None, None, None)
 
 
 def _run_worker(python: Path, payload: dict[str, Any], timeout_s: float) -> subprocess.CompletedProcess[str]:
@@ -444,20 +498,6 @@ def _run_worker(python: Path, payload: dict[str, Any], timeout_s: float) -> subp
             env=env,
             check=False,
         )
-
-
-def _last_json_object(text: str) -> dict | None:
-    for line in reversed(text.splitlines()):
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            document = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(document, dict):
-            return document
-    return None
 
 
 def _decode_rows(raw: Any) -> list[list[Any]]:
@@ -618,8 +658,8 @@ def _fields(
     return {
         "old_version": old_version,
         "new_version": new_version,
-        "old_rows": old_rows,
-        "new_rows": new_rows,
+        "old_rows": _canonical_rows(old_rows),
+        "new_rows": _canonical_rows(new_rows),
         "direction": direction,
         "direction_evidence": evidence,
     }
