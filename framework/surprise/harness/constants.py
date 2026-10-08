@@ -12,6 +12,15 @@ from typing import Any
 # Wall-clock timeout, in seconds, for one statement. Same default as the old oracles.
 QUERY_TIMEOUT_S = 10.0
 
+# Default-setting reruns of one fail candidate. Every one of them runs.
+CVE_RERUN_ATTEMPTS = 5
+
+# Extra default-setting reruns when the candidate disappears on one thread.
+CVE_RERUN_EXTENDED = 15
+
+# Wall-clock limit, in seconds, for one isolated judgement or one isolated execution.
+CVE_WALL_TIMEOUT_S = 120.0
+
 
 def as_dict() -> dict[str, Any]:
     """Every public uppercase constant in this module, as a detached JSON object."""

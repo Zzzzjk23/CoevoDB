@@ -12,10 +12,12 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,6 +32,18 @@ HASHED_PATHS = (
     "targets/datafusion_runner.py", "targets/sqlite_runner.py",
     "oracles/equivalence.py", "oracles/index_variant.py", "oracles/cross_engine.py",
     "oracles/differential.py", "oracles/_remote_exec.py", "scripts/cross_engine.py",
+    "diagnosis/bisect.py",
+)
+
+# Old interpreters live beside the git common directory, same as version differential.
+_OLD_VENVS = {
+    "duckdb": "duckdb-1.1.3",
+    "datafusion": "datafusion-50.0.0",
+}
+_PACKAGE_NAMES = ("duckdb", "datafusion", "pyarrow", "psycopg2-binary")
+# Same default as harness.oracles.pg_reference. A connection failure stays None.
+_DEFAULT_PG_DSN = (
+    "host=127.0.0.1 port=55432 user=coevo dbname=postgres connect_timeout=5"
 )
 
 # framework/ is the directory that contains surprise/ and the legacy oracles/.
@@ -135,6 +149,115 @@ def _git_commit(root: Path) -> str | None:
     return commit
 
 
+def _checkout_root() -> Path:
+    return _FRAMEWORK_ROOT.parent
+
+
+def _clean_env() -> dict[str, str]:
+    """Process environment without the API key."""
+    return {key: value for key, value in os.environ.items() if key.upper() != "DEEPSEEK_API_KEY"}
+
+
+def _venvs_dir() -> Path:
+    """Directory of versioned interpreters. ``COEVO_VENVS`` overrides the git-common location."""
+    override = os.environ.get("COEVO_VENVS")
+    if override:
+        return Path(override)
+    checkout = _checkout_root()
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=checkout,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=60,
+            env=_clean_env(),
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return checkout / ".venvs"
+    common = proc.stdout.decode("utf-8", "replace").strip()
+    if proc.returncode == 0 and common:
+        return Path(common).parent / ".venvs"
+    return checkout / ".venvs"
+
+
+def _old_python(engine: str) -> Path | None:
+    root = _venvs_dir() / _OLD_VENVS[engine]
+    for relative in ("Scripts/python.exe", "bin/python"):
+        candidate = root / relative
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _old_engine_version(engine: str) -> str | None:
+    """Version reported by the old venv, or None when that interpreter cannot say.
+
+    The probe uses ``-I`` and an empty working directory so the checkout's
+    ``duckdb/`` and ``datafusion/`` directories cannot shadow the real packages.
+    """
+    python = _old_python(engine)
+    if python is None:
+        return None
+    code = f"import {engine}\nprint({engine}.__version__)\n"
+    try:
+        with tempfile.TemporaryDirectory(prefix="cve-old-") as empty:
+            proc = subprocess.run(
+                [str(python), "-I", "-c", code],
+                cwd=empty,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+                env=_clean_env(),
+                check=False,
+            )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    lines = [line.strip() for line in proc.stdout.decode("utf-8", "replace").splitlines() if line.strip()]
+    if not lines:
+        return None
+    version = lines[-1]
+    if not version.isascii() or any(char.isspace() for char in version):
+        return None
+    return version
+
+
+def _postgres_server_version() -> str | None:
+    """``server_version`` of the reference server, or None when it cannot be asked.
+
+    The DSN is never included in a returned value.
+    """
+    dsn = os.environ.get("COEVO_REFERENCE_PG_DSN") or _DEFAULT_PG_DSN
+    try:
+        import psycopg2
+
+        connection = psycopg2.connect(dsn)
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SHOW server_version")
+            row = cursor.fetchone()
+            cursor.close()
+        finally:
+            connection.close()
+    except Exception:
+        return None
+    if not row or row[0] is None:
+        return None
+    version = str(row[0]).strip()
+    if not version or not version.isascii():
+        return None
+    return version
+
+
+def _package_versions() -> dict[str, str | None]:
+    return {name: _engine_version(name) for name in _PACKAGE_NAMES}
+
+
 def build_manifest(run_id: str, *, root: str | Path | None = None) -> dict:
     """JSON-safe description of one run and the harness that produced it."""
     base = _framework_root() if root is None else Path(root)
@@ -152,6 +275,12 @@ def build_manifest(run_id: str, *, root: str | Path | None = None) -> dict:
                 "datafusion": _engine_version("datafusion"),
                 "sqlite": sqlite3.sqlite_version,
             },
+            "old_engines": {
+                "duckdb": _old_engine_version("duckdb"),
+                "datafusion": _old_engine_version("datafusion"),
+            },
+            "references": {"postgres": _postgres_server_version()},
+            "packages": _package_versions(),
         },
         "git_commit": _git_commit(base),
     }
