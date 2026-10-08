@@ -30,6 +30,7 @@
 - SQLite 3.51.0 对 EXCEPT ALL / INTERSECT ALL 都报语法错误；DuckDB 1.5.5 与 DataFusion 54.0.0 都能执行并且不同。DF-B 的正确 bag 包含 NULL：`1, 2, NULL`（原 SQL 文件注释漏了 NULL，旧文件不改）。
 - 本机 PATH 没有 PostgreSQL 命令，pgserver 未安装，pip 仅二进制下载也返回 no matching distribution。EDB PostgreSQL 16.15 Windows x64 已放在 `.orch/pg16/`（已有忽略规则覆盖），服务器监听 127.0.0.1:55432，用户 coevo、数据库 postgres、仅本机 trust，无系统服务。两种 ALL 运算经 psycopg2 实测与 DuckDB 一致。
 - F2 已实测：1.1.3 返回 `[(10,30),(20,30)]`，1.5.5 返回 `[(10,10),(20,20)]`；新版 plan variant 独立判 fail / wrong_result。S3 回归门槛选 F2，不用语义未指定的 F3。
+- F2另实测DF54/PG16/SQLite3.51全支持旧结果，版本门槛另覆盖无参照时的sound独立见证。DuckDB和DataFusion各自新旧SELECT version()的字符串不同、无参照时方向不可定；两项都进入派发前门槛。
 - 已提交 `gates/s03.py` 五组门槛（registry/local/cross/version/matrix）；registry 已审查合并并归档。local/cross从eba9c84并行派发后均已提交，正在独立审查，version brief待cross合并后派发。关键期望在派发前实测，包含三个改写的 NULL 样例和 SELECT version() 的方向不可定样例。
 - Cross预读发现PG只读查询检查允许多语句、setup只检查首词事务控制。编排者已补门槛并实测第一版被拦下；setup用不连数据库的记录runner验证拒绝发生在执行前，避免测试自身提交参照schema。将作为cross第1轮返工项。
 - local独立审查实测De Morgan把BETWEEN和CASE内部AND误拆，导致两引擎假fail/error_mismatch；paired_query比较还会忽略字符串大小写。已补对应门槛，将作为local第1轮返工项。基础三条NULL/重复行用例保留。
@@ -43,7 +44,7 @@
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
 | s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_contracts.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 已合并（1cae8cd）；返工1轮，只修新增测试的长期有效性。独立pytest165 passed/3 skipped，registry PASS，S01/S02 PASS |
-| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | run1独立pytest183 passed/3 skipped；要求De Morgan/字面量比较返工1轮；session 4e82a95a-e8c9-4af8-979d-009df034ae30，基线eba9c84 |
+| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | run2返工运行中，run1独立pytest183 passed/3 skipped，待De Morgan/字面量比较修正；session 4e82a95a-e8c9-4af8-979d-009df034ae30，基线eba9c84 |
 | s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | run2返工运行中，run1独立pytest184 passed/3 skipped，待多语句边界修正；session 7c2b4869-7c46-4c67-8561-85e81b47d12e，基线eba9c84 |
 | s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | 未派发 |
 

@@ -231,12 +231,17 @@ def check_version():
     require(loose_bag(detail.get('new_rows', [])) == loose_bag([[10, 10], [20, 20]]), 'new result differs from pre-dispatch probe')
     require(bool(detail.get('direction_evidence')), 'regression has no independent direction evidence')
     require(actual.to_dict() == judge(x, 'version_differential').to_dict(), 'version label unstable')
+    witnessed = judge(x, 'version_differential', reference_factories={})
+    label_is(witnessed, 'fail')
+    require(witnessed.detail.get('direction') == 'regression' and witnessed.identity.switches,
+            'F2 without references lacks independent sound-oracle identity')
     for engine, old in (('duckdb', '1.1.3'), ('datafusion', '50.0.0')):
         clean = judge(case(engine), 'version_differential')
         label_is(clean, 'pass')
         require(clean.detail.get('old_version') == old, f'{engine} old environment not used')
-    unknown = case(query='SELECT version()', predicate=None, setup=())
-    label_is(judge(unknown, 'version_differential', reference_factories={}), 'invalid', 'direction_unknown')
+    for engine in ('duckdb', 'datafusion'):
+        unknown = case(engine, query='SELECT version()', predicate=None, setup=())
+        label_is(judge(unknown, 'version_differential', reference_factories={}), 'invalid', 'direction_unknown')
     require(not (ROOT / '.venvs/datafusion-50.0.0/Lib/site-packages/duckdb').exists(), 'old DF environment polluted with DuckDB')
     return 'F2 old/new measured bags and regression direction; both old venvs work; directionless mismatch invalid'
 
