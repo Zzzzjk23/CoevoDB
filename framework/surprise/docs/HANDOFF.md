@@ -7,7 +7,7 @@
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
-| S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 进行中（registry/cross/local已合并，version运行中） | 起点 s02-done-r2 | local独立186 passed/3 skipped，cross188 passed/3 skipped；三个已合并组PASS |
+| S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 进行中（四包已合并，待最终集成与main/tag收尾） | 起点 s02-done-r2 | version独立221 passed/3 skipped，增强version PASS；最终all待跑 |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
@@ -41,7 +41,7 @@
 - PostgreSQL 恢复命令（根目录）：`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`。已有服务器时只查 status。参照 runner 默认此连接，`COEVO_REFERENCE_PG_DSN` 可覆盖；参照用例由独立事务隔离，close 回滚，禁止注册服务、改全局 PATH。
 - 恢复命令：`git status --short --branch`、`git log -8 --oneline`、`.venv/Scripts/python.exe tools/orch/grok_worker.py list`。
 - 三包合并后的主检出区集成复跑：209 passed, 3 skipped；`-m surprise.gates.s03 --only registry local cross` PASS 3/3（最终all尚待version）。最近集成基线c391423。
-- version草稿预读后的独立反例在`.orch/scratch/s3_version_review_probe.py`：DF50/54原始DATE/bytes/Decimal一致，但草稿DATE假fail、bytes假invalid；行序变化使pass标签不同；双方Binder错误、非零退出带合法JSON、缺engine_version都被错误判pass。已补主门槛，待提交后review再派第1轮反馈，不能提前合并。
+- version返工1轮后已合并7454d8d并归档。独立pytest221 passed/3 skipped、S01/S02及增强version PASS；独立反例脚本核实DF三类类型pass、行序标签一致、双方SQL错误invalid、协议失败invalid。全部34条shell命令已审查，tmp被拒目录仍在，本轮没有再次清理。接下来只跑主检出区最终集成、写S4交接、合并main/tag/清理四个已合并worktree。
 
 ### 预定拆包（门槛提交后才派发）
 
@@ -50,7 +50,7 @@
 | s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_contracts.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 已合并（1cae8cd）；返工1轮，只修新增测试的长期有效性。独立pytest165 passed/3 skipped，registry PASS，S01/S02 PASS |
 | s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | 已合并0293ace，返工2轮；独立pytest186 passed/3 skipped，S01/S02与增强local PASS，归档完成 |
 | s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | 已合并a60a287，返工2轮；独立pytest188 passed/3 skipped，S01/S02与增强cross PASS，归档完成 |
-| s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | run1完成f89de7b，独立pytest216 passed/3 skipped；已派返工1轮，类型/行序/协议/错误标签反馈在.orch/feedback/s03-version-r1.md；session 6e5c2b6d-8ea1-4f05-bf90-feebdfb71480，基线d81010c |
+| s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | 已合并7454d8d，返工1轮；独立pytest221 passed/3 skipped，S01/S02与增强version PASS，归档完成；session 6e5c2b6d-8ea1-4f05-bf90-feebdfb71480 |
 
 表内 harness、tests 路径分别相对 `framework/surprise/`、`framework/`。公共文件只归 registry 包；local 与 cross 并行，cross 合并后可派 version，同时最多两包运行。每包合并后立即更新本表并提交。最后集成门槛组为 matrix（七类 × 两引擎与账本）。
 
