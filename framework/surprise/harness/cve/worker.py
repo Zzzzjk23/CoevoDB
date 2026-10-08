@@ -32,6 +32,18 @@ def _dispatch(payload: dict[str, Any]) -> dict[str, Any]:
         return _execute(payload)
     if op == "judge":
         return _judge(payload)
+    if op == "interventions":
+        from surprise.harness.cve.criterion import interventions_from_payload
+
+        return interventions_from_payload(payload)
+    if op == "attribute":
+        from surprise.harness.cve.criterion import attribute_from_payload
+
+        return attribute_from_payload(payload)
+    if op == "diagnose":
+        from surprise.harness.cve.tier3 import diagnose_from_payload
+
+        return diagnose_from_payload(payload)
     return _failure("RuntimeError", f"unknown op {op!r}")
 
 

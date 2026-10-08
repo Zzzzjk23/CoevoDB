@@ -161,11 +161,19 @@ def test_constants_collect_public_uppercase_names():
         "CVE_RERUN_ATTEMPTS",
         "CVE_RERUN_EXTENDED",
         "CVE_WALL_TIMEOUT_S",
+        "CVE_MINIMIZE_MAX_EXECUTIONS",
+        "CVE_BISECT_MAX_EXECUTIONS",
+        "CVE_ATTRIBUTION_WALL_TIMEOUT_S",
+        "CVE_PROFILE_WALL_TIMEOUT_S",
         "QUERY_TIMEOUT_S",
     }
     assert snapshot["CVE_RERUN_ATTEMPTS"] == 5
     assert snapshot["CVE_RERUN_EXTENDED"] == 15
     assert snapshot["CVE_WALL_TIMEOUT_S"] == 120.0
+    assert snapshot["CVE_MINIMIZE_MAX_EXECUTIONS"] == 30
+    assert snapshot["CVE_BISECT_MAX_EXECUTIONS"] == 120
+    assert snapshot["CVE_ATTRIBUTION_WALL_TIMEOUT_S"] == 120.0
+    assert snapshot["CVE_PROFILE_WALL_TIMEOUT_S"] == 600.0
     json.dumps(snapshot)
     snapshot["QUERY_TIMEOUT_S"] = 0
     assert QUERY_TIMEOUT_S == 10.0
