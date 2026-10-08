@@ -24,13 +24,15 @@
 
 Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s05` 从 `s04-done`（9d88ff7）建立。用户指示 S4 完成后直接开 S5、需要确认的事项按编排者的推荐确认；已定的事项在 DECISIONS 的 S5 条目里。`.venv` 里装了 `sqlglot==30.21.0`，装完起点检查为 275 passed, 3 skipped 与 GATES PASS 4/4。
 
+**会话因用量上限在 2026-10-09 中断，状态为进行中（WIP）。** 后两个包的说明草稿已写好：`.orch/briefs/s05-ast.md`、`.orch/briefs/s05-dynamic.md`（里面的 `{基线通过数}` 要在前一包合并后填上）；审查探测脚本 `.orch/scratch/s5_review_ast.py` 也已备好。另有一条要补进未决问题：harness 把重跑时退出码不同算作没有复现，靠 `exit()` 正常路径死掉的引擎崩溃在 Windows 上约 0.5% 的子进程会以 0xC0000005 结束，可能被判成 `unstable_rerun`（方向是少判）。
+
 断线恢复只看三样：本节、`git log session/s05`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态与本节不一致时以 gw list 为准，先 `gw status <包号>`。
 
 ### 拆包清单（串行，同一时间只跑一包）
 
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | 首轮 23bac66 已审查：独立复跑 293 passed / 3 skipped，S01–S04 与本包三组通过，门槛外探测全部通过。第 1 轮返工进行中：`Phi.from_dict` 与 `Registry.load` 读入时校验；顺带把 S4 测试夹具的进程退出改成立即终止。意见在 `.orch/feedback/s05-vocab-r1.md` |
+| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | 第 1 轮返工已跑完（grok 退出码 0），**尚未审查、尚未合并**。接手后先做：`gw review s05-vocab --expect-passed 293`，读返工 diff（`git diff 23bac66..grok/s05-vocab`）与新增命令，在 worktree 里跑 `.orch/scratch/s5_review_vocab.py`，通过则写审查结论、`gw merge s05-vocab --into session/s05`、`gw cleanup s05-vocab`。返工意见在 `.orch/feedback/s05-vocab-r1.md` |
 | s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 未派发 |
 | s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 未派发 |
 
