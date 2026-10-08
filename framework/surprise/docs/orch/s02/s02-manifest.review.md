@@ -247,8 +247,7 @@ GATES: FAIL (1/2 passed)
 - 第 1 轮被提前终止是编排者的错：查看状态时用了 `gw status --wait --timeout 9`，以为是"最多等 9 分钟"，实际含义是"包运行超过 9 分钟就终止"。当时这个包跑了 11 分 30 秒，还在分析阶段，分支上没有提交、worktree 里没有未提交文件，没有丢东西。随后用 `gw resume` 在原会话里续跑，说明里写清了不是执行者的问题、要求不变。
 - 范围：2 个新文件都在允许路径内，禁区零改动；worktree 干净。第 5 节列出的 ref 变化（新增 `grok/s02-oracles`）是并行的另一个包，对得上编排者自己的派发；主检出区干净。
 - 复跑（第 3 节）：pytest 134 passed / 3 skipped（基线 126，新增 8 个）；`s01` 7/7；`s02` 的 contracts、ledger、manifest 三组通过。红旗"门槛未通过"是预期的：oracles、evaluate 两组属于并行的另一个包。
-- 读完了 `harness/manifest.py` 全部 266 行：`HASHED_PATHS` 与任务说明一致（新 harness 全部 `.py` 加十个旧模块）；`file_digest` 先把 CRLF 归一成 LF；总哈希按路径排序后对 `路径 摘要
-` 逐条累计；通配符之外的条目缺失时抛 `FileNotFoundError`；`verify_manifest` 给出 `changed` / `missing` / `added` / `hash mismatch` 四种问题，输出只有 ASCII；命令行三个子命令的退出码是 0 / 1 / 2。引擎版本用 `importlib.metadata` 取，没有 import 引擎；manifest 里没有记录任何环境变量。
+- 读完了 `harness/manifest.py` 全部 266 行：`HASHED_PATHS` 与任务说明一致（新 harness 全部 `.py` 加十个旧模块）；`file_digest` 先把 CRLF 归一成 LF；总哈希按路径排序后对 「路径、一个 NUL 字符、摘要、一个换行」这样的记录逐条累计；通配符之外的条目缺失时抛 `FileNotFoundError`；`verify_manifest` 给出 `changed` / `missing` / `added` / `hash mismatch` 四种问题，输出只有 ASCII；命令行三个子命令的退出码是 0 / 1 / 2。引擎版本用 `importlib.metadata` 取，没有 import 引擎；manifest 里没有记录任何环境变量。
 - 测试 8 个，全部在 `tmp_path` 里造假的文件树或写临时文件，不动受跟踪的文件；没有 skip / xfail。
 - 日志：16 条 shell 命令全部在 worktree 内，没有 pip，没有被 deny 规则拦下的调用；文件工具涉及的 32 个路径都在 worktree 内。没有 LLM 调用，diff 与日志里没有密钥。
 
