@@ -7,7 +7,7 @@
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
-| S3 | Phase 1b 其余三类 oracle | 未开始 | | |
+| S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 进行中（前置实测与门槛准备） | 起点 s02-done-r2 | 起点 pytest 149 passed, 3 skipped；GATES PASS 2/2 |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
@@ -20,7 +20,31 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 最近一次会话：S2 契约、账本、三类健全 oracle（2026-10-08）
+## 当前会话：S3（2026-10-09，进行中）
+
+编排者为 Codex；实现仍只交给 grok。主检出区分支 `session/s03`，起点 `s02-done-r2`（caec153）。起点独立复跑为 149 passed, 3 skipped 与 GATES PASS 2/2。S2 交接全文在下方保留。
+
+### 当前进度与恢复入口
+
+- 前置实测脚本在 `.orch/scratch/s3_probe.py`、`s3_probe2.py`、`s3_versions.py`，不入库。
+- SQLite 3.51.0 对 EXCEPT ALL / INTERSECT ALL 都报语法错误；DuckDB 1.5.5 与 DataFusion 54.0.0 都能执行并且不同。DF-B 的正确 bag 包含 NULL：`1, 2, NULL`（原 SQL 文件注释漏了 NULL，旧文件不改）。
+- 本机 PATH 没有 PostgreSQL 命令，pgserver 未安装。已下载 EDB PostgreSQL 16.15 Windows x64 二进制包到 `.orch/pg16/`（已被 .gitignore 的 .orch/ 规则覆盖）；解压正在运行，尚未启动服务器。恢复时先核实解压完整，不要重复解压或覆盖已初始化的数据目录。
+- F2 已实测：1.1.3 返回 `[(10,30),(20,30)]`，1.5.5 返回 `[(10,10),(20,20)]`；新版 plan variant 独立判 fail / wrong_result。S3 回归门槛选 F2，不用语义未指定的 F3。
+- 尚未写 S3 门槛、尚未派发工作包；先完成 PostgreSQL 初始化和三引擎实测，再固定门槛期望。
+- 恢复命令：`git status --short --branch`、`git log -8 --oneline`、`.venv/Scripts/python.exe tools/orch/grok_worker.py list`。
+
+### 预定拆包（门槛提交后才派发）
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
+|---|---|---|---|---|---|
+| s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 未派发 |
+| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | 未派发 |
+| s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | 未派发 |
+| s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | 未派发 |
+
+表内 harness、tests 路径分别相对 `framework/surprise/`、`framework/`。公共文件只归 registry 包；local 与 cross 并行，cross 合并后可派 version，同时最多两包运行。每包合并后立即更新本表并提交。最后集成门槛组为 matrix（七类 × 两引擎与账本）。
+
+## 最近一次已完成会话：S2 契约、账本、三类健全 oracle（2026-10-08）
 
 分支 `session/s02`，起点 tag `s01-done-r2`（7632c03），收尾合并回 main 并打 `s02-done`。
 
