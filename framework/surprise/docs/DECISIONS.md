@@ -89,3 +89,6 @@
 | 2026-10-09 | S3 | Cross-DBMS 的 DF-A/DF-B 用 DuckDB、DataFusion、PostgreSQL 三个独立引擎；SQLite 报错不能算投票。DF-B 正确 bag 包含 NULL，门槛为 1、2、NULL，旧 SQL 注释不改 | 派发前在本机三引擎实测；保持法定数，SQL 注释订正留 S12 |
 | 2026-10-09 | S3 | Version differential 回归门槛选 F2；1.1.3 为 (10,30)/(20,30)，1.5.5 为 (10,10)/(20,20)，新版 plan variant 独立见证 wrong_result。不选 F3 | 从 FAMILY_LEDGER_155 的版本梯挑选并先实测；F3 的 ASOF 并列语义未指定 |
 | 2026-10-09 | S3 | 先合并 registry 包，公共文件只归它；local 与 cross 并行，cross 合并后派 version，最多两包运行。七类共用显式 options；S2 原有拒绝 DataFusion/index_presence 的过时接口断言由 registry 包定向更新为新的支持行为，保留并强化未知 ID/未知引擎拒绝测试 | 用户指出公共文件冲突与引擎覆盖缺口；这是需求变化必需的测试更新，不删有效断言、不放宽错误判定 |
+| 2026-10-09 | S3 | s03-registry 合并：返工1轮，只修新增测试假定后续模块不存在的问题；使用monkeypatch模拟缺模块，保留导入失败与harness_error记账断言。独立pytest165 passed/3 skipped，S01 7/7、S02 5/5、S03 registry PASS。两轮约0.9707美元 | 编排者完整diff、返工diff、全部15条shell命令审查。没有改旧实现、门槛或conftest，没有新增skip/xfail；部分门槛因未派发包而红是预期 |
+| 2026-10-09 | S3 | registry懒导入后由模块自行register，避免并行包改公共文件；old_python为字符串路径；参照None表示默认、空dict表示无参照 | 共享接口实现选择，后三包brief已同步。不改变PLAN契约 |
+| 2026-10-09 | S3 | 首包合并时嵌套PowerShell提前展开ORCH_COMMIT_TRAILER，赋值失败但merge已成功；保留历史不重写。后续用.orch/scratch/s3_gw.py设置子进程环境并调用原grok_worker.py，尾注Co-authored-by: Codex <noreply@openai.com> | 编排者命令转义错误，未影响代码和审查。辅助脚本不入库，标准gw恢复命令仍可用 |
