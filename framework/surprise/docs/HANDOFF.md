@@ -7,7 +7,7 @@
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
-| S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 进行中（registry/cross已合并，local返工，version待派） | 起点 s02-done-r2 | cross独立188 passed/3 skipped；S01/S02与registry/cross PASS |
+| S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 进行中（registry/cross已合并，local最后返工、version已派） | 起点 s02-done-r2 | cross独立188 passed/3 skipped；S01/S02与registry/cross PASS |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
@@ -46,9 +46,9 @@
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
 | s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_contracts.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 已合并（1cae8cd）；返工1轮，只修新增测试的长期有效性。独立pytest165 passed/3 skipped，registry PASS，S01/S02 PASS |
-| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | run2返工运行中，run1独立pytest183 passed/3 skipped，待De Morgan/字面量比较修正；session 4e82a95a-e8c9-4af8-979d-009df034ae30，基线eba9c84 |
+| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | run3最后返工运行中，run2独立pytest185 passed/3 skipped，待E字符串边界修正；session 4e82a95a-e8c9-4af8-979d-009df034ae30，基线eba9c84 |
 | s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | 已合并a60a287，返工2轮；独立pytest188 passed/3 skipped，S01/S02与增强cross PASS，归档完成 |
-| s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | 未派发 |
+| s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | run1运行中，session 6e5c2b6d-8ea1-4f05-bf90-feebdfb71480，基线d81010c；local尚未合并 |
 
 表内 harness、tests 路径分别相对 `framework/surprise/`、`framework/`。公共文件只归 registry 包；local 与 cross 并行，cross 合并后可派 version，同时最多两包运行。每包合并后立即更新本表并提交。最后集成门槛组为 matrix（七类 × 两引擎与账本）。
 
