@@ -247,7 +247,7 @@ GATES: FAIL (1/2 passed)
   - `harness/constants.py`：`as_dict()` 自动收集大写常量。
   - `harness/ledger.py`：只有追加接口；写入用 `BEGIN IMMEDIATE … COMMIT`，`synchronous=FULL`，返回前已落盘；被拒绝的写入先回滚再抛 `LedgerError`；SQL 里拼接的只有固定的列名，值全部走参数绑定；记了 `SCHEMA_VERSION` 并在打开时核对。
 - 红旗"新增宽泛的异常捕获 2 处"都不吞失败：`ledger.py:72` 是构造失败时先关连接再原样抛出；`ledger.py:296` 是回滚之后包成 `LedgerError` 抛出。
-- 测试：两个文件共 31 个测试函数（参数化后 62 个用例），没有 skip / xfail，不是门槛的照抄。
+- 测试：两个文件共 25 个测试函数（参数化后 62 个用例），没有 skip / xfail，不是门槛的照抄。
 - 日志：14 条 shell 命令全部在 worktree 内，没有 pip，文件工具涉及的 43 个路径都在 worktree 内。没有 LLM 调用，diff 与日志里没有密钥。
 
 留意但不返工的三点：
