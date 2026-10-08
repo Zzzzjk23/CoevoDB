@@ -32,11 +32,19 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 首轮 30ba2a9 已审查（独立复跑 262 passed / 3 skipped，五组门槛通过）；第 1 轮返工进行中：ASOF 并列键漏判、子进程退出码 0 无结果应为 crash、`unattributed_crash` 的 tier。意见在 `.orch/feedback/s04-tier1-r1.md` |
+| s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 已合并 7b12a85（返工 1 轮），worktree 已清理。独立复跑 264 passed / 3 skipped；归档在 `docs/orch/s04/` |
 | s04-tier23 | 第 2 档归属测试接口；第 3 档最小化与完整画像（fix set 二分、plan diff、版本梯）；降级规则；接入 `certify` | harness/cve/**、harness/constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 已合并 | tier2 tier3 m1（连同前五组） | 未派发 |
 | （编排者） | 冻结：生成 `gates/s04_frozen.json`，哈希与常数校验 | gates/ | 两包都已合并 | freeze | 未做 |
 
 表内 harness、tests 路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s04 --only <组>`；全部九组通过才是 S04 通过。
+
+### 第一包合并后的现状（2026-10-09）
+
+- `surprise.harness.cve` 公开四个名字：`CVE_STEPS`、`behavior_shape`、`execute_isolated`、`certify`。内部文件：`isolate.py`（父进程侧，`subprocess` 加 JSON）、`worker.py`（子进程入口）、`session.py`（一次判定及其语句结果指纹）、`premise.py`（三条前提）、`certify.py`（第 0 步与第 1 档）。
+- `certify(..., hypothesis=..., diagnose=True)` 目前抛 `NotImplementedError`，等第二包。
+- `evaluate_final` 已可用于第 1 档；`INVALID_REASONS` 十七项；常数 `CVE_RERUN_ATTEMPTS = 5`、`CVE_RERUN_EXTENDED = 15`、`CVE_WALL_TIMEOUT_S = 120.0`；manifest 环境多了 `old_engines`、`references`、`packages`，哈希范围加了 `diagnosis/bisect.py`。
+- `gates/s03.py` 的旧解释器定位已改为经 git 公共目录（f556fba），S03 门槛现在在 worktree 里也能通过。
+- 已知的保守之处：ASOF 规则对 USING 写法和连接键比较以外的任何 ON 条件都按违反处理；重跑比较目标引擎的语句结果与标签的判定、身份，不含参照引擎各自的语句结果。
 
 ### 已定的入口边界（派发前定，细节在 DECISIONS）
 
