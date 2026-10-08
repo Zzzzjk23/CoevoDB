@@ -528,6 +528,8 @@ def check_premise() -> str:
 
     # ASOF: which right-hand row matches is unspecified when the right side has ties.
     violated("F3", "plan_variant", "unspecified_semantics")
+    # Found in review: an extra right-only condition in ON must not hide the tie on the join key.
+    violated("asof_extra_filter", "plan_variant", "unspecified_semantics")
     asof = load("asof_no_ties")
     label, _ = _inline(asof, [[10], [30]])
     cve = expect_label(label, "fail", "wrong_result", "ASOF without ties, scripted discrepancy")

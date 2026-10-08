@@ -32,7 +32,7 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 未派发 |
+| s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 首轮 30ba2a9 已审查（独立复跑 262 passed / 3 skipped，五组门槛通过）；第 1 轮返工进行中：ASOF 并列键漏判、子进程退出码 0 无结果应为 crash、`unattributed_crash` 的 tier。意见在 `.orch/feedback/s04-tier1-r1.md` |
 | s04-tier23 | 第 2 档归属测试接口；第 3 档最小化与完整画像（fix set 二分、plan diff、版本梯）；降级规则；接入 `certify` | harness/cve/**、harness/constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 已合并 | tier2 tier3 m1（连同前五组） | 未派发 |
 | （编排者） | 冻结：生成 `gates/s04_frozen.json`，哈希与常数校验 | gates/ | 两包都已合并 | freeze | 未做 |
 

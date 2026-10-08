@@ -115,6 +115,10 @@ CASES: dict[str, tuple[str, object, str | None, str | None]] = {
     "unordered_limit": ("duckdb", T_SETUP, "SELECT a FROM t LIMIT 2", None),
     "rewrite_base": ("duckdb", AB_SETUP, "SELECT a FROM t WHERE b > 1", None),
     "asof_no_ties": ("duckdb", ASOF_NO_TIES, ASOF_QUERY, None),
+    # F3 data (tied right-hand keys) with one more right-only condition inside ON.
+    "asof_extra_filter": ("duckdb", "recall:F3",
+                          "SELECT r.p FROM ev l ASOF JOIN px r ON l.id = r.id AND l.ts >= r.ts AND r.p > 0 "
+                          "ORDER BY l.id, l.ts, r.p", None),
     "date_df": ("datafusion", (), "SELECT DATE '2020-01-02' AS d", None),
     "date_duck": ("duckdb", ("CREATE TABLE t(d DATE)", "INSERT INTO t VALUES ('2020-01-02')"), "SELECT d FROM t", None),
     "delete_returning": ("duckdb", ("CREATE TABLE t(a INT, b INT)", "INSERT INTO t VALUES (1,10),(2,20),(3,30)"),
