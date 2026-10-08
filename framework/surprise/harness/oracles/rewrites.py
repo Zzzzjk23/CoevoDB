@@ -3,7 +3,9 @@
 Each rule returns None unless its syntactic premises hold. A rewrite is never
 accepted because two queries happened to agree on one database. The scanner
 tracks quotes, comments, and parentheses so a keyword inside a literal,
-comment, or nested query is not a clause boundary.
+comment, or nested query is not a clause boundary. An ``E'...'`` literal
+keeps going through a backslash escape and a doubled quote. A ``U&``
+literal is not a supported shape and declines the statement.
 
 Equivalence arguments (SQL three-valued logic):
 
@@ -126,7 +128,7 @@ def is_read_only_query(query: str) -> bool:
 
 
 def tokenize(sql: str) -> list[Tok]:
-    """Scan ``sql``. Quotes, comments, and dollar quotes hide their contents."""
+    """Scan ``sql``. Quotes, comments, dollar quotes, and ``E''`` escapes hide their contents."""
     tokens: list[Tok] = []
     depth = 0
     index = 0
@@ -143,14 +145,20 @@ def tokenize(sql: str) -> list[Tok]:
         if sql.startswith("/*", index):
             index = _skip_block_comment(sql, index)
             continue
-        if char == "'":
-            end = _skip_quoted(sql, index, "'")
-            tokens.append(Tok("string", sql[index:end], index, end, depth))
-            index = end
-            continue
-        if char == '"':
-            end = _skip_quoted(sql, index, '"')
-            tokens.append(Tok("quoted", sql[index:end], index, end, depth))
+        if char in "'\"":
+            if _glued_unicode_prefix(tokens, index):
+                raise ScanError("unsupported unicode literal")
+            if char == "'" and _glued_escape_prefix(tokens, index):
+                start = tokens[-1].start
+                prefix_depth = tokens[-1].depth
+                tokens.pop()
+                end = _skip_escape_string(sql, index)
+                tokens.append(Tok("string", sql[start:end], start, end, prefix_depth))
+                index = end
+                continue
+            end = _skip_quoted(sql, index, char)
+            kind = "string" if char == "'" else "quoted"
+            tokens.append(Tok(kind, sql[index:end], index, end, depth))
             index = end
             continue
         if char == "$":
@@ -224,6 +232,32 @@ def _skip_block_comment(sql: str, index: int) -> int:
     return index
 
 
+def _glued_escape_prefix(tokens: list[Tok], index: int) -> bool:
+    """True when ``E`` or ``e`` is the token immediately before a quote."""
+    if not tokens:
+        return False
+    prev = tokens[-1]
+    return (
+        prev.end == index
+        and prev.kind == "ident"
+        and prev.text.upper() == "E"
+    )
+
+
+def _glued_unicode_prefix(tokens: list[Tok], index: int) -> bool:
+    """True when ``U&`` is glued to the following quote. That form is declined."""
+    if len(tokens) < 2:
+        return False
+    amp, ident = tokens[-1], tokens[-2]
+    return (
+        amp.text == "&"
+        and amp.end == index
+        and amp.start == ident.end
+        and ident.kind == "ident"
+        and ident.text.upper() == "U"
+    )
+
+
 def _skip_quoted(sql: str, index: int, quote: str) -> int:
     """Skip a quote-delimited literal. A doubled quote is an escape."""
     index += 1
@@ -236,6 +270,31 @@ def _skip_quoted(sql: str, index: int, quote: str) -> int:
             index += 2
             continue
         return index + 1
+    raise ScanError("unclosed quote")
+
+
+def _skip_escape_string(sql: str, index: int) -> int:
+    """Skip an ``E'...'`` literal, starting at the opening quote.
+
+    A backslash escapes the next character, including a quote or another
+    backslash. A doubled quote is also one embedded quote. Either form keeps
+    the following text inside the literal.
+    """
+    index += 1
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        if char == "\\":
+            if index + 1 >= length:
+                raise ScanError("unclosed quote")
+            index += 2
+            continue
+        if char == "'":
+            if index + 1 < length and sql[index + 1] == "'":
+                index += 2
+                continue
+            return index + 1
+        index += 1
     raise ScanError("unclosed quote")
 
 

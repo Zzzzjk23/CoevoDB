@@ -503,6 +503,123 @@ def test_paired_literals_quotes_and_comments_are_not_rewritten_text() -> None:
     assert "select  COALESCE(s, 'ABC')  from t ;" not in handler.runs
 
 
+def test_escape_string_hides_case_text_and_keeps_real_case() -> None:
+    setup = ("CREATE TABLE t(b INT)", "INSERT INTO t VALUES (1),(NULL)")
+    escaped = "SELECT E'abc\\' CASE WHEN b IS NOT NULL THEN b ELSE 0 END \\'xyz' FROM t"
+    expected = "abc' CASE WHEN b IS NOT NULL THEN b ELSE 0 END 'xyz"
+    naive = "SELECT E'abc\\' COALESCE(b, 0) \\'xyz' FROM t"
+    assert apply_rule(escaped, "case_to_coalesce") is None
+    assert apply_rule(
+        "SELECT e'abc\\' CASE WHEN b IS NOT NULL THEN b ELSE 0 END \\'xyz' FROM t",
+        "case_to_coalesce",
+    ) is None
+    # A backslash that escapes another backslash does not swallow the next quote.
+    closed = "SELECT E'abc\\\\', CASE WHEN b IS NOT NULL THEN b ELSE 0 END FROM t"
+    closed_rw = "SELECT E'abc\\\\', COALESCE(b, 0) FROM t"
+    assert apply_rule(closed, "case_to_coalesce") == closed_rw
+    doubled = "SELECT 'before'' CASE WHEN b IS NOT NULL THEN b ELSE 0 END ''after' FROM t"
+    escape_doubled = "SELECT E'before'' CASE WHEN b IS NOT NULL THEN b ELSE 0 END ''after' FROM t"
+    dollar = "SELECT $$CASE WHEN b IS NOT NULL THEN b ELSE 0 END$$ FROM t"
+    dollar_ident = 'SELECT $tag$"CASE" WHEN$tag$ FROM t'
+    quoted = 'SELECT "a""CASE WHEN b IS NOT NULL THEN b ELSE 0 END" FROM t'
+    for hidden in (doubled, escape_doubled, dollar, dollar_ident, quoted):
+        assert apply_rule(hidden, "case_to_coalesce") is None
+    assert apply_rule(
+        "SELECT U&'abc\\' CASE WHEN b IS NOT NULL THEN b ELSE 0 END \\'xyz' FROM t",
+        "case_to_coalesce",
+    ) is None
+    # U& is not a supported literal, so a real CASE beside it is declined too.
+    assert apply_rule(
+        "SELECT U&'A', CASE WHEN b IS NOT NULL THEN b ELSE 0 END FROM t",
+        "case_to_coalesce",
+    ) is None
+    sibling = (
+        "SELECT E'abc\\' CASE WHEN b IS NOT NULL THEN b ELSE 0 END \\'xyz', "
+        "CASE WHEN b IS NOT NULL THEN b ELSE 0 END FROM t"
+    )
+    sibling_rw = (
+        "SELECT E'abc\\' CASE WHEN b IS NOT NULL THEN b ELSE 0 END \\'xyz', "
+        "COALESCE(b, 0) FROM t"
+    )
+    assert apply_rule(sibling, "case_to_coalesce") == sibling_rw
+    kept = 'SELECT "b", CASE WHEN b IS NOT NULL THEN b ELSE 0 END FROM t'
+    kept_rw = 'SELECT "b", COALESCE(b, 0) FROM t'
+    assert apply_rule(kept, "case_to_coalesce") == kept_rw
+
+    for engine_name, factory in (("duckdb", DuckDBRunner), ("datafusion", DataFusionRunner)):
+        runner = factory()
+        try:
+            assert all(error is None for _statement, error in runner.setup(setup))
+            original = runner.run(escaped)
+            assert original.ok, original.error
+            assert _bag(original.rows) == _bag([[expected], [expected]])
+            changed = runner.run(naive)
+            assert changed.ok, changed.error
+            assert _bag(changed.rows) != _bag(original.rows)
+            assert _bag(runner.run(doubled).rows) == _bag(
+                [["before' CASE WHEN b IS NOT NULL THEN b ELSE 0 END 'after"]] * 2
+            )
+            assert _bag(runner.run(dollar).rows) == _bag(
+                [["CASE WHEN b IS NOT NULL THEN b ELSE 0 END"]] * 2
+            )
+            assert _bag(runner.run(dollar_ident).rows) == _bag([['"CASE" WHEN'], ['"CASE" WHEN']])
+            assert _bag(runner.run(sibling).rows) == _bag(runner.run(sibling_rw).rows)
+            assert _bag(runner.run(sibling).rows) == _bag([[expected, 1], [expected, 0]])
+            assert _bag(runner.run(closed).rows) == _bag([["abc\\", 1], ["abc\\", 0]])
+            assert _bag(runner.run(kept).rows) == _bag(runner.run(kept_rw).rows)
+        finally:
+            runner.close()
+        opened: list[_Scripted] = []
+        label = judge(
+            _case(escaped, setup, engine=engine_name),
+            "equivalent_query", rewrite_rule="case_to_coalesce",
+            runner_factory=_scripted(
+                opened, lambda _sql: QueryResult(rows=[]), lambda _sql, _n: QueryResult(rows=[[9]]),
+            ),
+        )
+        _assert_ternary(label, "invalid", "not_applicable")
+        assert label.detail["applicability"] == "rule_form"
+        assert all(one.runs == [] for one in opened)
+        real = judge(
+            _case(escaped, setup, engine=engine_name),
+            "equivalent_query", rewrite_rule="case_to_coalesce",
+        )
+        _assert_ternary(real, "invalid", "not_applicable")
+
+    fallback = "SELECT CASE WHEN s IS NOT NULL THEN s ELSE E'Ab C' END FROM t"
+    text_setup = ("CREATE TABLE t(s VARCHAR)", "INSERT INTO t VALUES (NULL), ('ZZ')")
+    certified = apply_rule(fallback, "case_to_coalesce")
+    assert certified == "SELECT COALESCE(s, E'Ab C') FROM t"
+    opened_pairs: list[_Scripted] = []
+
+    def factory():
+        runner = _Scripted(lambda _sql: QueryResult(rows=[]), lambda _sql, _n: QueryResult(rows=[[9]]))
+        opened_pairs.append(runner)
+        return runner
+
+    for paired in (
+        certified.replace("E'Ab C'", "E'ab c'"),
+        certified.replace("E'Ab C'", "E'Ab  C'"),
+    ):
+        opened_pairs.clear()
+        rejected = judge(
+            _case(fallback, text_setup), "equivalent_query", rewrite_rule="case_to_coalesce",
+            paired_query=paired, runner_factory=factory,
+        )
+        _assert_ternary(rejected, "invalid", "untrusted_rewrite")
+        assert all(one.runs == [] for one in opened_pairs)
+    opened_real: list[_Trace] = []
+    trusted = judge(
+        _case(fallback, text_setup), "equivalent_query", rewrite_rule="case_to_coalesce",
+        paired_query="select  COALESCE(s, E'Ab C')  from t",
+        runner_factory=_traced(opened_real),
+    )
+    _assert_ternary(trusted, "pass")
+    handler = next(runner for runner in opened_real if runner.runs)
+    assert handler.runs[1] == certified
+    assert "E'ab c'" not in handler.runs[1]
+
+
 def test_equivalence_none_is_split_from_the_real_execution() -> None:
     query = "SELECT a FROM t WHERE b > 1"
     opened: list[_Scripted] = []
