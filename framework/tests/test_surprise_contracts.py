@@ -139,6 +139,10 @@ def test_registries_match_the_plan():
         "value_dependent_error",
         "timeout",
         "harness_error",
+        "untrusted_rewrite",
+        "direction_unknown",
+        "insufficient_engines",
+        "non_unique_outlier",
     )
     assert EDIT_DECISIONS == ("pending", "accepted", "rolled_back")
 

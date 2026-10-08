@@ -30,7 +30,7 @@ ORACLE_IDS = (
 # wrong_result: the two forms disagree; error_mismatch: one form errors (and the error is not value-dependent) while the other succeeds; crash: an internal engine error.
 FAIL_KINDS = ("wrong_result", "error_mismatch", "crash")
 
-# setup_error: a setup or insert statement failed; nondeterministic: the result depends on unspecified order or a random function; not_applicable: the oracle's premises do not hold; query_error: the query or predicate itself is broken; value_dependent_error: a runtime error (overflow, cast failure, and the like) whose occurrence depends on evaluation order; timeout: timed out, so there is no conclusion; harness_error: the harness itself raised while judging.
+# setup_error: a setup or insert statement failed; nondeterministic: the result depends on unspecified order or a random function; not_applicable: the oracle's premises do not hold; query_error: the query or predicate itself is broken; value_dependent_error: a runtime error (overflow, cast failure, and the like) whose occurrence depends on evaluation order; timeout: timed out, so there is no conclusion; harness_error: the harness itself raised while judging; untrusted_rewrite: the rewrite is not from the frozen rule library (and is not a verified LLM rewrite); direction_unknown: a version mismatch with no independent evidence of which side is the regression; insufficient_engines: cross-DBMS quorum smaller than three independent engines; non_unique_outlier: the target is not the unique dissenting engine.
 INVALID_REASONS = (
     "setup_error",
     "nondeterministic",
@@ -39,6 +39,10 @@ INVALID_REASONS = (
     "value_dependent_error",
     "timeout",
     "harness_error",
+    "untrusted_rewrite",
+    "direction_unknown",
+    "insufficient_engines",
+    "non_unique_outlier",
 )
 
 

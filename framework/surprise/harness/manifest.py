@@ -27,6 +27,9 @@ HASHED_PATHS = (
     "oracles/tlp.py", "oracles/tlp_groupby.py", "oracles/norec.py", "oracles/plan_variant.py",
     "oracles/errors.py", "oracles/determinism.py", "oracles/normalize.py", "oracles/models.py",
     "oracles/db_runner.py", "targets/duckdb_runner.py",
+    "targets/datafusion_runner.py", "targets/sqlite_runner.py",
+    "oracles/equivalence.py", "oracles/index_variant.py", "oracles/cross_engine.py",
+    "oracles/differential.py", "oracles/_remote_exec.py", "scripts/cross_engine.py",
 )
 
 # framework/ is the directory that contains surprise/ and the legacy oracles/.
