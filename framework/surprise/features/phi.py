@@ -91,12 +91,12 @@ def _require_layers(layers: Mapping[str, str]) -> dict[str, str]:
     if not isinstance(layers, Mapping) or set(layers) != set(LAYERS):
         raise ValueError("layers keys must be exactly ast, plan, data")
     ast_status = layers["ast"]
-    if ast_status not in _AST_STATUS:
+    if not isinstance(ast_status, str) or ast_status not in _AST_STATUS:
         raise ValueError(f"ast layer status must be ok or fallback, got {ast_status!r}")
     out = {"ast": ast_status}
     for name in ("plan", "data"):
         value = layers[name]
-        if value not in _PLAN_DATA_STATUS:
+        if not isinstance(value, str) or value not in _PLAN_DATA_STATUS:
             raise ValueError(f"{name} layer status must be ok, unavailable or skipped, got {value!r}")
         out[name] = value
     return out
