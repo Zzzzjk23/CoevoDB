@@ -179,3 +179,61 @@ def test_unstorable_arguments_are_rejected_before_execution(tmp_path) -> None:
         assert ledger.count() == 0
     finally:
         ledger.close()
+
+
+def test_evaluate_records_datafusion_and_forwards_options(tmp_path) -> None:
+    ledger = Ledger(tmp_path / "ledger.sqlite")
+    try:
+        ledger.start_run("run-1", {})
+        case = _case(engine="datafusion")
+        record = evaluate(
+            case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
+            rewrite_rule=None, paired_query=None, old_python=None, reference_factories=None,
+        )
+        assert ledger.count(run_id="run-1") == 1
+        assert record.seq == 1
+        assert record.case == case
+        assert record.label.to_dict() == judge(case, "tlp").to_dict()
+        assert record.label.y == "pass"
+
+        skipped = evaluate(
+            _case(predicate=None, engine="datafusion"), "norec",
+            ledger=ledger, run_id="run-1", purpose="explore",
+        )
+        assert skipped.seq == 2
+        assert skipped.label.invalid_reason == "not_applicable"
+        assert ledger.count(run_id="run-1") == 2
+    finally:
+        ledger.close()
+
+
+def test_illegal_options_are_rejected_before_execution(tmp_path) -> None:
+    ledger = Ledger(tmp_path / "ledger.sqlite")
+    try:
+        ledger.start_run("run-1", {})
+        calls = {"n": 0}
+
+        def factory():
+            calls["n"] += 1
+            return DuckDBRunner()
+
+        case = _case()
+        with pytest.raises(ValueError):
+            evaluate(
+                case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
+                runner_factory=factory, reference_factories={"duckdb_old": DuckDBRunner},
+            )
+        with pytest.raises(ValueError):
+            evaluate(
+                case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
+                runner_factory=factory, reference_factories={"duckdb": DuckDBRunner},
+            )
+        with pytest.raises(ValueError):
+            evaluate(
+                case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
+                runner_factory=factory, rewrite_rule=1,
+            )
+        assert calls["n"] == 0
+        assert ledger.count() == 0
+    finally:
+        ledger.close()
