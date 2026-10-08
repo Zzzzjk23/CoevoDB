@@ -1,7 +1,8 @@
 """CVE labelling: isolated execution, tier-1 reruns, and the final label.
 
 The public names are the step list, the behavior-shape helper, the fresh-process
-executor, and ``certify``. Tier 2 and tier 3 raise ``NotImplementedError``.
+executor, and ``certify``. ``certify`` runs tier 2 when a hypothesis is given
+and tier 3 when diagnosis is requested or the hypothesis does not hold.
 """
 
 from __future__ import annotations

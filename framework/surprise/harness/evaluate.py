@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from surprise.harness.constants import QUERY_TIMEOUT_S
+from surprise.harness.constants import CVE_ATTRIBUTION_WALL_TIMEOUT_S, QUERY_TIMEOUT_S
 from surprise.harness.contracts import ExperimentRecord, IdentityEvidence, Label, SqlCase
 from surprise.harness.cve import certify
+from surprise.harness.cve.certify import prepare_hypothesis
 from surprise.harness.cve.isolate import ensure_importable
 from surprise.harness.ledger import Ledger
 from surprise.harness.oracles import judge
@@ -118,7 +119,9 @@ def evaluate_final(
     ``run_id`` that was never started, or an illegal request raises before
     anything executes and leaves the ledger unchanged. Other exceptions from
     ``certify`` are stored as ``invalid`` / ``harness_error`` with a complete
-    ``cve`` object. ``NotImplementedError`` (tier 2 and 3) propagates.
+    ``cve`` object. An unusable ``hypothesis`` raises ``ValueError`` before a
+    record is written. ``hypothesis`` and ``diagnose`` are passed through to
+    ``certify``.
     """
     if isolation not in ("process", "inline"):
         raise ValueError(f"isolation: must be 'process' or 'inline', got {isolation!r}")
@@ -129,14 +132,13 @@ def evaluate_final(
         reference_factories=reference_factories,
     )
     validate_request(case, oracle, options)
+    factory_ref = None
     if isolation == "process":
         if runner_factory is not None:
-            ensure_importable(runner_factory, "runner_factory")
+            factory_ref = ensure_importable(runner_factory, "runner_factory")
         if reference_factories is not None:
             for engine, factory in reference_factories.items():
                 ensure_importable(factory, f"reference_factories[{engine!r}]")
-    if hypothesis is not None or diagnose:
-        raise NotImplementedError("hypothesis and diagnose are implemented in a later package")
 
     seq = ledger.next_seq(run_id)
     ExperimentRecord(
@@ -153,6 +155,16 @@ def evaluate_final(
         p_t=p_t,
         surprise=None,
     )
+    if hypothesis is not None:
+        # Before the try, so a bad hypothesis is not stored as harness_error.
+        prepare_hypothesis(
+            hypothesis,
+            case,
+            isolation=isolation,
+            runner_factory=runner_factory,
+            wall_timeout_s=CVE_ATTRIBUTION_WALL_TIMEOUT_S,
+            factory_ref=factory_ref,
+        )
 
     try:
         label = certify(
@@ -169,8 +181,6 @@ def evaluate_final(
             old_python=old_python,
             reference_factories=reference_factories,
         )
-    except NotImplementedError:
-        raise
     except Exception as exc:
         label = _harness_error_label(oracle, isolation, exc)
 

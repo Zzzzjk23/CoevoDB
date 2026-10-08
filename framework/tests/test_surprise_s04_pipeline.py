@@ -761,10 +761,10 @@ def test_rejected_requests_do_not_execute() -> None:
         certify(case, "tlp", isolation="thread", runner_factory=never)
     with pytest.raises(ValueError):
         certify(case, "tlp", runner_factory=never)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError):
         certify(case, "tlp", hypothesis={"id": "later"}, isolation="inline", runner_factory=never)
-    with pytest.raises(NotImplementedError):
-        certify(case, "tlp", diagnose=True, isolation="inline", runner_factory=never)
+    with pytest.raises(ValueError):
+        certify(case, "tlp", hypothesis="later", isolation="inline", runner_factory=never)
     assert opened == []
 
 
@@ -808,17 +808,25 @@ def test_evaluate_final_ledger(tmp_path: Any) -> None:
                 case, "tlp", ledger=ledger, run_id="never-started", purpose="explore",
                 isolation="inline",
             )
-        with pytest.raises(NotImplementedError):
-            evaluate_final(
-                case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
-                diagnose=True, isolation="inline",
-            )
         with pytest.raises(ValueError):
             evaluate_final(
                 case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
                 runner_factory=explode, isolation="process",
             )
+        with pytest.raises(ValueError):
+            evaluate_final(
+                case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
+                hypothesis={"hypothesis_id": "", "engine": "duckdb", "interventions": []},
+                isolation="inline",
+            )
         assert ledger.count() == before
+        diagnosed = evaluate_final(
+            case, "tlp", ledger=ledger, run_id="run-1", purpose="explore",
+            diagnose=True, isolation="inline",
+        )
+        assert ledger.count(run_id="run-1") == 3
+        assert diagnosed.label.y == "pass" and diagnosed.label.cve["tier"] == 0
+        _skipped(diagnosed.label.cve, "not_a_candidate")
     finally:
         ledger.close()
 

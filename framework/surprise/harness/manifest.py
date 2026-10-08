@@ -33,6 +33,7 @@ HASHED_PATHS = (
     "oracles/equivalence.py", "oracles/index_variant.py", "oracles/cross_engine.py",
     "oracles/differential.py", "oracles/_remote_exec.py", "scripts/cross_engine.py",
     "diagnosis/bisect.py",
+    "agents/bug_fixer.py",
 )
 
 # Old interpreters live beside the git common directory, same as version differential.
@@ -40,7 +41,7 @@ _OLD_VENVS = {
     "duckdb": "duckdb-1.1.3",
     "datafusion": "datafusion-50.0.0",
 }
-_PACKAGE_NAMES = ("duckdb", "datafusion", "pyarrow", "psycopg2-binary")
+_PACKAGE_NAMES = ("duckdb", "datafusion", "pyarrow", "psycopg2-binary", "sqlglot")
 # Same default as harness.oracles.pg_reference. A connection failure stays None.
 _DEFAULT_PG_DSN = (
     "host=127.0.0.1 port=55432 user=coevo dbname=postgres connect_timeout=5"
