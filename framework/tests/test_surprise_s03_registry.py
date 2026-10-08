@@ -67,7 +67,7 @@ def test_implemented_is_the_seven_plan_ids() -> None:
     assert SOUND_ORACLE_IDS == ("tlp", "norec", "plan_variant")
     assert TARGET_ENGINES == ("duckdb", "datafusion")
     assert REFERENCE_ENGINES == ("duckdb", "datafusion", "sqlite", "postgres")
-    assert INVALID_REASONS[-4:] == (
+    assert INVALID_REASONS[7:11] == (
         "untrusted_rewrite",
         "direction_unknown",
         "insufficient_engines",

@@ -286,15 +286,17 @@ def test_build_manifest_on_the_real_tree() -> None:
     assert before <= created <= after
     assert manifest["harness"] == harness_hash()
     assert manifest["constants"] == as_dict()
-    assert manifest["environment"] == {
-        "python": platform.python_version(),
-        "platform": sys.platform,
-        "engines": {
-            "duckdb": importlib.metadata.version("duckdb"),
-            "datafusion": importlib.metadata.version("datafusion"),
-            "sqlite": sqlite3.sqlite_version,
-        },
+    environment = manifest["environment"]
+    assert environment["python"] == platform.python_version()
+    assert environment["platform"] == sys.platform
+    assert environment["engines"] == {
+        "duckdb": importlib.metadata.version("duckdb"),
+        "datafusion": importlib.metadata.version("datafusion"),
+        "sqlite": sqlite3.sqlite_version,
     }
+    assert set(environment["old_engines"]) == {"duckdb", "datafusion"}
+    assert set(environment["references"]) == {"postgres"}
+    assert isinstance(environment["packages"], dict)
     proc = subprocess.run(
         ["git", "-C", str(FRAMEWORK), "rev-parse", "HEAD"],
         capture_output=True,
