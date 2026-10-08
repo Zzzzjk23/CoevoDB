@@ -36,6 +36,7 @@ _MUTATING = re.compile(
     r"COMMIT|ROLLBACK|ABORT|BEGIN|SAVEPOINT|RELEASE)\b",
     re.IGNORECASE,
 )
+_INTO = re.compile(r"\bINTO\b", re.IGNORECASE)
 _CONNECTION_LOST = (
     "server closed the connection",
     "terminating connection",
@@ -46,77 +47,252 @@ _CONNECTION_LOST = (
 )
 
 
-def _scrub_sql(statement: str) -> str:
-    """Drop comments and string literals so keyword checks see the statement shape."""
-    out: list[str] = []
-    index = 0
-    length = len(statement)
+def _ident_start(char: str) -> bool:
+    return char.isalpha() or char == "_" or ord(char) > 127
+
+
+def _ident_cont(char: str) -> bool:
+    return _ident_start(char) or char.isdigit()
+
+
+def _skip_trivia(sql: str, index: int) -> int | None:
+    """Skip whitespace, line comments, and nested block comments. None if unclosed."""
+    length = len(sql)
     while index < length:
-        char = statement[index]
-        nxt = statement[index + 1] if index + 1 < length else ""
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char.isspace():
+            index += 1
+            continue
         if char == "-" and nxt == "-":
             index += 2
-            while index < length and statement[index] != "\n":
+            while index < length and sql[index] != "\n":
                 index += 1
-            out.append(" ")
             continue
         if char == "/" and nxt == "*":
             index += 2
-            while index + 1 < length and not (
-                statement[index] == "*" and statement[index + 1] == "/"
-            ):
+            depth = 1
+            while index < length and depth:
+                here = sql[index]
+                ahead = sql[index + 1] if index + 1 < length else ""
+                if here == "/" and ahead == "*":
+                    depth += 1
+                    index += 2
+                    continue
+                if here == "*" and ahead == "/":
+                    depth -= 1
+                    index += 2
+                    continue
                 index += 1
-            index = min(length, index + 2)
-            out.append(" ")
+            if depth:
+                return None
             continue
-        if char == "'":
+        break
+    return index
+
+
+def _skip_quoted(sql: str, index: int, quote: str, *, escaped: bool) -> int | None:
+    """Skip a '...', E'...', or \"...\" span. ``index`` is on the opening quote."""
+    length = len(sql)
+    index += 1
+    while index < length:
+        char = sql[index]
+        if escaped and char == "\\":
+            index += 2
+            continue
+        if char == quote:
+            if index + 1 < length and sql[index + 1] == quote:
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return None
+
+
+def _try_skip_dollar(sql: str, index: int) -> int | None:
+    """Skip a dollar-quoted span, or return ``index`` if this ``$`` is not a quote.
+
+    None means the quote was opened and never closed. Dollar quotes are only
+    recognised at a token boundary so ``foo$bar$baz`` stays one identifier.
+    """
+    if index > 0 and _ident_cont(sql[index - 1]):
+        return index
+    length = len(sql)
+    cursor = index + 1
+    if cursor < length and sql[cursor] == "$":
+        tag = ""
+        cursor += 1
+    elif cursor < length and _ident_start(sql[cursor]):
+        start = cursor
+        cursor += 1
+        while cursor < length and _ident_cont(sql[cursor]):
+            cursor += 1
+        if cursor >= length or sql[cursor] != "$":
+            return index
+        tag = sql[start:cursor]
+        cursor += 1
+    else:
+        return index
+    close = "$" + tag + "$"
+    found = sql.find(close, cursor)
+    if found < 0:
+        return None
+    return found + len(close)
+
+
+def _prefixed_quote(sql: str, index: int) -> tuple[int, str, bool] | None:
+    """Return (quote_index, quote_char, escaped) for E'...' / U&'...' / U&\"...\"."""
+    length = len(sql)
+    if index > 0 and _ident_cont(sql[index - 1]):
+        return None
+    if index + 1 < length and sql[index] in "Ee" and sql[index + 1] == "'":
+        return (index + 1, "'", True)
+    if (
+        index + 2 < length
+        and sql[index] in "Uu"
+        and sql[index + 1] == "&"
+        and sql[index + 2] in "'\""
+    ):
+        return (index + 2, sql[index + 2], True)
+    return None
+
+
+def _skip_atom(sql: str, index: int) -> int | None:
+    """Advance over trivia, a quoted span, or one character. None if unclosed."""
+    skipped = _skip_trivia(sql, index)
+    if skipped is None:
+        return None
+    if skipped > index:
+        return skipped
+    length = len(sql)
+    if index >= length:
+        return index
+    prefixed = _prefixed_quote(sql, index)
+    if prefixed is not None:
+        quote_at, quote, escaped = prefixed
+        return _skip_quoted(sql, quote_at, quote, escaped=escaped)
+    char = sql[index]
+    if char == "'":
+        return _skip_quoted(sql, index, "'", escaped=False)
+    if char == '"':
+        return _skip_quoted(sql, index, '"', escaped=False)
+    if char == "$":
+        end = _try_skip_dollar(sql, index)
+        if end is None:
+            return None
+        if end > index:
+            return end
+    return index + 1
+
+
+def _split_statements(sql: str) -> list[str] | None:
+    """Top-level statements. None if the text cannot be scanned conservatively.
+
+    One trailing semicolon is allowed. A second executable statement, an empty
+    statement, or an unclosed quote/comment is rejected rather than inspected
+    only up to the first semicolon.
+    """
+    length = len(sql)
+    index = 0
+    parts: list[str] = []
+    while True:
+        index = _skip_trivia(sql, index)
+        if index is None:
+            return None
+        if index >= length:
+            return parts
+        if sql[index] == ";":
+            return None
+        start = index
+        while index < length and sql[index] != ";":
+            nxt = _skip_atom(sql, index)
+            if nxt is None:
+                return None
+            if nxt == index:
+                break
+            index = nxt
+        parts.append(sql[start:index])
+        if index >= length:
+            return parts
+        if sql[index] != ";":
+            return None
+        index += 1
+
+
+def _code_mask(sql: str) -> str | None:
+    """Replace comments and quoted spans with spaces so keyword searches see code."""
+    out: list[str] = []
+    index = 0
+    length = len(sql)
+    while index < length:
+        skipped = _skip_trivia(sql, index)
+        if skipped is None:
+            return None
+        if skipped > index:
+            out.append(" " * (skipped - index))
+            index = skipped
+            continue
+        if sql[index] == ";":
+            out.append(";")
             index += 1
-            while index < length:
-                if statement[index] == "'":
-                    if index + 1 < length and statement[index + 1] == "'":
-                        index += 2
-                        continue
-                    index += 1
-                    break
-                index += 1
-            out.append(" '' ")
             continue
-        out.append(char)
+        nxt = _skip_atom(sql, index)
+        if nxt is None:
+            return None
+        if nxt > index + 1 or (nxt == index + 1 and sql[index] in "'\"$"):
+            out.append(" " * (nxt - index))
+            index = nxt
+            continue
+        out.append(sql[index])
         index += 1
     return "".join(out)
 
 
-def _statement_text(statement: str) -> str:
-    text = _scrub_sql(statement).strip()
-    while text.endswith(";"):
-        text = text[:-1].strip()
-    return text
-
-
 def _leading_keyword(statement: str) -> str:
-    match = re.match(r"([A-Za-z_][A-Za-z0-9_]*)", _statement_text(statement))
-    if match is None:
+    index = _skip_trivia(statement, 0)
+    if index is None or index >= len(statement) or not _ident_start(statement[index]):
         return ""
-    return match.group(1).upper()
+    end = index + 1
+    while end < len(statement) and _ident_cont(statement[end]):
+        end += 1
+    return statement[index:end].upper()
 
 
 def is_readonly_query(statement: str) -> bool:
-    """True for a single read-only SELECT shape.
+    """True for one read-only SELECT-shaped statement and nothing after it.
 
-    ``SELECT INTO``, data-modifying CTEs, and transaction control are rejected.
-    String literals are ignored, so a quoted word cannot change the decision.
+    A second executable statement is rejected before any runner sees the text.
+    Quotes, nested comments, and dollar quotes are not statement separators.
+    Unscanable input is rejected.
     """
-    text = _statement_text(statement)
-    if not text:
+    parts = _split_statements(statement)
+    if parts is None or len(parts) != 1:
         return False
-    head = _leading_keyword(text)
+    code = _code_mask(parts[0])
+    if code is None:
+        return False
+    head = _leading_keyword(parts[0])
     if head not in _ALLOWED_HEADS:
         return False
-    if _MUTATING.search(text):
+    if _MUTATING.search(code):
         return False
-    if head == "SELECT" and re.search(r"\bINTO\b", text, re.IGNORECASE):
+    if head == "SELECT" and _INTO.search(code):
         return False
     return True
+
+
+def _setup_rejection(statement: str) -> str | None:
+    """Why this setup element must not reach the backend, or None to execute it."""
+    parts = _split_statements(statement)
+    if parts is None:
+        return "NotApplicable: statement could not be scanned"
+    if not parts:
+        return None
+    if len(parts) != 1:
+        return "NotApplicable: multiple statements"
+    if _leading_keyword(parts[0]) in _TX_CONTROL:
+        return "NotApplicable: transaction control is rejected"
+    return None
 
 
 def _resolve_dsn(dsn: str | None) -> str:
@@ -150,13 +326,14 @@ class PostgresReferenceRunner:
         self._reset()
         outcomes: list[tuple[str, str | None]] = []
         for statement in schema_sqls:
-            text = statement.strip().rstrip(";")
-            if not text:
+            rejection = _setup_rejection(statement)
+            if rejection is not None:
+                outcomes.append((statement, rejection))
                 continue
-            if _leading_keyword(text) in _TX_CONTROL:
-                outcomes.append((statement, "NotApplicable: transaction control is rejected"))
+            parts = _split_statements(statement)
+            if not parts:
                 continue
-            result = self._execute(text, timeout_ms=_SETUP_TIMEOUT_MS, fetch=False)
+            result = self._execute(parts[0], timeout_ms=_SETUP_TIMEOUT_MS, fetch=False)
             outcomes.append((statement, result.error))
             if self._schema is None:
                 break

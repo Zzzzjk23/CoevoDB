@@ -116,6 +116,14 @@ def test_readonly_query_rejects_mutation_and_ignores_literals() -> None:
     assert is_readonly_query("WITH x AS (SELECT 1) SELECT * FROM x")
     assert is_readonly_query("VALUES (1)")
     assert is_readonly_query("TABLE t")
+    assert is_readonly_query("SELECT 1;")
+    assert is_readonly_query("SELECT '1;2'")
+    assert is_readonly_query('SELECT 1 AS "a;b"')
+    assert is_readonly_query("SELECT 1 /* ; */")
+    assert is_readonly_query("SELECT 1 /* /* ; */ */")
+    assert is_readonly_query("SELECT 1 -- ;\n")
+    assert is_readonly_query("SELECT $q$; COMMIT$q$")
+    assert is_readonly_query("SELECT $$; END$$")
     assert not is_readonly_query("INSERT INTO t VALUES (1)")
     assert not is_readonly_query("UPDATE t SET v = 1")
     assert not is_readonly_query("DELETE FROM t")
@@ -125,6 +133,65 @@ def test_readonly_query_rejects_mutation_and_ignores_literals() -> None:
     assert not is_readonly_query("COMMIT")
     assert not is_readonly_query("EXPLAIN SELECT 1")
     assert not is_readonly_query("SHOW server_version")
+    assert not is_readonly_query("SELECT 1; SELECT 2")
+    assert not is_readonly_query("SELECT 1; SET ROLE coevo")
+    assert not is_readonly_query("SELECT 1; COMMIT")
+    assert not is_readonly_query("SELECT 1;;")
+    assert not is_readonly_query("SELECT 1 /* ; */ ; SELECT 2")
+    assert not is_readonly_query("SELECT 'unterminated")
+
+
+class _ExecuteRecorder(PostgresReferenceRunner):
+    """Records `_execute` without opening a database."""
+
+    def __init__(self):
+        super().__init__()
+        self.executed: list[str] = []
+
+    def _reset(self):
+        self._schema = "s03_test_recorder"
+
+    def _execute(self, statement, *, timeout_ms, fetch):
+        self.executed.append(statement)
+        return QueryResult()
+
+
+def test_setup_and_run_reject_a_second_statement_before_execute() -> None:
+    recorder = _ExecuteRecorder()
+    try:
+        for unsafe in ("SELECT 1; COMMIT", "CREATE TABLE z(a INT); END"):
+            outcomes = recorder.setup([unsafe])
+            assert outcomes and outcomes[0][1] is not None, unsafe
+        assert recorder.executed == []
+        assert recorder.run("SELECT 1; SELECT 2").ok is False
+        assert recorder.run("SELECT 1; SET ROLE coevo").ok is False
+        assert recorder.executed == []
+        assert recorder.setup(["COMMIT"])[0][1] is not None
+        assert recorder.setup(["ROLLBACK"])[0][1] is not None
+        assert recorder.executed == []
+        ok = recorder.setup(["CREATE TABLE t(v INT)"])
+        assert _ok(ok)
+        assert recorder.executed == ["CREATE TABLE t(v INT)"]
+    finally:
+        recorder.close()
+
+    called: list[str] = []
+
+    def factory():
+        called.append("open")
+        raise AssertionError("must not open a runner")
+
+    for query in ("SELECT 1; SELECT 2", "SELECT 1; SET ROLE coevo"):
+        label = judge_case(
+            _case(query=query),
+            factory=factory,
+            timeout_s=5,
+            options=make_options(reference_factories={}),
+        )
+        assert (label.y, label.invalid_reason) == ("invalid", "not_applicable"), query
+    assert called == []
+    public = judge(_case(query="SELECT 1; SELECT 2"), "cross_dbms", reference_factories={})
+    assert public.invalid_reason == "not_applicable"
 
 
 def test_default_factories_omit_the_target_and_reject_aliases() -> None:
@@ -276,6 +343,38 @@ def test_pg_statement_timeout_then_reuse() -> None:
         assert again.ok and again.rows == [[1]]
     finally:
         runner.close()
+
+
+def test_pg_semicolons_in_quotes_and_comments_still_run() -> None:
+    left = PostgresReferenceRunner()
+    right = PostgresReferenceRunner()
+    try:
+        assert _schemas() == []
+        assert _ok(left.setup(["CREATE TABLE t(v INT)", "INSERT INTO t VALUES (1)"]))
+        assert _ok(right.setup([
+            'CREATE TABLE "t;t"(v INT)',
+            'INSERT INTO "t;t" VALUES (2)',
+        ]))
+        assert _schemas() == []
+        quoted = left.run("SELECT '1; COMMIT' AS v")
+        assert quoted.ok and quoted.rows == [["1; COMMIT"]]
+        commented = left.run("SELECT v FROM t /* ; COMMIT */")
+        assert commented.ok and commented.rows == [[1]]
+        nested = left.run("SELECT v FROM t /* /* ; END */ */")
+        assert nested.ok and nested.rows == [[1]]
+        dollar = left.run("SELECT $q$; COMMIT$q$")
+        assert dollar.ok and dollar.rows == [["; COMMIT"]]
+        trailing = left.run("SELECT v FROM t;")
+        assert trailing.ok and trailing.rows == [[1]]
+        line = left.run("SELECT v FROM t -- ; COMMIT")
+        assert line.ok and line.rows == [[1]]
+        ident = right.run('SELECT v FROM "t;t"')
+        assert ident.ok and ident.rows == [[2]]
+        assert left.run("SELECT v FROM t").rows == [[1]]
+    finally:
+        left.close()
+        right.close()
+    assert _schemas() == []
 
 
 def test_pg_refuses_state_changing_statements_without_running_them() -> None:
