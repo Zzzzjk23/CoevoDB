@@ -24,7 +24,7 @@
 
 Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s05` 从 `s04-done`（9d88ff7）建立。用户指示 S4 完成后直接开 S5、需要确认的事项按编排者的推荐确认；已定的事项在 DECISIONS 的 S5 条目里。`.venv` 里装了 `sqlglot==30.21.0`，装完起点检查为 275 passed, 3 skipped 与 GATES PASS 4/4。
 
-**会话因用量上限在 2026-10-09 中断，状态为进行中（WIP）。** 后两个包的说明草稿已写好：`.orch/briefs/s05-ast.md`、`.orch/briefs/s05-dynamic.md`（里面的 `{基线通过数}` 要在前一包合并后填上）；审查探测脚本 `.orch/scratch/s5_review_ast.py` 也已备好。另有一条要补进未决问题：harness 把重跑时退出码不同算作没有复现，靠 `exit()` 正常路径死掉的引擎崩溃在 Windows 上约 0.5% 的子进程会以 0xC0000005 结束，可能被判成 `unstable_rerun`（方向是少判）。
+会话在 2026-10-09 因用量上限中断过一次，同日接着做。后两个包的说明在 `.orch/briefs/s05-ast.md`、`.orch/briefs/s05-dynamic.md`（`s05-dynamic` 里的 `{基线通过数}` 要在 `s05-ast` 合并后填上）；审查探测脚本 `.orch/scratch/s5_review_ast.py`、`.orch/scratch/s5_review_dynamic.py` 已备好，`s5_review_vocab.py` 与 `s5_review_vocab_r1.py` 在每个包审查时都重跑一遍（都在 `<检出区>/framework` 下运行，末行 `BAD COUNT 0` 为通过）。
 
 断线恢复只看三样：本节、`git log session/s05`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态与本节不一致时以 gw list 为准，先 `gw status <包号>`。
 
@@ -32,8 +32,8 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | 第 1 轮返工已跑完（grok 退出码 0），**尚未审查、尚未合并**。接手后先做：`gw review s05-vocab --expect-passed 293`，读返工 diff（`git diff 23bac66..grok/s05-vocab`）与新增命令，在 worktree 里跑 `.orch/scratch/s5_review_vocab.py`，通过则写审查结论、`gw merge s05-vocab --into session/s05`、`gw cleanup s05-vocab`。返工意见在 `.orch/feedback/s05-vocab-r1.md` |
-| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 未派发 |
+| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | **已合并**（4b55eb1，返工 1 轮）。合并后 pytest 297 passed / 3 skipped，S01–S04 通过，S05 的 `vocab spec units` 通过。返工修了 `Phi.from_dict` 与 `Registry.load` 不校验，并把 S4 测试夹具的进程退出改成立即终止。留下一处小问题交给 `s05-ast` 顺带改：`_require_layers` 对不可哈希的层状态取值抛 `TypeError` 而不是 `ValueError` |
+| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 已派发（2026-10-09，基线 cc4856f 之后的文档提交；验收基线 297 passed）。说明另含 `phi.py` 的一处小修 |
 | s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 未派发 |
 
 表内路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s05 --only <组>`，九组全过才是 S05 通过。`harness/` 已冻结，三个包都不许碰。
@@ -352,6 +352,10 @@ S4 发现、留后续会话：
 - manifest 的 `packages` 是固定名单（duckdb、datafusion、pyarrow、psycopg2-binary、sqlglot）。后续层要记别的版本，在传给 `Ledger.start_run` 的 dict 上自己加键。
 - `harness/manifest.py` 里的 PostgreSQL 默认 DSN 是从 `harness/oracles/pg_reference.py` 抄了一份的字符串；两处都已冻结，改端口要一起改（解冻）。
 - `datafusion/` 的 DF-B SQL 注释漏了正确 bag 中的 NULL，旧文件不改，留 S12；门槛按实测包含 NULL。
+
+S5 发现、留后续会话：
+- harness 把重跑时退出码不同算作没有复现。Windows 上以 `exit()` 正常路径结束、而 DuckDB 工作线程还在跑的进程，约 0.5% 会以 0xC0000005 而不是原来的退出码结束（实测 400 次里 2 次；立即终止进程则 600 次全部一致）。所以一个靠正常退出路径死掉的真实引擎崩溃，有小概率被判成 `invalid / unstable_rerun`。方向是少判；harness 已冻结，没有改。S8 的长 run 里如果看到成批的 `unstable_rerun` 崩溃，先想到这一条。
+- `Registry.load` 接受顶层是裸列表的文件（`save` 写的是 `{"invented": [...]}`），忽略条目里多余的键，空正则 `""`（对任何语句都命中）能登记。未验收的特征不会进 φ，所以现在无害；S10 定验收规则时把空正则和恒真正则挡掉。
 
 已解决（留作索引）：S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。
 
