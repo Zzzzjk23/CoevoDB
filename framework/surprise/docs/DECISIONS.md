@@ -95,3 +95,4 @@
 | 2026-10-09 | S3 | Cross审查补门槛：拒绝SELECT 1; SELECT 2、SELECT 1; SET ROLE，以及setup中嵌入COMMIT/END，拒绝必须在后端执行前发生。第1版独立复跑确实被此门槛拦下，要求返工 | PG runner承诺单条只读查询和未提交的独立事务，但第1版只检查首词。setup使用不连DB的记录runner作反例，不让测试本身提交schema；属于S3参照runner隔离要求 |
 | 2026-10-09 | S3 | local审查补门槛：De Morgan拒绝BETWEEN和CASE内部AND；paired_query不能忽略字面量大小写。第1版两引擎实测把有效原查询改成非法SQL并假报fail/error_mismatch，要求返工1轮 | 证明只覆盖逻辑二元AND/OR，不覆盖语法内部AND；不扩大规则覆盖，保守invalid/not_applicable。字面量变化的外部pair按untrusted_rewrite拒绝 |
 | 2026-10-09 | S3 | version派发前补双支路门槛：F2有参照与空参照都fail/regression；DuckDB和DataFusion的SELECT version()无参照都invalid/direction_unknown | 已实测DF54/PG16/SQLite3.51的F2都等于旧DuckDB结果，新版plan variant独立fail并有no_optimizer身份；两引擎版本字符串只是metadata变化 |
+| 2026-10-09 | S3 | cross第2轮返工只补WITH起头的SELECT INTO执行前拒绝；不因第1轮多语句修正通过就接受遗漏的只读前提 | 第1轮独立pytest186 passed/3 skipped，多语句cross组通过；新断言实测WITH x AS (SELECT 1 AS a) SELECT a INTO z FROM x被错误接受。返工上限仍为2，不扩授权 |

@@ -161,6 +161,8 @@ def check_cross():
     from oracles.db_runner import QueryResult
     require(not is_readonly_query('SELECT 1; SELECT 2'), 'PG reference accepted multiple statements')
     require(not is_readonly_query('SELECT 1; SET ROLE coevo'), 'PG reference accepted embedded state change')
+    require(not is_readonly_query('WITH x AS (SELECT 1 AS a) SELECT a INTO z FROM x'),
+            'PG reference accepted SELECT INTO after a WITH head')
 
     class SetupRecorder(PostgresReferenceRunner):
         def __init__(self):
