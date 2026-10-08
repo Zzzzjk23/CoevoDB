@@ -124,6 +124,21 @@ def check_local():
     label_is(judge(untrusted, 'equivalent_query', rewrite_rule='invented_rule'),
              'invalid', 'untrusted_rewrite')
     require(apply_rule('SELECT 1', 'demorgan') is None, 'non-applicable De Morgan rule must decline')
+    for query in (
+        'SELECT a FROM t WHERE NOT (b BETWEEN 1 AND 3)',
+        'SELECT a FROM t WHERE NOT (CASE WHEN a > 0 THEN b > 0 AND b < 5 ELSE FALSE END)',
+    ):
+        require(apply_rule(query, 'demorgan') is None, 'De Morgan split AND inside BETWEEN/CASE')
+        for engine in ('duckdb', 'datafusion'):
+            label_is(judge(case(engine, query, None), 'equivalent_query', rewrite_rule='demorgan'),
+                     'invalid', 'not_applicable')
+    literal_case = SqlCase(engine='duckdb', setup=('CREATE TABLE t(s VARCHAR)',
+        "INSERT INTO t VALUES (NULL), ('ZZ')"),
+        query="SELECT CASE WHEN s IS NOT NULL THEN s ELSE 'ABC' END FROM t")
+    certified = apply_rule(literal_case.query, 'case_to_coalesce')
+    require(isinstance(certified, str), 'literal CASE shape must remain supported')
+    label_is(judge(literal_case, 'equivalent_query', rewrite_rule='case_to_coalesce',
+        paired_query=certified.replace("'ABC'", "'abc'")), 'invalid', 'untrusted_rewrite')
     return 'ART exercised, injected mismatch caught; 3 proved rules x 2 engines incl NULL; untrusted pairs rejected'
 
 

@@ -93,3 +93,4 @@
 | 2026-10-09 | S3 | registry懒导入后由模块自行register，避免并行包改公共文件；old_python为字符串路径；参照None表示默认、空dict表示无参照 | 共享接口实现选择，后三包brief已同步。不改变PLAN契约 |
 | 2026-10-09 | S3 | 首包合并时嵌套PowerShell提前展开ORCH_COMMIT_TRAILER，赋值失败但merge已成功；保留历史不重写。后续用.orch/scratch/s3_gw.py设置子进程环境并调用原grok_worker.py，尾注Co-authored-by: Codex <noreply@openai.com> | 编排者命令转义错误，未影响代码和审查。辅助脚本不入库，标准gw恢复命令仍可用 |
 | 2026-10-09 | S3 | Cross审查补门槛：拒绝SELECT 1; SELECT 2、SELECT 1; SET ROLE，以及setup中嵌入COMMIT/END，拒绝必须在后端执行前发生。第1版独立复跑确实被此门槛拦下，要求返工 | PG runner承诺单条只读查询和未提交的独立事务，但第1版只检查首词。setup使用不连DB的记录runner作反例，不让测试本身提交schema；属于S3参照runner隔离要求 |
+| 2026-10-09 | S3 | local审查补门槛：De Morgan拒绝BETWEEN和CASE内部AND；paired_query不能忽略字面量大小写。第1版两引擎实测把有效原查询改成非法SQL并假报fail/error_mismatch，要求返工1轮 | 证明只覆盖逻辑二元AND/OR，不覆盖语法内部AND；不扩大规则覆盖，保守invalid/not_applicable。字面量变化的外部pair按untrusted_rewrite拒绝 |

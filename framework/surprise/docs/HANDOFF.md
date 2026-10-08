@@ -32,6 +32,7 @@
 - F2 已实测：1.1.3 返回 `[(10,30),(20,30)]`，1.5.5 返回 `[(10,10),(20,20)]`；新版 plan variant 独立判 fail / wrong_result。S3 回归门槛选 F2，不用语义未指定的 F3。
 - 已提交 `gates/s03.py` 五组门槛（registry/local/cross/version/matrix）；registry 已审查合并并归档。local/cross从eba9c84并行派发后均已提交，正在独立审查，version brief待cross合并后派发。关键期望在派发前实测，包含三个改写的 NULL 样例和 SELECT version() 的方向不可定样例。
 - Cross预读发现PG只读查询检查允许多语句、setup只检查首词事务控制。编排者已补门槛并实测第一版被拦下；setup用不连数据库的记录runner验证拒绝发生在执行前，避免测试自身提交参照schema。将作为cross第1轮返工项。
+- local独立审查实测De Morgan把BETWEEN和CASE内部AND误拆，导致两引擎假fail/error_mismatch；paired_query比较还会忽略字符串大小写。已补对应门槛，将作为local第1轮返工项。基础三条NULL/重复行用例保留。
 - 注册API：register(id, handler)、get_handler(id)、runner_factory_for(engine)。后续模块在末尾自行register；统一handler签名 judge_case(case, *, factory, timeout_s, options)。OracleOptions四字段rewrite_rule/paired_query/old_python/reference_factories；old_python使用字符串路径，None默认、空参照字典表示无参照。
 - registry审查与返工证据已归档到 docs/orch/s03/；新增缺模块测试现在在测试内模拟缺失，不依赖后续文件未实现。审查唯一红旗是S3其余模块尚缺，按部分门槛验收。
 - PostgreSQL 恢复命令（根目录）：`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`。已有服务器时只查 status。参照 runner 默认此连接，`COEVO_REFERENCE_PG_DSN` 可覆盖；参照用例由独立事务隔离，close 回滚，禁止注册服务、改全局 PATH。
@@ -42,8 +43,8 @@
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
 | s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_contracts.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 已合并（1cae8cd）；返工1轮，只修新增测试的长期有效性。独立pytest165 passed/3 skipped，registry PASS，S01/S02 PASS |
-| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | run1完成366e9b7，待独立审查；session 4e82a95a-e8c9-4af8-979d-009df034ae30，基线eba9c84 |
-| s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | run1完成f7631e3，待独立审查及多语句边界返工；session 7c2b4869-7c46-4c67-8561-85e81b47d12e，基线eba9c84 |
+| s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | run1独立pytest183 passed/3 skipped；要求De Morgan/字面量比较返工1轮；session 4e82a95a-e8c9-4af8-979d-009df034ae30，基线eba9c84 |
+| s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | run2返工运行中，run1独立pytest184 passed/3 skipped，待多语句边界修正；session 7c2b4869-7c46-4c67-8561-85e81b47d12e，基线eba9c84 |
 | s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | 未派发 |
 
 表内 harness、tests 路径分别相对 `framework/surprise/`、`framework/`。公共文件只归 registry 包；local 与 cross 并行，cross 合并后可派 version，同时最多两包运行。每包合并后立即更新本表并提交。最后集成门槛组为 matrix（七类 × 两引擎与账本）。
