@@ -42,7 +42,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import scripts.pg_txn_fuzz as fuzz  # noqa: E402
+import campaigns.pg_txn_fuzz as fuzz  # noqa: E402
 from targets.postgres_runner import PostgresRunner  # noqa: E402
 
 PRED_HI = "v >= 300"
