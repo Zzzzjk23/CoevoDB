@@ -40,6 +40,7 @@
 - registry审查与返工证据已归档到 docs/orch/s03/；新增缺模块测试现在在测试内模拟缺失，不依赖后续文件未实现。审查唯一红旗是S3其余模块尚缺，按部分门槛验收。
 - PostgreSQL 恢复命令（根目录）：`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`。已有服务器时只查 status。参照 runner 默认此连接，`COEVO_REFERENCE_PG_DSN` 可覆盖；参照用例由独立事务隔离，close 回滚，禁止注册服务、改全局 PATH。
 - 恢复命令：`git status --short --branch`、`git log -8 --oneline`、`.venv/Scripts/python.exe tools/orch/grok_worker.py list`。
+- 三包合并后的主检出区集成复跑：209 passed, 3 skipped；`-m surprise.gates.s03 --only registry local cross` PASS 3/3（最终all尚待version）。最近集成基线c391423。
 
 ### 预定拆包（门槛提交后才派发）
 
@@ -163,6 +164,10 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
 ### 未决问题（S3 及之后需要知道的）
+
+S3发现、留后续会话：
+- `datafusion/`的DF-B SQL注释漏了正确bag中的NULL，旧文件不改，留S12；S3门槛按实测包含NULL。
+- manifest的environment还只记主Python、平台和DuckDB/DataFusion/SQLite；PG及旧版版本记录在oracle detail，PG二进制SHA256记在DECISIONS。S4冻结前评估是否补齐环境字段，S3不扩大环境重构范围。
 
 S2 新发现：
 1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
