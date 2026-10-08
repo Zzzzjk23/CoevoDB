@@ -33,8 +33,8 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
 | s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | **已合并**（4b55eb1，返工 1 轮）。合并后 pytest 297 passed / 3 skipped，S01–S04 通过，S05 的 `vocab spec units` 通过。返工修了 `Phi.from_dict` 与 `Registry.load` 不校验，并把 S4 测试夹具的进程退出改成立即终止。留下一处小问题交给 `s05-ast` 顺带改：`_require_layers` 对不可哈希的层状态取值抛 `TypeError` 而不是 `ValueError` |
-| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 第一轮完成（e1d8332，316 passed，S05 的 `vocab spec units ast` 通过），审查发现七处判错，**第 1 轮返工已派发**（意见在 `.orch/feedback/s05-ast-r1.md`）。反例已加进门槛表（`AST_PROBES` 末尾 14 条、`FALLBACK_LACK` 3 条、两条兜底要求 `ast:stmt:select`），worktree 里的门槛是旧的，审查时用 `.orch/scratch/s5_gate_probe_check.py` 对着新表跑，合并后 `ast` 组才按新表检查 |
-| s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 未派发 |
+| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | **已合并**（dd472f9，返工 1 轮）。合并后 pytest 323 passed / 3 skipped，S05 的 `vocab spec units ast` 通过（`ast` 组按新表：74 条探测、5 条兜底）。返工修了七处判错：把括号当子查询、命名窗口、IGNORE NULLS、写语句里的相关子查询、赋值记成比较、同名遮蔽、兜底的两处误报；顺带把 `_require_layers` 改成抛 `ValueError`。词表追加了一个叶子 `ast:window_fn:other`（词表摘要因此变为 1e001c14a030） |
+| s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 已派发（2026-10-09；验收基线 323 passed）。审查用 `.orch/scratch/s5_review_dynamic.py` |
 
 表内路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s05 --only <组>`，九组全过才是 S05 通过。`harness/` 已冻结，三个包都不许碰。
 
@@ -356,6 +356,9 @@ S4 发现、留后续会话：
 S5 发现、留后续会话：
 - harness 把重跑时退出码不同算作没有复现。Windows 上以 `exit()` 正常路径结束、而 DuckDB 工作线程还在跑的进程，约 0.5% 会以 0xC0000005 而不是原来的退出码结束（实测 400 次里 2 次；立即终止进程则 600 次全部一致）。所以一个靠正常退出路径死掉的真实引擎崩溃，有小概率被判成 `invalid / unstable_rerun`。方向是少判；harness 已冻结，没有改。S8 的长 run 里如果看到成批的 `unstable_rerun` 崩溃，先想到这一条。
 - `Registry.load` 接受顶层是裸列表的文件（`save` 写的是 `{"invented": [...]}`），忽略条目里多余的键，空正则 `""`（对任何语句都命中）能登记。未验收的特征不会进 φ，所以现在无害；S10 定验收规则时把空正则和恒真正则挡掉。
+- 语句层（`features/ast.py`）已知的小偏差，都不在被测语句的常见形态上，S8 生成探索语句时如果用到再修：`CREATE VIEW ... AS SELECT` 与 `COPY (SELECT ...) TO` 的查询被记成 `ast:subquery:scalar`；引用另一个命名窗口的命名窗口（`w2 AS (w1 ORDER BY a)`）不继承 `w1` 的规格；`INSERT ... ON CONFLICT DO UPDATE SET v = 3` 的赋值仍记成 `ast:cmp:eq`；兜底认 CTE 要求 `AS` 与括号之间有空白。
+- sqlglot 把它不认识的语句（EXPLAIN、VACUUM、COPY 等）读成不透明的 Command：语句层状态是 `ok`，特征为空，不走兜底。作用域分析失败时（`ast.py` 里两处 `except Exception`）不记相关性、状态仍是 `ok`，没有任何标记；整份种子语料上没有触发过。
+- `ast:fn:<名>` 用的是 sqlglot 归一后的函数名（`substr` → `substring`，`date_trunc` → `timestamp_trunc`），不是原文里写的名字。S6 之后写规格、S7 的 LLM 提假设时要用归一后的名字；sqlglot 升级可能改这些名字，manifest 的 `packages.sqlglot` 记着版本。
 
 已解决（留作索引）：S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。
 
