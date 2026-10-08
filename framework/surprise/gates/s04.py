@@ -583,6 +583,8 @@ def check_environment() -> str:
     require(isinstance(packages, dict) and all(isinstance(packages.get(name), str) and packages[name]
                                                for name in ("pyarrow", "psycopg2-binary")),
             f"environment.packages must list pyarrow and psycopg2-binary: {packages!r}")
+    # Recorded for S5 (phi parses with sqlglot); None while it is not installed.
+    require("sqlglot" in packages, "environment.packages must have a sqlglot entry (None when absent)")
     for key in ("python", "platform", "engines"):
         require(key in environment, f"environment.{key} must stay")
     require(verify_manifest(manifest) == [], "a fresh manifest must verify")
