@@ -31,6 +31,12 @@ ORACLE_IDS = (
 FAIL_KINDS = ("wrong_result", "error_mismatch", "crash")
 
 # setup_error: a setup or insert statement failed; nondeterministic: the result depends on unspecified order or a random function; not_applicable: the oracle's premises do not hold; query_error: the query or predicate itself is broken; value_dependent_error: a runtime error (overflow, cast failure, and the like) whose occurrence depends on evaluation order; timeout: timed out, so there is no conclusion; harness_error: the harness itself raised while judging; untrusted_rewrite: the rewrite is not from the frozen rule library (and is not a verified LLM rewrite); direction_unknown: a version mismatch with no independent evidence of which side is the regression; insufficient_engines: cross-DBMS quorum smaller than three independent engines; non_unique_outlier: the target is not the unique dissenting engine.
+# unstable_rerun: a fail candidate did not reproduce on every fresh rerun.
+# unspecified_semantics: the statement relies on unspecified behavior; S4 registers ASOF joins whose right side has tied keys.
+# side_effecting_statement: the statement writes, so later plan variants observe changed data. A crash of a writing statement is still a candidate.
+# incomparable_results: cross-engine bags use disjoint value categories on a column, or different column counts, so the difference is not a result bug.
+# unattributed_crash: the judging process died, and the target engine alone did not.
+# not_reproduced_minimized: the candidate stopped reproducing while it was being minimised.
 INVALID_REASONS = (
     "setup_error",
     "nondeterministic",
@@ -43,6 +49,12 @@ INVALID_REASONS = (
     "direction_unknown",
     "insufficient_engines",
     "non_unique_outlier",
+    "unstable_rerun",
+    "unspecified_semantics",
+    "side_effecting_statement",
+    "incomparable_results",
+    "unattributed_crash",
+    "not_reproduced_minimized",
 )
 
 

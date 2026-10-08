@@ -143,6 +143,12 @@ def test_registries_match_the_plan():
         "direction_unknown",
         "insufficient_engines",
         "non_unique_outlier",
+        "unstable_rerun",
+        "unspecified_semantics",
+        "side_effecting_statement",
+        "incomparable_results",
+        "unattributed_crash",
+        "not_reproduced_minimized",
     )
     assert EDIT_DECISIONS == ("pending", "accepted", "rolled_back")
 
@@ -151,7 +157,15 @@ def test_constants_collect_public_uppercase_names():
     snapshot = as_dict()
     assert snapshot["QUERY_TIMEOUT_S"] == 10.0
     assert snapshot["QUERY_TIMEOUT_S"] == QUERY_TIMEOUT_S
-    assert set(snapshot) == {"QUERY_TIMEOUT_S"}
+    assert set(snapshot) == {
+        "CVE_RERUN_ATTEMPTS",
+        "CVE_RERUN_EXTENDED",
+        "CVE_WALL_TIMEOUT_S",
+        "QUERY_TIMEOUT_S",
+    }
+    assert snapshot["CVE_RERUN_ATTEMPTS"] == 5
+    assert snapshot["CVE_RERUN_EXTENDED"] == 15
+    assert snapshot["CVE_WALL_TIMEOUT_S"] == 120.0
     json.dumps(snapshot)
     snapshot["QUERY_TIMEOUT_S"] = 0
     assert QUERY_TIMEOUT_S == 10.0
