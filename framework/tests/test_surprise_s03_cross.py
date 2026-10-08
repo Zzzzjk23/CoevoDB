@@ -124,12 +124,17 @@ def test_readonly_query_rejects_mutation_and_ignores_literals() -> None:
     assert is_readonly_query("SELECT 1 -- ;\n")
     assert is_readonly_query("SELECT $q$; COMMIT$q$")
     assert is_readonly_query("SELECT $$; END$$")
+    assert is_readonly_query("SELECT 'INTO' AS a")
+    assert is_readonly_query('SELECT 1 AS "INTO"')
+    assert is_readonly_query("SELECT 1 /* INTO z */")
+    assert is_readonly_query("SELECT $q$INTO$q$")
     assert not is_readonly_query("INSERT INTO t VALUES (1)")
     assert not is_readonly_query("UPDATE t SET v = 1")
     assert not is_readonly_query("DELETE FROM t")
     assert not is_readonly_query("DROP TABLE t")
     assert not is_readonly_query("WITH x AS (SELECT 1) DELETE FROM t")
     assert not is_readonly_query("SELECT v INTO other FROM t")
+    assert not is_readonly_query("WITH x AS (SELECT 1 AS a) SELECT a INTO z FROM x")
     assert not is_readonly_query("COMMIT")
     assert not is_readonly_query("EXPLAIN SELECT 1")
     assert not is_readonly_query("SHOW server_version")
@@ -191,6 +196,37 @@ def test_setup_and_run_reject_a_second_statement_before_execute() -> None:
         assert (label.y, label.invalid_reason) == ("invalid", "not_applicable"), query
     assert called == []
     public = judge(_case(query="SELECT 1; SELECT 2"), "cross_dbms", reference_factories={})
+    assert public.invalid_reason == "not_applicable"
+
+
+def test_run_rejects_select_into_after_with_before_execute() -> None:
+    into_with = "WITH x AS (SELECT 1 AS a) SELECT a INTO z FROM x"
+    recorder = _ExecuteRecorder()
+    try:
+        refused = recorder.run(into_with)
+        assert refused.ok is False
+        assert recorder.executed == []
+        allowed = recorder.run("WITH x AS (SELECT 1 AS a) SELECT a FROM x")
+        assert allowed.ok
+        assert recorder.executed == ["WITH x AS (SELECT 1 AS a) SELECT a FROM x"]
+    finally:
+        recorder.close()
+
+    called: list[str] = []
+
+    def factory():
+        called.append("open")
+        raise AssertionError("must not open a runner")
+
+    label = judge_case(
+        _case(query=into_with),
+        factory=factory,
+        timeout_s=5,
+        options=make_options(reference_factories={}),
+    )
+    assert (label.y, label.invalid_reason) == ("invalid", "not_applicable")
+    assert called == []
+    public = judge(_case(query=into_with), "cross_dbms", reference_factories={})
     assert public.invalid_reason == "not_applicable"
 
 
@@ -374,6 +410,28 @@ def test_pg_semicolons_in_quotes_and_comments_still_run() -> None:
     finally:
         left.close()
         right.close()
+    assert _schemas() == []
+
+
+def test_pg_with_and_quoted_into_text_still_run() -> None:
+    runner = PostgresReferenceRunner()
+    try:
+        assert _ok(runner.setup(["CREATE TABLE t(v INT)", "INSERT INTO t VALUES (1)"]))
+        with_cte = runner.run("WITH x AS (SELECT v FROM t) SELECT v FROM x")
+        assert with_cte.ok and with_cte.rows == [[1]]
+        string_into = runner.run("SELECT 'INTO' AS v")
+        assert string_into.ok and string_into.rows == [["INTO"]]
+        ident_into = runner.run('SELECT 1 AS "INTO"')
+        assert ident_into.ok and ident_into.rows == [[1]]
+        comment_into = runner.run("SELECT v FROM t /* INTO z */")
+        assert comment_into.ok and comment_into.rows == [[1]]
+        dollar_into = runner.run("SELECT $q$INTO$q$")
+        assert dollar_into.ok and dollar_into.rows == [["INTO"]]
+        line_into = runner.run("SELECT v FROM t -- INTO z")
+        assert line_into.ok and line_into.rows == [[1]]
+        assert runner.run("SELECT v FROM t").rows == [[1]]
+    finally:
+        runner.close()
     assert _schemas() == []
 
 

@@ -262,6 +262,7 @@ def is_readonly_query(statement: str) -> bool:
     """True for one read-only SELECT-shaped statement and nothing after it.
 
     A second executable statement is rejected before any runner sees the text.
+    SELECT INTO is rejected for every allowed head, including WITH.
     Quotes, nested comments, and dollar quotes are not statement separators.
     Unscanable input is rejected.
     """
@@ -276,7 +277,7 @@ def is_readonly_query(statement: str) -> bool:
         return False
     if _MUTATING.search(code):
         return False
-    if head == "SELECT" and _INTO.search(code):
+    if _INTO.search(code):
         return False
     return True
 
