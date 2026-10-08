@@ -9,7 +9,7 @@
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
 | S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
-| S5 | Phase 2 φ | 未开始 | | |
+| S5 | Phase 2 φ | 进行中（见下节） | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
 | S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
@@ -19,6 +19,35 @@
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 当前会话：S5（进行中，2026-10-09 起）
+
+Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s05` 从 `s04-done`（9d88ff7）建立。用户指示 S4 完成后直接开 S5、需要确认的事项按编排者的推荐确认；已定的事项在 DECISIONS 的 S5 条目里。`.venv` 里装了 `sqlglot==30.21.0`，装完起点检查为 275 passed, 3 skipped 与 GATES PASS 4/4。
+
+断线恢复只看三样：本节、`git log session/s05`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态与本节不一致时以 gw list 为准，先 `gw status <包号>`。
+
+### 拆包清单（串行，同一时间只跑一包）
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
+|---|---|---|---|---|---|
+| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | 未派发 |
+| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 未派发 |
+| s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 未派发 |
+
+表内路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s05 --only <组>`，九组全过才是 S05 通过。`harness/` 已冻结，三个包都不许碰。
+
+### 契约（派发前定）
+
+- 词表：`gates/s05_cases.py` 的 `CORE_VOCAB`，166 项。特征 id 是 `层:名[:值]`，层为 `ast`、`plan`、`data`；种类为 class（层级内部节点，不出现在 φ 里）、leaf、family（开放族：`plan:<算子名>`、`ast:fn:<函数名>`）。
+- φ：`Phi(engine, features, layers, vocab)`，`features` 是排好序的叶子 id，`layers` 记三层各自的状态（ast：ok / fallback；plan、data：ok / unavailable / skipped），`vocab` 是词表摘要。里面没有任何随运行变化的内容。
+- 规格核对：必须项与数据性质要在 φ 的闭包里，禁止项不能在；层没算出来的项记为不确定，结论为不满足。
+- 单元：`引擎|oracle|主构造|计划算子类|数据性质类`，各维的优先级写在说明和 `UNIT_PROBES` 里。
+
+### 派发前实测（脚本在 `.orch/scratch/s5_*.py`，不入库）
+
+- sqlglot 30.21.0 解析：已知复现全部成功；种子语料 DuckDB 784 条里 767 条、PostgreSQL 308 条里 291 条成功。
+- 种子语料在 DuckDB 1.5.5 上：setup 全部成功的 532 条，其余 252 条有语句被拒；`EXPLAIN (FORMAT JSON)` 能取到计划的 676 条。DataFusion 的计划来自 `EXPLAIN` 的 physical_plan 文本。
+- 各族默认计划里的算子：F1、F6 有 LEFT_DELIM_JOIN；F2 是 HASH_JOIN（窗口被 window_self_join 改写掉了）；F3 是 STREAMING_WINDOW 加 NESTED_LOOP_JOIN，没有名为 ASOF 的算子；F8 有 UNION；F9、F10 有 WINDOW；DF-A、DF-B 是 HashJoinExec。门槛里各族的单元照这些写。
 
 ## 最近完成会话：S4（2026-10-09）
 
