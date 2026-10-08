@@ -20,14 +20,31 @@ def evaluate(case: SqlCase, oracle: str, *, ledger: Ledger, run_id: str, purpose
              runner_factory=None, timeout_s: float = QUERY_TIMEOUT_S) -> ExperimentRecord:
     """Judge ``case`` and append exactly one record. Return that record.
 
-    An unknown oracle, an unsupported engine, or a ``run_id`` that was never
-    started raises before anything executes and leaves the ledger unchanged.
+    An unknown oracle, an unsupported engine, a ``run_id`` that was never
+    started, or any argument ``ExperimentRecord`` would reject raises before
+    anything executes and leaves the ledger unchanged.
     """
     if oracle not in IMPLEMENTED:
         raise ValueError(f"oracle: must be one of {IMPLEMENTED}, got {oracle!r}")
     if case.engine != "duckdb":
         raise ValueError(f"engine: only 'duckdb' is supported, got {case.engine!r}")
-    ledger.next_seq(run_id)
+    seq = ledger.next_seq(run_id)
+    # Reject arguments that cannot be stored before opening a runner. The
+    # placeholder is discarded; ExperimentRecord remains the only validator.
+    ExperimentRecord(
+        record_id=f"{run_id}:{seq}",
+        run_id=run_id,
+        seq=seq,
+        case=case,
+        label=Label(y="pass", oracle=oracle),
+        purpose=purpose,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        spec=spec,
+        phi=phi,
+        theory_version=theory_version,
+        p_t=p_t,
+        surprise=None,
+    )
 
     try:
         label = judge(case, oracle, runner_factory=runner_factory, timeout_s=timeout_s)

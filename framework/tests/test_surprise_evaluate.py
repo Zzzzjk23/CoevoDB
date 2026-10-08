@@ -152,3 +152,30 @@ def test_rejected_calls_leave_no_record_and_do_not_run(tmp_path) -> None:
         assert ledger.count() == 0
     finally:
         ledger.close()
+
+
+def test_unstorable_arguments_are_rejected_before_execution(tmp_path) -> None:
+    ledger = Ledger(tmp_path / "ledger.sqlite")
+    try:
+        ledger.start_run("run-1", {})
+        calls = {"n": 0}
+
+        def factory():
+            calls["n"] += 1
+            return DuckDBRunner()
+
+        case = _case()
+        rejected = (
+            {"purpose": ""},
+            {"purpose": "explore", "p_t": 1.5},
+            {"purpose": "explore", "spec": {"weights": {1, 2}}},
+        )
+        for kwargs in rejected:
+            with pytest.raises(ValueError):
+                evaluate(
+                    case, "tlp", ledger=ledger, run_id="run-1", runner_factory=factory, **kwargs,
+                )
+        assert calls["n"] == 0
+        assert ledger.count() == 0
+    finally:
+        ledger.close()
