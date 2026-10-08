@@ -1,0 +1,96 @@
+{
+  "constants": {
+    "CVE_ATTRIBUTION_WALL_TIMEOUT_S": 120.0,
+    "CVE_BISECT_MAX_EXECUTIONS": 120,
+    "CVE_MINIMIZE_MAX_EXECUTIONS": 30,
+    "CVE_PROFILE_WALL_TIMEOUT_S": 600.0,
+    "CVE_RERUN_ATTEMPTS": 5,
+    "CVE_RERUN_EXTENDED": 15,
+    "CVE_WALL_TIMEOUT_S": 120.0,
+    "QUERY_TIMEOUT_S": 10.0
+  },
+  "created_at": "2026-10-08T21:21:57.670852+00:00",
+  "environment": {
+    "engines": {
+      "datafusion": "54.0.0",
+      "duckdb": "1.5.5",
+      "sqlite": "3.51.0"
+    },
+    "old_engines": {
+      "datafusion": "50.0.0",
+      "duckdb": "1.1.3"
+    },
+    "packages": {
+      "datafusion": "54.0.0",
+      "duckdb": "1.5.5",
+      "psycopg2-binary": "2.9.13",
+      "pyarrow": "21.0.0",
+      "sqlglot": null
+    },
+    "platform": "win32",
+    "python": "3.13.9",
+    "references": {
+      "postgres": "16.15"
+    }
+  },
+  "git_commit": "02bf15a37e1823568fe068b3014c28e21cf15d0b",
+  "harness": {
+    "algorithm": "sha256",
+    "files": {
+      "agents/bug_fixer.py": "ffd1561492528748e517dae8edc5a1ca7b53c46410e066ba846c2995e2ef9b9b",
+      "diagnosis/bisect.py": "7702881ab1b1650445b025ceb7d3bd651109b2a0c75310d5f1cf2773c5f9dbd6",
+      "oracles/_remote_exec.py": "dbc8a10da4358098ee3745cbfad233ea11ad5e84bb5004e205018c04c73f8703",
+      "oracles/cross_engine.py": "cd2b6e239b5ce727b20af5591c4063341703d38435fe883d548ed7128c2efbe8",
+      "oracles/db_runner.py": "936cf04597dd780554f5b814e199940682812be0987c6092352b0e5df8ed038f",
+      "oracles/determinism.py": "67ed010ba6c3d0fb6786d8b99a60742bbbc7cb7baaf7038298c13313001624dc",
+      "oracles/differential.py": "7231fc7688833a812cb4361ea4d4279769ad7365b399a45b2febcc22c7502a40",
+      "oracles/equivalence.py": "75a62c404850fa78acedf08c9795b67071f9ac9f3c69ae88e7a41418a6481a9f",
+      "oracles/errors.py": "e05b5766d89bc3f41a6dc5984a0fe97d7394f356fd74778fdd3a787c79a083bf",
+      "oracles/index_variant.py": "2cad77fdf0750e54130b344774748e9bd2b229a90fc7d319e06aa2ac51844da3",
+      "oracles/models.py": "634b1b3d603015917ce834496a0161195a2d05eeb2b4694c0b1b060ae62d2548",
+      "oracles/norec.py": "f128c456e147804eefe8b8ddc45141584dddc58ea2fd4dd364a51d2290f9906e",
+      "oracles/normalize.py": "b9423386113664a9aa026356f5f14e205ee18465e4016d9e2b0efe653f86421c",
+      "oracles/plan_variant.py": "4cef0adc9f63d376f3bd5910fd1711a0cb83641f05165048fa2f7519b674ddca",
+      "oracles/tlp.py": "85c47f85f3e1a9c7f8a8cdaae8c6809e68bb0d39f7b4e1d651d765b12c6e1c9f",
+      "oracles/tlp_groupby.py": "765be1ea9053b12b517fe3f137bcfcf3f2a3193047ad606e60bbaa4e4f126304",
+      "scripts/cross_engine.py": "168d379ec13a0e4d116abfef8cfdc001239b0e875e29161351f0822b02eeaeb2",
+      "surprise/harness/__init__.py": "aad4dd7c9f187aaba4a38a5ccdebfbd00fe8ebb78889a6d15d3c223a405d7951",
+      "surprise/harness/constants.py": "6c0f5743c7de342a135f477745b9683a98260cbc464be2abc323678fb146eab6",
+      "surprise/harness/contracts.py": "08a68417d2faaa508a6865a021f9979855e06aac70dcc34333461ef4377d1aac",
+      "surprise/harness/cve/__init__.py": "889224fc33ffa3f0abb48021eac5914e5c039705674cb26f0534e6d6ea193817",
+      "surprise/harness/cve/certify.py": "278a48d0dc06ced9a6d0abb4fc1e603166473d1d1ee191f3fdaf236255794b1a",
+      "surprise/harness/cve/criterion.py": "f43cc5f6502709f3c2b6ab68b7fa71ead6ee005869e0f64712f76cd8f0ae10d3",
+      "surprise/harness/cve/hypothesis.py": "62081d186579a3261439cf60d181a21c4973b6bcad74853c9cca17a151346422",
+      "surprise/harness/cve/isolate.py": "24488c0503d0a14f684c4bc6ec221740747f8430b491bb672c93547fc30e1d01",
+      "surprise/harness/cve/premise.py": "2d326c39e5753f4b807dba54acccd9d6c453a720ab261033a05efee8e24ecd8b",
+      "surprise/harness/cve/session.py": "1443bcdff275a45320de982c725a1c27ab87442e43cfdc4ab5e904f774f1fe45",
+      "surprise/harness/cve/shape.py": "87722c617dcf3d9980dc762843745655328b2326cfd58842955e419b97b39b06",
+      "surprise/harness/cve/tier3.py": "9f19e1d6d813cc49f7d64ab2439ec1ca6dfa32401b2e98f7afc1ab1b201c4636",
+      "surprise/harness/cve/worker.py": "a3d386daa014a8f60d5958c8829de85b9246c39413677ae9abb3583d1afc4984",
+      "surprise/harness/evaluate.py": "4b79c2d3d9beb96f456abf62057e7aeba670e2f342d1bcf9541ce1f9cb76ec47",
+      "surprise/harness/ledger.py": "a83ab0b0b29311eb11c58ad3ab4f98c1b7ca5e36cf7893855adff7d7c4c2ca53",
+      "surprise/harness/manifest.py": "185d48fde04ed1745c5d785ec4db6464a6a5df1df4f09ccfe992875e96a348cd",
+      "surprise/harness/oracles/__init__.py": "d591c34dc17f9bc69f459bde719db9ef5e8aaadc7270fc4b6bebfe37e6121ffd",
+      "surprise/harness/oracles/common.py": "2d8fea41fead99c5629e04c8cd49ef5f3a9efe90fc4064154090af344cc11ee5",
+      "surprise/harness/oracles/cross_dbms.py": "df29d36920b0b455463e1577499c3736f02337a957fefc72e4e21707c9775569",
+      "surprise/harness/oracles/equivalent_query.py": "1e0e6b44e6b8f1bc307802e4830c7448a8c0add2a89a61cb9b86a159bba08337",
+      "surprise/harness/oracles/forms.py": "8762527f5010f30fe8a7bd544078865f91481854769c028c63a9d201661feb69",
+      "surprise/harness/oracles/index_presence.py": "b7451c4651842c4b4a813f7a73114cad6eb960200df29fe020a3cefb777b09a2",
+      "surprise/harness/oracles/norec.py": "d0c0d9bf25847ed0ea7dbd0c84cd6329e62bcda6584b45178e443f7a13211197",
+      "surprise/harness/oracles/pg_reference.py": "128de61d36c73bc792da16762cf20f6240e675a7160c6edb19ef1c933141bded",
+      "surprise/harness/oracles/plan_variant.py": "8fe229204b9ac67ed22c2b59c9b37848a3ea12fe129df0749d7d82403f7cd77a",
+      "surprise/harness/oracles/registry.py": "eeca9eb11f9e5a26c9f642b65bad17f81ac5b576b4a2f3acfd6c73d2cc8c22a6",
+      "surprise/harness/oracles/rewrites.py": "31fd4c168ad05e1388f644f76f63f106c72588933370d18e7aa4a0e74009ceeb",
+      "surprise/harness/oracles/sound.py": "0b078d9c3aee4d704075602aceb628439ea27f404a831eac67771077b781f12c",
+      "surprise/harness/oracles/tlp.py": "f2dc9db9a151ca293b741a9c4ce3c9b252c354e9b1ca1dd1bb7320255def9965",
+      "surprise/harness/oracles/version_differential.py": "2cb0f5e0cb8c65ff725d3f16c4d4e77c8a0f72118d5e357ce25cbedb4b66d099",
+      "surprise/harness/oracles/version_worker.py": "689826e6e77d2e6d7bacbc2c20b416cb64f9420e71a044f78ea070f3a60f837d",
+      "targets/datafusion_runner.py": "69c3172034ad6675f649d1db5e31cc90aa85a78876f5bf7845dec3e542eea047",
+      "targets/duckdb_runner.py": "94047ec60dc7f4984c7e756ed1ed67b04b1a27234be765eb9304b3cabb35e5b9",
+      "targets/sqlite_runner.py": "1072b95dc055520391aa06b64b0e1476815eefcc229636ae460f586fe3e201f2"
+    },
+    "hash": "50fa40cf2d1988e8718369487b42be2c1da1a76964c0c520af51ce919b8d5fd9"
+  },
+  "run_id": "s04-freeze",
+  "schema": 1
+}

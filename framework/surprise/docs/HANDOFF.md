@@ -8,7 +8,7 @@
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
 | S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
-| S4 | Phase 1c CVE 流水线（M1） | 进行中（见下节） | | |
+| S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
 | S5 | Phase 2 φ | 未开始 | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
 | S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
@@ -20,47 +20,110 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 当前会话：S4（进行中，2026-10-09 起）
+## 最近完成会话：S4（2026-10-09）
 
-Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s04` 从 `s03-done`（499291b）建立；起点独立复跑 242 passed, 3 skipped 与 GATES PASS 3/3；S3 四包 cleaned，PG 16.15 在 127.0.0.1:55432 运行。
+Claude Code 担任编排者，全部实现来自 grok 工作包。会话分支 `session/s04` 从 `s03-done`（499291b）建立；起点独立复跑 242 passed, 3 skipped 与 GATES PASS 3/3。两包全部合并，harness 已冻结，收尾合并回 main，tag `s04-done`；S5 从此 tag 起。
 
-用户在会话中追加的指示（2026-10-09）：S4 完成后编排者自行开始 S5；需要确认的事项一律按编排者的推荐确认，逐项记入 DECISIONS。接手的会话沿用这条指示，S4 收尾消息发出后不等答复，直接按 SESSIONS 的 S5 一节开工。
+用户在会话中追加的指示（2026-10-09）：S4 完成后编排者自行开始 S5；需要确认的事项一律按编排者的推荐确认，逐项记入 DECISIONS。接手的会话沿用这条指示，不等答复，直接按 SESSIONS 的 S5 一节开工。
 
-断线恢复只看三样：本节、`git log session/s04`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态为 running / finished 而本节写"未派发"时，以 gw list 为准，先 `gw status <包号>`。
+### 交付与门槛
 
-### 拆包清单（串行，同一时间只跑一包）
+- 第 1 档：新进程执行器 `execute_isolated`（ok / error / timeout / crash 四种状态，子进程崩溃或挂起不影响调用方）；每个差异候选先查三条前提、再做 5 次新进程重跑加 1 次单线程重跑，不稳定、依赖未指定语义、结果不可比、写语句的非崩溃候选都降为 invalid。
+- 第 2 档：归属测试接口，用手写假设调通。有干预名的假设做一次"关掉 fix set 后差异是否消失"的测试；没有干预名的比较失败类别、错误类别与行为画像的形状。身份不一致升第 3 档。理论 T 没有做。
+- 第 3 档：最小化（旧 `BugFixer._minimize` 加一遍删无用 setup 语句）与完整画像（旧 `compute_fix_set`、`plan_diff_ops`，版本梯走 S3 的旧版子进程）。最小化后不复现或违反前提降为 invalid。
+- `Label.cve` 记五步的执行或跳过原因及证据；最终标签经 `evaluate_final` 入账，pass、invalid 同样记录。
+- harness 与常数冻结，清单与哈希校验见"冻结"一节；manifest 环境补了旧版引擎、PostgreSQL 参照、间接依赖。
 
-| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
+最终在 `framework/` 下、两包合并并冻结之后的主检出区独立运行：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 275 passed, 3 skipped，退出码 0（起点 242，新增 33，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9；GATES: PASS (4/4 passed)，退出码 0 |
+
+`gates/s04.py` 九组与 SESSIONS.md S4 门槛的对应：
+
+- `m1`：经 `evaluate_final` 写入 50 条最终标签（14 fail、20 invalid、16 pass）。confirmed 族 fail 且身份证据正确：F1、重建的 F6（含经 TLP 的带谓词形态）落在 `deliminator, filter_pushdown`；F2 及其 `.sql` 写法 `window_self_join`；F7 及其 `.sql` 写法 `common_subexpressions, expression_rewriter`；F9 fix set 为空、身份是见证开关 `window_combine`；F11 是 crash，`InternalException`，fix set `build_side_probe_side`；DF-A、DF-B、DF-D、DF-F 为 Cross fail（三个以上独立引擎、目标唯一异类），DF-I 为 crash。四个有 fix set 的 recall 条目（F1、F2、F7、F9）与 `docs/recall_repros.json` 一致。未指定语义的 F3（前提）、F8（重跑）判 invalid；F5 只允许 pass 或 `unstable_rerun`；普通查询与两份不复现的 `.sql` 变体判 pass；值依赖错误、无序结果、不等价改写、DATE 假候选、写语句判 invalid。
+- `tier1`：六个稳定族经 5 次新进程重跑仍为 fail；F8 `unstable_rerun`；F5 最多试 10 次，出现 `unstable_rerun` 即止，任何一次 fail 都算不过；六种可编排的重跑日程（全复现、单线程不复现后追加 15 次、追加中漏一次、只复现一两次、行序颠倒仍稳定）。
+- `premise`：ASOF 并列（含审查中发现的"ON 里带只涉及右表的条件"）、写语句、跨库值类别不可比为 invalid；无并列、写语句的 crash、可比的跨库差异保持 fail。
+- `isolation`：四种状态分得清；`duckdb/F10_window_frame_underflow.sql` 的两条致命语句在子进程里以退出码 0xC0000094 结束、调用方无恙；一个候选至少七个不同进程；会杀进程、会挂起的假 runner 与会崩的参照引擎都被收住。
+- `tier2`、`tier3`：归属一致与不一致各两种方式；九个确认用例的 fix set、版本梯、最小化结果是原 setup 的子序列；无关的表被删掉；最小化途中丢失的候选降级；第 1 档被拒后的跳过原因如实记录。
+- `contracts`、`environment`、`freeze`：取值表与常数、原始入口仍返回 `cve == {}`、非法请求在执行前被拒；manifest 环境字段与"harness import 的旧模块都在哈希范围内"；冻结清单与工作树一致。
+
+门槛期望全部在派发前实测；审查中发现的两类问题先实测再加进门槛（ASOF 反例、跳过原因）。没有按族号或 SQL 文本硬编码的判定。
+
+### 已知的召回缺口（门槛如实记录，不要求 fail）
+
+| 族 | 最终标签 | 原因 |
+|---|---|---|
+| F10（四条语句） | invalid / nondeterministic | 旧确定性筛查把显式帧子句当排序键，执行之前就筛掉；两条致命语句只用来直接验证执行器 |
+| F5 | invalid / unstable_rerun（偶尔原始判定就是 pass） | 并行竞态；新进程里复现率约 6–11% |
+| DF-E、DF-J | invalid / query_error | 引擎拒绝合法 SQL，按标签规则"查询报错"归 invalid |
+| DF-H | invalid / query_error | panic 文本不在旧 `is_internal_error` 的标记里 |
+| DF-G | pass | 旧宽松归一化把 DECIMAL 舍入成浮点，看不出精度丢失 |
+
+让它们判 fail 都要改旧判定代码，与"判定代码只搬不改"冲突。
+
+### 拆包清单与结论（全部已合并）
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 结论 |
 |---|---|---|---|---|---|
-| s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 已合并 7b12a85（返工 1 轮），worktree 已清理。独立复跑 264 passed / 3 skipped；归档在 `docs/orch/s04/` |
-| s04-tier23 | 第 2 档归属测试接口；第 3 档最小化与完整画像（fix set 二分、plan diff、版本梯）；降级规则；接入 `certify` | harness/cve/**、harness/constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 已合并 | tier2 tier3 m1（连同前五组） | 首轮 558bd7e 已审查：S04 八组门槛通过，门槛外探测全部通过；pytest 272 passed / 1 failed，失败的是说明漏放的常数快照断言（执行者按规矩停下上报）。第 1 轮返工进行中，四处：放行该断言、第 1 档被拒后的跳过原因、干预名单重复查询、最小化后的再验证改用原始判定。意见在 `.orch/feedback/s04-tier23-r1.md` |
-| （编排者） | 冻结：生成 `gates/s04_frozen.json`，哈希与常数校验 | gates/ | 两包都已合并 | freeze | 未做 |
+| s04-tier1 | 新进程执行器、第 1 档、`certify` 与 `evaluate_final`、`Label.cve` 结构、新 invalid 来源与常数、manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py 与三个定向更新的旧测试 | s03-done | contracts isolation tier1 premise environment | 合并 7b12a85；返工 1 轮（ASOF 并列键漏判、退出码 0 无结果应为 crash、`unattributed_crash` 的 tier）。独立 264 passed / 3 skipped；25 条 shell 命令已审查；约 4.08 美元 |
+| s04-tier23 | 第 2 档接口、第 3 档最小化与画像、降级规则 | harness/cve/**、harness/evaluate.py、constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 | tier2 tier3 m1（连同前五组） | 合并 1ae6e61；返工 1 轮（放行漏放的常数快照断言、第 1 档被拒后的跳过原因、干预名单缓存、最小化后用原始判定再验证）。独立 275 passed / 3 skipped；23 条 shell 命令已审查；约 4.19 美元 |
+| （编排者） | 冻结清单 | gates/ | 两包都已合并 | freeze | 已做 |
 
-表内 harness、tests 路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s04 --only <组>`；全部九组通过才是 S04 通过。
+表内 harness、tests 路径相对 `framework/surprise/`、`framework/`。两包的 brief、报告、审查结论、返工意见归档在 `framework/surprise/docs/orch/s04/`。没有推翻包，没有第 3 轮返工。
 
-### 第一包合并后的现状（2026-10-09）
+### 当前接口（已冻结）
 
-- `surprise.harness.cve` 公开四个名字：`CVE_STEPS`、`behavior_shape`、`execute_isolated`、`certify`。内部文件：`isolate.py`（父进程侧，`subprocess` 加 JSON）、`worker.py`（子进程入口）、`session.py`（一次判定及其语句结果指纹）、`premise.py`（三条前提）、`certify.py`（第 0 步与第 1 档）。
-- `certify(..., hypothesis=..., diagnose=True)` 目前抛 `NotImplementedError`，等第二包。
-- `evaluate_final` 已可用于第 1 档；`INVALID_REASONS` 十七项；常数 `CVE_RERUN_ATTEMPTS = 5`、`CVE_RERUN_EXTENDED = 15`、`CVE_WALL_TIMEOUT_S = 120.0`；manifest 环境多了 `old_engines`、`references`、`packages`，哈希范围加了 `diagnosis/bisect.py`。
-- `gates/s03.py` 的旧解释器定位已改为经 git 公共目录（f556fba），S03 门槛现在在 worktree 里也能通过。
-- 已知的保守之处：ASOF 规则对 USING 写法和连接键比较以外的任何 ON 条件都按违反处理；重跑比较目标引擎的语句结果与标签的判定、身份，不含参照引擎各自的语句结果。
+入口边界：`judge`、`evaluate` 是原始 oracle 层，返回未经 CVE 的标签，`cve == {}`，S2/S3 的门槛与测试照旧验证它们。最终标签走 `surprise.harness.cve.certify`，入账走 `surprise.harness.evaluate.evaluate_final`。S8 的主循环用后者。
 
-### 已定的入口边界（派发前定，细节在 DECISIONS）
+- `certify(case, oracle, *, hypothesis=None, diagnose=False, isolation="process", runner_factory=None, timeout_s=10.0, wall_timeout_s=None, rewrite_rule=None, paired_query=None, old_python=None, reference_factories=None) -> Label`。`evaluate_final` 在 `evaluate` 的参数之外多 `hypothesis`、`diagnose`、`isolation`、`wall_timeout_s`，每调用一次恰好写一条记录；流水线自身抛异常记 `invalid / harness_error`。
+- `isolation="process"`（默认）：调用方进程不执行任何目标 SQL；传入的工厂必须是子进程能按模块名导入的模块级可调用对象，否则在执行前抛 `ValueError`。`"inline"`：全部在调用方进程里做、每次判定新建 runner，给测试用的闭包工厂用。
+- `execute_isolated(case, *, prelude=(), timeout_s, wall_timeout_s, runner_factory) -> IsolatedResult(status, rows, error, exit_code)`。S5 可以用它在隔离进程里跑 EXPLAIN 与数据性质查询（把语句放进 `SqlCase.query`）。
+- `Label.cve`：`schema`（1）、`tier`（0 不是候选；1 做了第 1 档；2 归属一致；3 做了最小化）、`isolation`、`raw`（原始判定及其身份）、五步 `rerun / premise / attribution / minimize / profile`。每步有 `status`；跳过时 `reason` 取 `not_a_candidate`、`not_requested`、`premise_violated`、`tier1_rejected`、`attributed`、`unattributed_crash`、`not_reproduced_minimized`、`timeout`、`crash`、`harness_error` 或被违反的前提名。
+  - `rerun`：`attempts`（5 或 20）、`reproduced`、`stable`、`extended`、`distinct_outcomes`、`single_thread: {ran, reproduced}`。
+  - `premise`：`violations`、`checks`。
+  - `attribution`：`hypothesis_id`、`method`（`fix_set` / `profile`）、`consistent`、`executions`。
+  - `minimize`：`reproduced`、`setup_before`、`setup_after`、`case`、`executions`。
+  - `profile`：`fix_kind`、`fix_set`、`plan_diff`、`version_ladder`（`longstanding` / `recent` / `unknown` / `unavailable`）、`error_class`、`behavior_shape`、`witness_switches`、`executions`。
+- 身份证据：第 3 档之后 `identity.switches` 取 fix set，fix set 为空时保留原始见证开关；`error_class`、`behavior` 不变。被 CVE 降级为 invalid 的标签身份为空，原始判定留在 `cve.raw`。同一稳定输入两次判定的 `to_dict()` 相等（`cve` 里没有进程号、耗时、路径）。
+- 假设（第 2 档）是 mapping：`hypothesis_id`、`engine`、`interventions`（干预名列表，可空），无开关时另给 `fail_kind`、`error_class`、`behavior_shape` 中的若干个；其余键忽略，所以 `theory.contracts.Hypothesis.to_dict()` 补上这几个键就能直接传。校验在原始判定之前，非法即 `ValueError`。`behavior_shape(behavior)` 返回 `missing_only` / `extra_only` / `both` / `none`。
+- `INVALID_REASONS` 十七项，S4 新增 `unstable_rerun`、`unspecified_semantics`、`side_effecting_statement`、`incomparable_results`、`unattributed_crash`、`not_reproduced_minimized`。
+- 复现判据（第 2、3 档共用）：plan variant 比较"prelude 之后"与"再打开见证开关"两种形式，两边成功且 bag 相同、或以相同错误类别失败算一致；其他 oracle 在 prelude 之下重做原始判定，仍 fail 算复现。最小化结束后另做一次不带 prelude 的原始判定，fail 且失败类别不变才算复现。
 
-- raw oracle 层不动：`judge`、`evaluate` 仍返回未经 CVE 的原始标签，`cve == {}`，S2/S3 门槛照旧验证它们。
-- 最终标签走新入口：`surprise.harness.cve.certify(case, oracle, *, hypothesis=None, diagnose=False, isolation="process", …)` 返回带 `cve` 的最终 `Label`；`surprise.harness.evaluate.evaluate_final(…)` 把最终标签写一条账本记录（pass、invalid 同样入账）。S8 的主循环用后者。
-- `Label.cve` 固定五步 `rerun / premise / attribution / minimize / profile`，每步记 `status`（ran / skipped）与跳过原因。
-- 新增 invalid 来源六项：`unstable_rerun`、`unspecified_semantics`、`side_effecting_statement`、`incomparable_results`、`unattributed_crash`、`not_reproduced_minimized`。
+### 冻结
 
-### 派发前实测（脚本在 `.orch/scratch/s4_*.py`，不入库）
+- 清单：`framework/surprise/gates/s04_frozen.json`，由 `python -m surprise.harness.manifest write` 在两包合并后生成。51 个文件（harness 31 个、旧依赖 20 个），哈希 `50fa40cf2d1988e8718369487b42be2c1da1a76964c0c520af51ce919b8d5fd9`。
+- 常数八项：`QUERY_TIMEOUT_S = 10.0`、`CVE_RERUN_ATTEMPTS = 5`、`CVE_RERUN_EXTENDED = 15`、`CVE_WALL_TIMEOUT_S = 120.0`、`CVE_ATTRIBUTION_WALL_TIMEOUT_S = 120.0`、`CVE_PROFILE_WALL_TIMEOUT_S = 600.0`、`CVE_MINIMIZE_MAX_EXECUTIONS = 30`、`CVE_BISECT_MAX_EXECUTIONS = 120`。
+- 环境（清单里的快照）：Python 3.13.9；DuckDB 1.5.5 / 旧 1.1.3；DataFusion 54.0.0 / 旧 50.0.0；SQLite 3.51.0；PostgreSQL 参照 16.15；pyarrow 21.0.0、psycopg2-binary 2.9.13；sqlglot 未安装（记 None，名单里留了位置）。
+- 校验：在 `framework/` 下 `../.venv/Scripts/python.exe -m surprise.harness.manifest verify surprise/gates/s04_frozen.json`，退出码 0 表示未变；`gates/s04.py` 的 `freeze` 组每次都查清单、哈希与常数。
+- 冻结之后 `framework/surprise/harness/` 与被哈希的二十个旧模块有任何改动，S04 门槛变红。要改先问用户；改完重新生成清单并在 DECISIONS 记一笔。派发脚本见到 `s04-done` 会自动把 `harness/` 列入执行者禁区。
+- 后续层要往 run manifest 里加自己的内容（如 φ 词表版本、LLM 模型号），在传给 `Ledger.start_run` 的 dict 上加键即可，不需要改 `manifest.py`。
 
-- 旧工具二分：F1 与重建的 F6 都是 `deliminator, filter_pushdown`；F2 `window_self_join`；F7 `common_subexpressions, expression_rewriter`；F9 空集（120 次预算内无稳定单开关或最小集）；F11 的 MERGE 只在 `build_side_probe_side` 关闭时报 INTERNAL。
-- 版本梯（1.1.3 对 1.5.5）：F1、F7、F9、F6 结果相同；F2 不同；F11 在 1.1.3 上是 Parser Error。
-- 新进程分布：F8 40 个新进程 38 个结果互不相同；F3 20 个新进程结果完全一致；F5 新进程里第一次执行 150/150 正确，切过优化器开关后的第二次执行 5–9/80 出错，threads=1 与关优化器 0/80。
-- `duckdb/F10_window_frame_underflow.sql` 前两条语句直接执行，子进程退出码 0xC0000094。
-- `datafusion/` 其余复现的原始标签：DF-D、DF-F 为 Cross fail；DF-I 为 Cross fail / crash；DF-E、DF-H、DF-J 为 invalid / query_error；DF-G 为 pass（旧宽松归一化把 DECIMAL 四舍五入成浮点，看不出精度丢失）。后五个记为召回缺口。
-- 假候选：DataFusion 目标的 `SELECT DATE '2020-01-02' AS d` 原始为 Cross fail；DuckDB 目标、参照只给 DataFusion 与 SQLite 时，DATE 列同样原始为 fail。`DELETE … RETURNING` 这类写语句经 plan variant 原始为 fail / wrong_result。
+### 成本（主检出区实测，每次调用）
+
+| 情形 | 耗时 |
+|---|---|
+| 通过的用例经 `certify`（DuckDB，TLP / plan variant） | 约 0.2 秒 |
+| 通过的用例经 `certify`（DataFusion，Cross，含 PostgreSQL） | 约 0.6 秒 |
+| 候选做完第 1 档（原始判定加 6 个新进程） | 约 1.5 秒 |
+| 第 1 档加第 2 档归属一致 | 约 1.7 秒 |
+| 第 1 档加第 3 档（F1） | 约 2.7 秒；F9 的二分用满 120 次约 3.8 秒；跨库约 6 秒 |
+
+整套 `gates/s04.py` 约 3 分半，`surprise.gates.all` 约 6 分钟。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+1. `gates/s03.py` 的旧解释器路径改为经 git 公共目录定位（f556fba）。期望值没动，主检出区仍是 5/5；起因是它在 worktree 里恒失败，执行者为此建过目录联接。
+2. `datafusion/` 下 M1 表没覆盖的复现按实测定期望：DF-D、DF-F、DF-I 判 fail，DF-E、DF-H、DF-J、DF-G 记为召回缺口。
+3. 重跑次数定为 5 加单线程 1 次，单线程不复现再加 15 次；复现按每条语句的结果 bag 比较。
+4. 跨库可比性按"同一列上值类别互斥"判，不改旧 normalizer；对 DuckDB 目标同样生效。
+5. 冻结前没有处理每次原始判定起一个进程的开销，也没有并行重跑；留到 S8 实测吞吐后再定，动它要解冻。
+
+### 与计划的偏差
+
+没有与 PLAN 冲突，没有做理论 T、Hunter、LLM 角色。相对 SESSIONS 的字面要求有三处出入，都已记入 DECISIONS：F10、F5 不判 fail（S2 验收时已定）；`datafusion/` 下四个复现记为召回缺口；拆成两个串行包而不是一个包。操作上的偏差：执行者首轮建过一个指向主检出区 `.venvs` 的目录联接并删过一个自己的临时文件，联接由编排者在清理前单独移除；编排者两次在说明里漏放常数快照断言所在的测试文件。
 
 ## 最近完成会话：S3（2026-10-09）
 
@@ -242,12 +305,24 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S4 及之后需要知道的）
+### 未决问题（S5 及之后需要知道的）
 
-S3发现、留后续会话：
-- `datafusion/`的DF-B SQL注释漏了正确bag中的NULL，旧文件不改，留S12；S3门槛按实测包含NULL。
-- manifest的environment还只记主Python、平台和DuckDB/DataFusion/SQLite；PG及旧版版本记录在oracle detail，PG二进制SHA256记在DECISIONS。S4冻结前评估是否补齐环境字段，S3不扩大环境重构范围。
-- 实测旧CrossEngineOracle已把`SELECT DATE '2020-01-02' AS d`当跨库差异候选：DF旧runner返回ISO字符串，DuckDB/PG返回temporal前缀；S3 raw Cross标签也为fail/wrong_result（无CVE）。这是旧归一化的假差异，不应算确认bug。按范围纪律不改旧normalizer、不追加Cross返工；S4必须在跨库前提检查里保守invalid或建立兼容的比较前提。版本包自己的DF新旧传输差异在S3修正，两版本原始类型/值确实相同。
+S4 发现、留后续会话：
+- 召回缺口：F10、F5、DF-E、DF-H、DF-J、DF-G 在新框架里不是 fail，原因见上面"已知的召回缺口"一节。评估（S11）报告召回时要把它们单列；要补上任何一个都得改旧判定代码或解冻 harness，先问用户。
+- 每次 `evaluate_final` 的原始判定都起一个新进程，候选的重跑是串行的（数字见"成本"一节）。S8 跑长 run 之前先实测吞吐；需要常驻工作进程或并行重跑时要解冻 harness，先问用户。常驻进程会让 F5 这类"进程里第一次执行恒正确"的现象重新混进原始判定，并行会改变竞态缺陷的复现率，两样都要重新实测。
+- ASOF 前提是保守的：USING 写法、连接键比较以外的任何 ON 条件、解析不了的右表，一律按违反处理。只会少判，不会把依赖未指定选择的用例确认成 fail。S8 生成 ASOF 用例时用 `左.列 比较 右.列` 的 ON 写法，否则全是 invalid。
+- 第 1 档的重跑只比较目标引擎执行的语句结果，加上标签的判定与身份；参照引擎、旧版引擎各自的语句结果不在比较范围内。参照引擎自身不确定而判定和计数碰巧不变的情况理论上查不出来，实际需要两个独立引擎以相同方式一起变，没有见到过。
+- 第 2 档的 `profile` 方式只比较失败类别、错误类别和 missing / extra 的符号组合，很粗。无开关引擎上两个机制不同但形状相同的缺陷会被判成同一身份；S6 的假设如果需要更细的行为画像，要在理论层另算（harness 已冻结），或者提出解冻。
+- 复现判据对 plan variant 把"一侧成功、一侧报值依赖错误或超时"算作不一致。二分时这偏保守（不会把无关规则算成 fix）；最小化时可能把用例缩向另一种现象，由最小化后的原始判定再验证兜住（失败类别变了即 `not_reproduced_minimized`）。
+- F9 的画像每次用满 120 次二分（约 3.8 秒）才得出"没有稳定 fix set"。S8 的探索会反复撞上这一族（见下面 S2 第 12 条），确认它是 F9 的便宜办法是第 2 档：给一个 `interventions` 为空、`behavior_shape` 为 `both` 的假设不够区分，建议 S6 用见证开关 `window_combine` 加错误类别建立假设，避免每次进第 3 档。
+- 被哈希的旧模块有二十个，含 `agents/bug_fixer.py`（第 3 档以普通函数方式调用它的 `_minimize`，不构造 agent；`import agents.bug_fixer` 会连带导入 `httpx` 与 `llm.ledger`，只在第 3 档的子进程里发生）。S12 移动旧代码时这些路径会变：harness 的 import 与 `HASHED_PATHS` 都要改，属于解冻，先问用户，改完重新生成 `gates/s04_frozen.json`。
+- `gates/s04_cases.py` 的期望值是在 DuckDB 1.5.5 / 1.1.3、DataFusion 54.0.0 / 50.0.0、PostgreSQL 16.15 上测的；`gates/s04.py` 的 isolation 组断言 F10 两条语句让子进程崩溃（Windows 上退出码 0xC0000094）。换引擎版本或换平台要同步改门槛，改之前问用户。
+- `.venv` 里没有 sqlglot。S5 开工时由编排者安装（用户已预先同意按推荐确认），装完 manifest 的 `packages.sqlglot` 自动有值；不需要改 harness。
+- manifest 的 `packages` 是固定名单（duckdb、datafusion、pyarrow、psycopg2-binary、sqlglot）。后续层要记别的版本，在传给 `Ledger.start_run` 的 dict 上自己加键。
+- `harness/manifest.py` 里的 PostgreSQL 默认 DSN 是从 `harness/oracles/pg_reference.py` 抄了一份的字符串；两处都已冻结，改端口要一起改（解冻）。
+- `datafusion/` 的 DF-B SQL 注释漏了正确 bag 中的 NULL，旧文件不改，留 S12；门槛按实测包含 NULL。
+
+已解决（留作索引）：S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。
 
 S2 新发现：
 1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
@@ -287,6 +362,18 @@ S2 新发现：
 
 ### 给下一个编排者的操作提醒
 
+S4 踩到的：
+
+- **说明里的验收命令必须在 worktree 里跑得通。** S4 第一包的说明要求 S03 门槛退出码 0，而当时那个门槛按 worktree 根找 `.venvs`，不可能通过；执行者于是建了一个指向主检出区的目录联接。门槛已修，但这类"环境只在主检出区有"的假设以后还会出现：派发前在一个没有 `.venvs`、没有 `.orch/pg16` 的目录里想一遍。
+- **说明里写明"不建指向 worktree 之外的链接或目录联接"。** 联接留在 worktree 里，`gw cleanup` 的递归删除有连带删掉真实目录的风险。发现了先用 `cmd /c rmdir <联接>`（不带 `/s`）单独移除，核对真实目录还在，再清理。
+- **改常数、改取值表的包，允许路径里要放进钉住它们的旧测试。** S4 两个包都因为 `tests/test_surprise_contracts.py` 的常数快照断言卡了一下（第一包执行者自行改了并报告，第二包停下上报）。harness 现在冻结了，这条主要对 S5 的词表、S6 的阈值适用：先 grep 一遍哪些测试对它们做了精确断言。
+- **承载 `gw spawn` 的后台任务不受 10 分钟上限影响。** S4 两个包分别跑了 51 分钟和 46 分钟，后台任务都活到 grok 退出并发来通知。
+- **审查时用门槛之外的独立探测。** S4 两个包首轮都通过了自己的全部门槛，问题是探测脚本找出来的（`.orch/scratch/s4_review_tier1.py`、`s4_review_tier23.py`）。探测里发现的反例先实测，再加进门槛。
+- 包里有 `from .x import x` 这种把子模块名和函数名重合的写法时，`import pkg.x as m` 拿到的是函数不是模块；测试和探测里用 `sys.modules["pkg.x"]`。
+- 往归档的审查结论里写内容，用脚本从文件读入再写，不要走很长的 shell heredoc：超长的 heredoc 在这里出过解析错误。
+
+S2、S3 踩到的，仍然有效：
+
 这几条都是本会话或上一会话实际踩到的：
 
 - **`gw status --wait` 不要加 `--timeout`**。那个参数是"包运行超过这么多分钟就终止"，不是"最多等这么久"。本会话因此误杀了一个跑了 11 分半的包。想限制等待时间，用后台任务或命令自身的超时。
@@ -297,10 +384,12 @@ S2 新发现：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S4
+### 下一会话的起点：S5
 
-- 从 main 的 `s03-done` 建分支 `session/s04`。先检查主分支/tag/工作区和 PG 状态；服务器停止时按本文件恢复命令启动。
-- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 242 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (3/3 passed)`。
-- S4 做 CVE 三档流水线与 harness 冻结；已知族门槛照本文件保留的 M1 表。新增继承 Cross DATE 假差异的前提检查用例，冻结前评估 manifest 环境字段；不把原始候选直接算确认 bug。
-- 派发一律根目录 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 直接用 `python`。审查测试通过数至少242，完整 diff、每条执行命令及分支当前HEAD独立复跑均不可省。默认两轮返工上限。
-- 四个 S3 包都已合并，清理后 gw list 应显示 cleaned，没有活跃执行者。历史 brief/report/review/反馈在 `docs/orch/s03/`；PI 探测与审查助手在 `.orch/scratch/`（不入库）。恢复时看 git log、HANDOFF 和 gw list。
+- 从 main 的 `s04-done` 建分支 `session/s05`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
+- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 275 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (4/4 passed)`（约 6 分钟）。
+- S5 做共同语言 φ（范围见 SESSIONS.md 的 S5 一节）：代码放 `framework/surprise/features/` 与 `theory/contracts.py`，不碰 `harness/`（已冻结，派发脚本会把它列入禁区）。按 ORCHESTRATION 第 8 节，先契约一包，再两包并行。
+- 开工前要定的事，用户已指示按编排者的推荐确认并记入 DECISIONS：往 `.venv` 装 sqlglot（PLAN 决策 5）；PLAN 决策 2（版本空间用 φ 字面量合取加特征类层级）与决策 4（单元粒度先粗）是否在 S5 采用。
+- harness 给 S5 的现成东西：`SqlCase`；`registry.runner_factory_for(engine)`；`execute_isolated` 可在隔离进程里跑 EXPLAIN 与数据性质查询；`ExperimentRecord.phi` 与 `spec` 是 dict，`evaluate_final` 原样入账；第 3 档的 `cve.minimize.case` 是最小化后的用例。S5 门槛要的"最小复现"可以直接用 `gates/s04_cases.py` 的用例表。
+- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`。审查测试通过数至少 275，完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
+- S4 两个包都已合并并清理，`gw list` 应全部显示 cleaned。历史 brief / report / review / 返工意见在 `docs/orch/s04/`；编排者的探测与审查脚本在 `.orch/scratch/`（不入库）。恢复时看 git log、本文件和 gw list。
