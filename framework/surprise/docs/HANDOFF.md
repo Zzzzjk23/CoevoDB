@@ -8,7 +8,7 @@
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
 | S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
-| S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
+| S4 | Phase 1c CVE 流水线（M1） | 进行中（见下节） | | |
 | S5 | Phase 2 φ | 未开始 | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
 | S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
@@ -19,6 +19,38 @@
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 当前会话：S4（进行中，2026-10-09 起）
+
+Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s04` 从 `s03-done`（499291b）建立；起点独立复跑 242 passed, 3 skipped 与 GATES PASS 3/3；S3 四包 cleaned，PG 16.15 在 127.0.0.1:55432 运行。
+
+断线恢复只看三样：本节、`git log session/s04`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态为 running / finished 而本节写"未派发"时，以 gw list 为准，先 `gw status <包号>`。
+
+### 拆包清单（串行，同一时间只跑一包）
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
+|---|---|---|---|---|---|
+| s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 未派发 |
+| s04-tier23 | 第 2 档归属测试接口；第 3 档最小化与完整画像（fix set 二分、plan diff、版本梯）；降级规则；接入 `certify` | harness/cve/**、harness/constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 已合并 | tier2 tier3 m1（连同前五组） | 未派发 |
+| （编排者） | 冻结：生成 `gates/s04_frozen.json`，哈希与常数校验 | gates/ | 两包都已合并 | freeze | 未做 |
+
+表内 harness、tests 路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s04 --only <组>`；全部九组通过才是 S04 通过。
+
+### 已定的入口边界（派发前定，细节在 DECISIONS）
+
+- raw oracle 层不动：`judge`、`evaluate` 仍返回未经 CVE 的原始标签，`cve == {}`，S2/S3 门槛照旧验证它们。
+- 最终标签走新入口：`surprise.harness.cve.certify(case, oracle, *, hypothesis=None, diagnose=False, isolation="process", …)` 返回带 `cve` 的最终 `Label`；`surprise.harness.evaluate.evaluate_final(…)` 把最终标签写一条账本记录（pass、invalid 同样入账）。S8 的主循环用后者。
+- `Label.cve` 固定五步 `rerun / premise / attribution / minimize / profile`，每步记 `status`（ran / skipped）与跳过原因。
+- 新增 invalid 来源六项：`unstable_rerun`、`unspecified_semantics`、`side_effecting_statement`、`incomparable_results`、`unattributed_crash`、`not_reproduced_minimized`。
+
+### 派发前实测（脚本在 `.orch/scratch/s4_*.py`，不入库）
+
+- 旧工具二分：F1 与重建的 F6 都是 `deliminator, filter_pushdown`；F2 `window_self_join`；F7 `common_subexpressions, expression_rewriter`；F9 空集（120 次预算内无稳定单开关或最小集）；F11 的 MERGE 只在 `build_side_probe_side` 关闭时报 INTERNAL。
+- 版本梯（1.1.3 对 1.5.5）：F1、F7、F9、F6 结果相同；F2 不同；F11 在 1.1.3 上是 Parser Error。
+- 新进程分布：F8 40 个新进程 38 个结果互不相同；F3 20 个新进程结果完全一致；F5 新进程里第一次执行 150/150 正确，切过优化器开关后的第二次执行 5–9/80 出错，threads=1 与关优化器 0/80。
+- `duckdb/F10_window_frame_underflow.sql` 前两条语句直接执行，子进程退出码 0xC0000094。
+- `datafusion/` 其余复现的原始标签：DF-D、DF-F 为 Cross fail；DF-I 为 Cross fail / crash；DF-E、DF-H、DF-J 为 invalid / query_error；DF-G 为 pass（旧宽松归一化把 DECIMAL 四舍五入成浮点，看不出精度丢失）。后五个记为召回缺口。
+- 假候选：DataFusion 目标的 `SELECT DATE '2020-01-02' AS d` 原始为 Cross fail；DuckDB 目标、参照只给 DataFusion 与 SQLite 时，DATE 列同样原始为 fail。`DELETE … RETURNING` 这类写语句经 plan variant 原始为 fail / wrong_result。
 
 ## 最近完成会话：S3（2026-10-09）
 
