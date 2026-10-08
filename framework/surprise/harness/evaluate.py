@@ -157,6 +157,8 @@ def evaluate_final(
     )
     if hypothesis is not None:
         # Before the try, so a bad hypothesis is not stored as harness_error.
+        # Default-factory intervention names are cached in this process, so
+        # certify's second validation does not start another child.
         prepare_hypothesis(
             hypothesis,
             case,

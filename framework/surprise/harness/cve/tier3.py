@@ -25,6 +25,7 @@ from .criterion import (
     reproduces,
 )
 from .premise import check_premises
+from .session import run_judge
 
 _PARSER_MARKERS = ("Parser Error", "Binder Error", "Catalog Error", "syntax error")
 
@@ -95,7 +96,18 @@ def diagnose_case(
         query=query,
         predicate=context.predicate,
     )
-    still = checker.reproduces(None, _schema_of(setup), _inserts_of(setup), query, q2)
+    judged, _transcript = run_judge(
+        minimized,
+        oracle,
+        factory=factory,
+        timeout_s=timeout_s,
+        prelude=(),
+        rewrite_rule=rewrite_rule,
+        paired_query=q2,
+        old_python=old_python,
+        reference_factories=reference_factories,
+    )
+    still = judged.y == "fail" and judged.fail_kind == label.fail_kind
     minimize = {
         "reproduced": still,
         "setup_before": len(case.setup),

@@ -30,6 +30,8 @@ from .tier3 import diagnose_case
 _ATTRIBUTING = ("cross_dbms", "version_differential")
 _SINGLE_THREAD = {"duckdb": ["threads"], "datafusion": ["target_par1"]}
 _NOT_REQUESTED = {"status": "skipped", "reason": "not_requested"}
+# Default-factory intervention names, filled from the child. A custom factory is not cached.
+_DEFAULT_INTERVENTION_NAMES: dict[str, list[str]] = {}
 
 
 def certify(
@@ -202,7 +204,7 @@ def _after_tier1(
 ) -> Label:
     """Attribute a confirmed fail, then minimise and profile when that is required."""
     if label.y != "fail":
-        return label
+        return _note_tier1_rejection(label, hypothesis=parsed is not None, diagnose=diagnose)
     if parsed is None and not diagnose:
         return label
     cve = dict(label.cve)
@@ -370,6 +372,23 @@ def _apply_tier3(label: Label, cve: dict[str, Any], outcome: dict[str, Any]) -> 
     )
 
 
+def _note_tier1_rejection(label: Label, *, hypothesis: bool, diagnose: bool) -> Label:
+    """Record which later tiers the caller asked for after a tier-1 downgrade.
+
+    A pass, a timeout, and a harness error never reach here. A step the caller
+    did not ask for keeps the reason tier 1 already wrote.
+    """
+    if not hypothesis and not diagnose:
+        return label
+    cve = dict(label.cve)
+    if hypothesis:
+        cve["attribution"] = {"status": "skipped", "reason": "tier1_rejected"}
+    if diagnose or hypothesis:
+        cve["minimize"] = {"status": "skipped", "reason": "tier1_rejected"}
+        cve["profile"] = {"status": "skipped", "reason": "tier1_rejected"}
+    return _with_cve(label, cve)
+
+
 def _intervention_names(
     engine: str,
     *,
@@ -380,6 +399,10 @@ def _intervention_names(
 ) -> list[str]:
     if isolation == "inline":
         return list_interventions(engine, _resolve_factory_engine(engine, runner_factory))
+    if runner_factory is None:
+        cached = _DEFAULT_INTERVENTION_NAMES.get(engine)
+        if cached is not None:
+            return list(cached)
     data = _call_json(
         {
             "op": "interventions",
@@ -394,7 +417,9 @@ def _intervention_names(
     names = data.get("names")
     if not isinstance(names, list) or not all(isinstance(item, str) for item in names):
         raise RuntimeError("hypothesis: intervention list missing")
-    return names
+    if runner_factory is None:
+        _DEFAULT_INTERVENTION_NAMES[engine] = list(names)
+    return list(names)
 
 
 def _worker_payload(op: str, *, label: dict[str, Any], **kwargs: Any) -> dict[str, Any]:

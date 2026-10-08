@@ -123,6 +123,28 @@ class CrashRows(_Flags):
         return QueryResult(rows=[[1]], columns=["a"])
 
 
+class OverflowAfterDelete(WrongRows):
+    """Full data makes the two forms disagree. Without the inserted row, the bug switch overflows."""
+
+    def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
+        self.observe(sql)
+        if "duckdb_optimizers" in sql.lower():
+            return QueryResult(rows=[["alpha"], ["beta"]], columns=["name"])
+        if sql.strip().upper().startswith("EXPLAIN"):
+            name = "SEQ_SCAN" if self.no_opt or "alpha" in self.disabled else "HASH_JOIN"
+            payload = json.dumps([{"name": name}])
+            return QueryResult(rows=[["explain", payload]], columns=["key", "value"])
+        if sql.strip().rstrip(";") != TARGET:
+            return QueryResult(rows=[[1]], columns=["a"])
+        switched = self.no_opt or "alpha" in self.disabled
+        if "insert into t" in self.setup_text:
+            rows = [[2]] if switched else [[1]]
+            return QueryResult(rows=rows, columns=["a"])
+        if switched:
+            return QueryResult(rows=[], error="ConversionException: numeric overflow")
+        return QueryResult(rows=[[1]], columns=["a"])
+
+
 class FlakyRows(WrongRows):
     """The discrepancy exists on the first witnessed execution and then disappears."""
 
@@ -337,8 +359,17 @@ def test_tier1_downgrade_does_not_run_tier3() -> None:
     FlakyRows.seen = 0
     label = certify(_case(), "plan_variant", diagnose=True, runner_factory=FlakyRows, isolation="inline")
     assert (label.y, label.invalid_reason) == ("invalid", "unstable_rerun")
-    assert label.cve["minimize"] == {"status": "skipped", "reason": "not_requested"}
-    assert label.cve["profile"] == {"status": "skipped", "reason": "not_requested"}
+    assert label.cve["attribution"] == {"status": "skipped", "reason": "not_requested"}
+    assert label.cve["minimize"] == {"status": "skipped", "reason": "tier1_rejected"}
+    assert label.cve["profile"] == {"status": "skipped", "reason": "tier1_rejected"}
+
+    FlakyRows.seen = 0
+    attributed = certify(
+        _case(), "plan_variant", hypothesis=H_ALPHA, runner_factory=FlakyRows, isolation="inline",
+    )
+    assert (attributed.y, attributed.invalid_reason) == ("invalid", "unstable_rerun")
+    for name in ("attribution", "minimize", "profile"):
+        assert attributed.cve[name] == {"status": "skipped", "reason": "tier1_rejected"}
 
 
 def test_process_attribution_and_a_dead_child_stay_at_tier_1(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -371,3 +402,34 @@ def test_process_attribution_and_a_dead_child_stay_at_tier_1(monkeypatch: pytest
     assert crashed.y == "fail" and crashed.cve["tier"] == 1
     assert crashed.cve["attribution"] == {"status": "skipped", "reason": "crash"}
     assert crashed.cve["minimize"] == {"status": "skipped", "reason": "not_requested"}
+
+
+def test_minimised_overflow_is_not_the_original_failure() -> None:
+    label = certify(
+        _case(), "plan_variant", diagnose=True, runner_factory=OverflowAfterDelete, isolation="inline",
+    )
+    assert (label.y, label.invalid_reason) == ("invalid", "not_reproduced_minimized")
+    assert label.cve["tier"] == 3
+    assert label.cve["minimize"]["status"] == "ran"
+    assert label.cve["minimize"]["reproduced"] is False
+    assert "insert into t" not in " ".join(label.cve["minimize"]["case"]["setup"]).lower()
+    assert label.cve["profile"] == {"status": "skipped", "reason": "not_reproduced_minimized"}
+
+
+def test_default_factory_asks_for_intervention_names_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    certify_impl._DEFAULT_INTERVENTION_NAMES.clear()
+    seen = {"n": 0}
+    real = call_worker
+
+    def wrapped(payload: dict[str, Any], wall: float) -> dict[str, Any]:
+        if payload.get("op") == "interventions":
+            seen["n"] += 1
+        return real(payload, wall)
+
+    monkeypatch.setattr(certify_impl, "call_worker", wrapped)
+    hypothesis = {"hypothesis_id": "h-once", "engine": "duckdb", "interventions": ["not_a_real_switch"]}
+    case = _case("SELECT 1")
+    for _ in range(2):
+        with pytest.raises(ValueError):
+            certify(case, "plan_variant", hypothesis=hypothesis)
+    assert seen["n"] == 1
