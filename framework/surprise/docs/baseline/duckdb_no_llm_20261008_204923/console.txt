@@ -1,0 +1,192 @@
+﻿2026-10-08 20:49:23,279 WARNING main: differential disabled (no old venv at \home\user\work\db_safety\venv_duckdb_old\bin\python)
+2026-10-08 20:49:23,289 INFO main: seed corpus loaded: 1092 seeds
+2026-10-08 20:49:23,290 INFO agents.base_agent: BugHunter initialized with model: deepseek-chat
+2026-10-08 20:49:23,290 INFO agents.base_agent: BugFixer initialized with model: deepseek-chat
+2026-10-08 20:49:23,290 INFO main: diagnosis engine + DCE expander enabled
+2026-10-08 20:49:24,440 INFO evolution.co_evolution: iter 0: candidates=0 true_bugs=0 fp=0 llm_calls=0
+2026-10-08 20:49:25,534 INFO evolution.co_evolution: iter 1: candidates=0 true_bugs=0 fp=0 llm_calls=0
+{
+  "iterations": 2,
+  "total_llm_calls": 0,
+  "total_candidates": 0,
+  "deduped_root_causes": 0,
+  "raw_true_bug_occurrences": 0,
+  "total_true_bugs": 0,
+  "total_false_positives": 0,
+  "total_version_divergences": 0,
+  "total_cross_engine_divergences": 0,
+  "total_unverified_bugs": 0,
+  "total_families": 0,
+  "dce_executed": 0,
+  "efficiency": {
+    "wall_s": 2.284,
+    "phase_s": {
+      "guidelines": 0.0,
+      "hunter": 2.241
+    },
+    "counts": {
+      "sql_executions": 3992
+    }
+  },
+  "ledger": {
+    "total_calls": 0,
+    "successful_calls": 0,
+    "failed_calls": 0,
+    "blocked_calls": 0,
+    "total_tokens": 0,
+    "by_event": {}
+  },
+  "root_arms_spawned": [],
+  "total_skipped_nondeterministic": 2,
+  "per_iteration": [
+    {
+      "iteration": 0,
+      "guidelines": {
+        "focus_categories": [],
+        "avoid_rewrite_kinds": [],
+        "new_constraints": [
+          "every table must contain NULLs, zeros, negative values, empty strings, extreme values, and duplicates",
+          "mix INTEGER, BIGINT, DOUBLE, DECIMAL, VARCHAR, BOOLEAN, DATE, TIMESTAMP column types",
+          "prefer predicates exercising NULL three-valued logic",
+          "avoid non-deterministic functions and unordered results"
+        ],
+        "rationale": "fixed bootstrap constraints"
+      },
+      "db": {
+        "schema": [],
+        "inserts": [],
+        "failed": []
+      },
+      "queries": [],
+      "llm_calls": 0,
+      "n_candidates": 0,
+      "new_true_bugs": 0,
+      "false_positives": 0,
+      "version_divergences": 0,
+      "skipped_nondeterministic": 1,
+      "duplicates": 0,
+      "coverage_size": 40,
+      "novel_cells": 40.0,
+      "inspired_queries": 0,
+      "inspired_candidates": 0,
+      "inspired_families": 0,
+      "playbook_size": 0
+    },
+    {
+      "iteration": 1,
+      "guidelines": {
+        "focus_categories": [],
+        "avoid_rewrite_kinds": [],
+        "new_constraints": [
+          "every table must contain NULLs, zeros, negative values, empty strings, extreme values, and duplicates",
+          "mix INTEGER, BIGINT, DOUBLE, DECIMAL, VARCHAR, BOOLEAN, DATE, TIMESTAMP column types",
+          "prefer predicates exercising NULL three-valued logic",
+          "avoid non-deterministic functions and unordered results"
+        ],
+        "rationale": "fixed bootstrap constraints"
+      },
+      "db": {
+        "schema": [],
+        "inserts": [],
+        "failed": []
+      },
+      "queries": [],
+      "llm_calls": 0,
+      "n_candidates": 0,
+      "new_true_bugs": 0,
+      "false_positives": 0,
+      "version_divergences": 0,
+      "skipped_nondeterministic": 1,
+      "duplicates": 0,
+      "coverage_size": 54,
+      "novel_cells": 14.0,
+      "inspired_queries": 0,
+      "inspired_candidates": 0,
+      "inspired_families": 0,
+      "playbook_size": 0
+    }
+  ],
+  "bugs_by_kind": {},
+  "bugs_by_category": {},
+  "pattern_memory": {
+    "join_outer": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "subquery_exists_in": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "aggregation_groupby_having": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "window_function": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "case_when_null_logic": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "type_cast_coercion": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "string_like_regex": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "date_time_arith": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "distinct_orderby_limit": {
+      "tries": 2,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "set_ops_union_except": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    },
+    "cte_with": {
+      "tries": 0,
+      "true_bugs": 0,
+      "false_positives": 0
+    }
+  },
+  "rewrite_memory": {},
+  "component_stats": {},
+  "parse_failures": 0,
+  "hunter_metrics": {
+    "total_calls": 0,
+    "successful_calls": 0,
+    "failed_calls": 0,
+    "total_tokens": 0,
+    "total_cost": 0.0
+  },
+  "fixer_metrics": {
+    "total_calls": 0,
+    "successful_calls": 0,
+    "failed_calls": 0,
+    "total_tokens": 0,
+    "total_cost": 0.0
+  },
+  "playbook": null,
+  "finished_at": "2026-10-08T20:49:25",
+  "engine": "duckdb",
+  "mode": "no_llm",
+  "seed": 0
+}
+
+Artifacts written to D:\CoevoDB\framework\results\duckdb_no_llm_20261008_204923

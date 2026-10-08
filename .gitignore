@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+.venvs/
 .uv-cache/
 
 # Run artifacts (large, regenerated per campaign)

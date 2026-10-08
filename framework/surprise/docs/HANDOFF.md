@@ -5,7 +5,7 @@
 | 会话 | 内容 | 状态 | tag | 门槛 |
 |---|---|---|---|---|
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后，S1 从这里起） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py，见下） |
-| S1 | Phase 0 冻结基线与仓库整理 | 未开始 | | |
+| S1 | Phase 0 冻结基线与仓库整理 | 进行中（分支 `session/s01`） | | |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 未开始 | | |
 | S3 | Phase 1b 其余三类 oracle | 未开始 | | |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
@@ -18,7 +18,29 @@
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
-## 最近一次会话：S0 编排准备（2026-10-08）
+## 当前会话：S1 冻结基线与仓库整理（进行中，2026-10-08）
+
+分支 `session/s01`，起点 tag `s00-done-r2`（4eaa4ed）。接手时先跑 `gw list` 看包的状态。
+
+### 已完成（编排者直接做的）
+
+- tag `v1-baseline` 核对：存在，指向 55c5512，没有重打。
+- 测试基线：`.venv` 装了 psycopg2-binary 之后，`cd framework; ../.venv/Scripts/python.exe -m pytest -q testing tests` → **64 passed, 3 skipped**，退出码 0。3 个跳过都是因为没有 PostgreSQL（2 个缺 `pgserver` 包，1 个没有 PG 构建）。装之前是收集阶段失败（S0 未决问题第 1 条，用户决定装）。
+- 旧系统基线 run：`python main.py --engine duckdb --mode no_llm --iterations 2`，退出码 0，存档在 `framework/surprise/docs/baseline/`（说明见该目录的 README.md）。full 模式没跑。
+- 引擎环境（都不入库，`.gitignore` 加了 `.venvs/`）：`.venv` 加装 DataFusion 54.0.0 与 psycopg2-binary 2.9.13；新建 `.venvs/duckdb-1.1.3`（DuckDB 1.1.3 + psycopg2-binary）与 `.venvs/datafusion-50.0.0`（DataFusion 50.0.0）。已填进 CLAUDE.md 的"引擎环境"，测试命令也写明了解释器（两处改动用户已同意）。
+- 整理前记录：41 个 `scripts/pg_*.py` 里，39 个 `--help` 正常；`pg_repack_mvcc.py` 没有 argparse、导入即执行；`pg_upgrade_mxact.py` 在模块顶层就抛 TypeError（旧 bug，不修）。
+
+### 拆包清单
+
+S1 是纯移动，按 ORCHESTRATION.md 第 8 节串行单包。
+
+| 包号 | 目标 | 允许路径 | 依赖 | 状态 |
+|---|---|---|---|---|
+| s01-reorg | ① 41 个 `framework/scripts/pg_*.py` 移到 `framework/campaigns/`，只改两处 `scripts.pg_*` 导入路径；② `DuckDBRunner` 移到 `framework/targets/duckdb_runner.py`，`oracles/db_runner.py` 保留 `QueryResult`、`bags_equal` 并 re-export `DuckDBRunner`；③ `framework/surprise/` 骨架：`__init__.py` 与九个子包的 `__init__.py` | `framework/campaigns/**`、`framework/scripts/pg_*.py`、`framework/targets/duckdb_runner.py`、`framework/oracles/db_runner.py`、`framework/surprise/__init__.py`、`framework/surprise/{harness,features,theory,hunter,diagnoser,roles,metrics,experiments,baselines}/__init__.py` | 无（`gates/` 由编排者先写好并提交） | 待派发 |
+
+门槛 `framework/surprise/gates/s01.py`（编排者写）：tag、骨架、三个环境的版本、`main.py --help`、pytest 通过数不少于 64、移动后的布局与导入顺序。
+
+## 上一次会话：S0 编排准备（2026-10-08）
 
 ### 完成了什么
 

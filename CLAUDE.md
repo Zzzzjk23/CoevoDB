@@ -18,11 +18,15 @@
 
 ## 命令（在 `framework/` 目录下执行）
 
-- 测试：`pytest -q testing tests`
-  （不要直接 `pytest -q`：`framework/test_api.py` 在设置了密钥时会真的调用 DeepSeek API）
+- 测试：`../.venv/Scripts/python.exe -m pytest -q testing tests`
+  （用仓库根 `.venv` 的解释器：PATH 上的 `pytest` 是 anaconda 的，没有 duckdb。不要直接 `pytest -q`：`framework/test_api.py` 在设置了密钥时会真的调用 DeepSeek API）
 - 门槛：`python -m surprise.gates.all`（每个 `gates/sNN.py` 退出码 0 = 通过；由 S1 建立）
 - 编排（在仓库根执行）：`.venv/Scripts/python.exe tools/orch/grok_worker.py {spawn|status|review|resume|merge|cleanup|list}`（流程见 `framework/surprise/docs/ORCHESTRATION.md`）
-- 引擎环境：{S1 填写各 venv 的路径与版本：DuckDB 1.5.5、DuckDB 1.1.3、DataFusion 54.0.0、DataFusion 旧版、SQLite}
+- 引擎环境（路径相对仓库根，都不入库；解释器是 `<venv>/Scripts/python.exe`，Python 3.13.9）：
+  - `.venv`（主环境）：DuckDB 1.5.5、DataFusion 54.0.0、SQLite 3.51.0（标准库 `sqlite3`）、psycopg2-binary 2.9.13
+  - `.venvs/duckdb-1.1.3`：DuckDB 1.1.3（另装 psycopg2-binary，旧版子进程 `oracles._remote_exec` 导入时要用）
+  - `.venvs/datafusion-50.0.0`：DataFusion 50.0.0（Version differential 用的旧版）
+  - 仓库根有 `duckdb/`、`datafusion/` 两个放复现 SQL 的目录：在仓库根 `import` 这两个名字会假成功，核对环境要看 `__version__`
 - PostgreSQL 相关注意事项见 `framework/AGENTS.md`。
 
 ## 收尾协议（编排者）

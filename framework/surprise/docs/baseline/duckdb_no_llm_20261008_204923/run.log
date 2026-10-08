@@ -1,0 +1,7 @@
+2026-10-08 20:49:23,279 WARNING main: differential disabled (no old venv at \home\user\work\db_safety\venv_duckdb_old\bin\python)
+2026-10-08 20:49:23,289 INFO main: seed corpus loaded: 1092 seeds
+2026-10-08 20:49:23,290 INFO agents.base_agent: BugHunter initialized with model: deepseek-chat
+2026-10-08 20:49:23,290 INFO agents.base_agent: BugFixer initialized with model: deepseek-chat
+2026-10-08 20:49:23,290 INFO main: diagnosis engine + DCE expander enabled
+2026-10-08 20:49:24,440 INFO evolution.co_evolution: iter 0: candidates=0 true_bugs=0 fp=0 llm_calls=0
+2026-10-08 20:49:25,534 INFO evolution.co_evolution: iter 1: candidates=0 true_bugs=0 fp=0 llm_calls=0
