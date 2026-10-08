@@ -571,6 +571,24 @@ def check_evaluate() -> str:
                 cases["plain"], "tlp", ledger=ledger, run_id="never-started", purpose="gate"),
                 "evaluate on a run that was never started")
             require(ledger.count() == total, "a rejected evaluate() call left a record behind")
+            # Arguments the record would reject must be refused before anything
+            # runs: otherwise an execution happens and no record of it exists.
+            opened = []
+
+            def counting() -> Any:
+                from oracles.db_runner import DuckDBRunner
+
+                opened.append(1)
+                return DuckDBRunner()
+
+            for bad in ({"purpose": ""}, {"p_t": 1.5}, {"spec": {"weights": {1, 2}}}):
+                kwargs = {"purpose": "gate", **bad}
+                expect_raises(ValueError, lambda kw=kwargs: evaluate(
+                    cases["plain"], "tlp", ledger=ledger, run_id=run, runner_factory=counting,
+                    **kw), f"evaluate with {bad}")
+            require(not opened, "evaluate() executed a case whose arguments it then rejected "
+                    f"({len(opened)} runner(s) opened): validate before judging")
+            require(ledger.count() == total, "a rejected evaluate() call left a record behind")
             returned.append(broken)
         finally:
             ledger.close()
