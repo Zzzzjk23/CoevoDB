@@ -62,11 +62,29 @@ _NON_EQUI = (exp.LT, exp.LTE, exp.GT, exp.GTE, exp.NEQ)
 _QUERY = (exp.Select, exp.Union, exp.Except, exp.Intersect)
 _SET_OP = {exp.Union: "union", exp.Except: "except", exp.Intersect: "intersect"}
 _ARITH = (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Mod)
+# Parentheses, sqlglot's parenthesized-query node, and LATERAL do not create a query.
+_QUERY_WRAPPERS = (exp.Paren, exp.Subquery, exp.Lateral)
+# FILTER and null-treatment wrap the call; the function inside is the one that matters.
+_CALL_WRAPPERS = tuple(
+    kind
+    for kind in (exp.Filter, getattr(exp, "IgnoreNulls", None), getattr(exp, "RespectNulls", None))
+    if isinstance(kind, type)
+)
 
 _COMMENT = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
 _STRING = re.compile(r"'(?:''|[^'])*'")
 _OVER = re.compile(r"\bover\s*\(", re.IGNORECASE)
 _ORDER_BY = re.compile(r"\border\s+by\b", re.IGNORECASE)
+_CTE_RECURSIVE = re.compile(
+    r"\bwith\s+recursive\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\([^)]*\))?\s+as\s+(?:(?:not\s+)?materialized\s+)?\(",
+    re.IGNORECASE,
+)
+_CTE_PLAIN = re.compile(
+    r"\bwith\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\([^)]*\))?\s+as\s+(?:(?:not\s+)?materialized\s+)?\(",
+    re.IGNORECASE,
+)
+_ONE_STATEMENT = re.compile(r";\s*\S")
+_STATEMENT_WORD = re.compile(r"\s*(select|insert|update|delete|merge)\b", re.IGNORECASE)
 
 
 def extract_ast(
@@ -253,25 +271,43 @@ def _is_negated(node: exp.Expression) -> bool:
     return isinstance(parent, exp.Not)
 
 
-def _is_predicate_operand(node: exp.Expression) -> bool:
-    parent = node.parent
-    if isinstance(parent, exp.In) and parent.args.get("query") is node:
+def _role_parent(node: exp.Expression) -> tuple[exp.Expression | None, str | None]:
+    """Parent that decides what a query is, after wrappers that do not add a query."""
+    current = node
+    while isinstance(current.parent, _QUERY_WRAPPERS):
+        current = current.parent
+    return current.parent, current.arg_key
+
+
+def _is_excluded_query(node: exp.Expression) -> bool:
+    """Top-level statement, set operand, CTE body, or INSERT / CREATE TABLE AS source."""
+    parent, key = _role_parent(node)
+    if parent is None:
         return True
-    return isinstance(parent, (exp.Any, exp.All, exp.Exists)) and parent.this is node
-
-
-def _is_derived(node: exp.Expression) -> bool:
-    current: exp.Expression | None = node
-    while current is not None:
-        parent = current.parent
-        if isinstance(parent, exp.From):
-            return True
-        if isinstance(parent, exp.Join) and current.arg_key == "this":
-            return True
-        if isinstance(parent, (exp.Select, exp.Update, exp.Delete, exp.Merge, *_QUERY)):
-            return False
-        current = parent
+    if isinstance(parent, (exp.Union, exp.Except, exp.Intersect)) and key in ("this", "expression"):
+        return True
+    if isinstance(parent, exp.CTE) and key == "this":
+        return True
+    if isinstance(parent, exp.Insert) and key == "expression":
+        return True
+    if isinstance(parent, exp.Create) and key == "expression" and _token(parent.args.get("kind")) == "table":
+        return True
     return False
+
+
+def _subquery_form(node: exp.Expression) -> str:
+    parent, key = _role_parent(node)
+    if isinstance(parent, exp.Exists):
+        return "not_exists" if _is_negated(parent) else "exists"
+    if isinstance(parent, exp.In) and key == "query":
+        return "not_in" if _is_negated(parent) else "in"
+    if isinstance(parent, exp.All):
+        return "all"
+    if isinstance(parent, exp.Any):
+        return "any"
+    if isinstance(parent, exp.From) or (isinstance(parent, exp.Join) and key == "this"):
+        return "derived"
+    return "scalar"
 
 
 def _subquery_position(node: exp.Expression) -> str | None:
@@ -301,32 +337,24 @@ def _add_subquery(found: set[str], kind: str, node: exp.Expression) -> None:
 
 
 def _subqueries(tree: exp.Expression, found: set[str]) -> None:
-    for node in tree.find_all(exp.Exists):
-        _add_subquery(found, "not_exists" if _is_negated(node) else "exists", node)
     for node in tree.find_all(exp.In):
-        if node.args.get("query") is not None:
-            _add_subquery(found, "not_in" if _is_negated(node) else "in", node)
-        elif node.args.get("expressions"):
+        if node.args.get("query") is None and node.args.get("expressions"):
             found.add("ast:pred:in_list")
-    for node in tree.find_all(exp.All):
-        _add_subquery(found, "all", node)
-    for node in tree.find_all(exp.Any):
-        _add_subquery(found, "any", node)
-    for node in tree.find_all(exp.Subquery):
-        if _is_predicate_operand(node):
+    for node in tree.find_all(*_QUERY):
+        if _is_excluded_query(node):
             continue
-        _add_subquery(found, "derived" if _is_derived(node) else "scalar", node)
+        _add_subquery(found, _subquery_form(node), node)
 
 
-def _unwrap_filter(node: exp.Expression | None) -> exp.Expression | None:
-    if isinstance(node, exp.Filter):
-        return node.this
+def _unwrap_call(node: exp.Expression | None) -> exp.Expression | None:
+    while isinstance(node, _CALL_WRAPPERS):
+        node = node.this
     return node
 
 
 def _is_windowed(func: exp.Expression) -> bool:
     parent = func.parent
-    if isinstance(parent, exp.Filter):
+    while isinstance(parent, _CALL_WRAPPERS):
         parent = parent.parent
     return isinstance(parent, exp.Window)
 
@@ -399,12 +427,74 @@ def _expr_dup(exprs: list[exp.Expression]) -> bool:
     return False
 
 
+def _is_window_call(window: exp.Window) -> bool:
+    # A WINDOW clause defines a name. Only `function OVER ...` is a call.
+    return window.args.get("over") == "OVER"
+
+
+def _window_alias(window: exp.Window) -> str:
+    alias = window.args.get("alias")
+    if isinstance(alias, exp.Identifier):
+        name = alias.name
+        return name.casefold() if isinstance(name, str) else ""
+    if isinstance(alias, str):
+        return alias.casefold()
+    return ""
+
+
+def _window_def(window: exp.Window, name: str) -> exp.Window | None:
+    current = window.parent
+    while current is not None:
+        for definition in current.args.get("windows") or []:
+            if not isinstance(definition, exp.Window):
+                continue
+            ident = definition.this
+            if isinstance(ident, exp.Identifier) and isinstance(ident.name, str) and ident.name.casefold() == name:
+                return definition
+        current = current.parent
+    return None
+
+
+def _add_frame(spec: exp.WindowSpec, found: set[str]) -> None:
+    found.add("ast:window_spec:frame")
+    frame = _token(spec.args.get("kind"))
+    leaf = {
+        "rows": "ast:window_frame:rows",
+        "range": "ast:window_frame:range",
+        "groups": "ast:window_frame:groups",
+    }.get(frame)
+    if leaf is not None:
+        found.add(leaf)
+    for side_name in ("start_side", "end_side"):
+        side = _token(spec.args.get(side_name))
+        if side == "preceding":
+            found.add("ast:window_frame:preceding")
+        elif side == "following":
+            found.add("ast:window_frame:following")
+
+
+def _add_window_spec(window: exp.Window, found: set[str], *, allow_empty: bool) -> None:
+    parts = [part for part in (window.args.get("partition_by") or []) if isinstance(part, exp.Expression)]
+    order = window.args.get("order")
+    spec = window.args.get("spec")
+    if parts:
+        found.add("ast:window_spec:partition")
+        if _expr_dup(parts):
+            found.add("ast:window_trait:dup_partition_key")
+    if order is not None:
+        found.add("ast:window_spec:order")
+    if isinstance(spec, exp.WindowSpec):
+        _add_frame(spec, found)
+    if allow_empty and not parts and order is None and not isinstance(spec, exp.WindowSpec):
+        found.add("ast:window_spec:empty")
+
+
 def _windows(tree: exp.Expression, found: set[str]) -> None:
-    windows = list(tree.find_all(exp.Window))
-    if len(windows) >= 2:
+    calls = [window for window in tree.find_all(exp.Window) if _is_window_call(window)]
+    if len(calls) >= 2:
         found.add("ast:window_trait:multiple")
-    for window in windows:
-        call = _unwrap_filter(window.this)
+    for window in calls:
+        call = _unwrap_call(window.this)
         name = _call_name(call) if isinstance(call, exp.Expression) else ""
         # Some navigation functions are AggFunc subclasses; the written name decides.
         if name in _RANKING:
@@ -415,29 +505,15 @@ def _windows(tree: exp.Expression, found: set[str]) -> None:
             found.add("ast:window_fn:aggregate")
         else:
             found.add("ast:window_fn:other")
-        parts = window.args.get("partition_by") or []
-        if parts:
-            found.add("ast:window_spec:partition")
-            if _expr_dup(list(parts)):
-                found.add("ast:window_trait:dup_partition_key")
-        if window.args.get("order") is not None:
-            found.add("ast:window_spec:order")
-        spec = window.args.get("spec")
-        if isinstance(spec, exp.WindowSpec):
-            found.add("ast:window_spec:frame")
-            frame = _token(spec.args.get("kind"))
-            leaf = {"rows": "ast:window_frame:rows", "range": "ast:window_frame:range",
-                    "groups": "ast:window_frame:groups"}.get(frame)
-            if leaf is not None:
-                found.add(leaf)
-            for side_name in ("start_side", "end_side"):
-                side = _token(spec.args.get(side_name))
-                if side == "preceding":
-                    found.add("ast:window_frame:preceding")
-                elif side == "following":
-                    found.add("ast:window_frame:following")
-        if not parts and window.args.get("order") is None and spec is None:
-            found.add("ast:window_spec:empty")
+        alias = _window_alias(window)
+        if alias:
+            definition = _window_def(window, alias)
+            # A name with no definition contributes no specification features.
+            if definition is not None:
+                _add_window_spec(definition, found, allow_empty=False)
+                _add_window_spec(window, found, allow_empty=False)
+        else:
+            _add_window_spec(window, found, allow_empty=True)
         if isinstance(call, exp.Expression) and _direct_order(call):
             found.add("ast:window_trait:ordered_arg")
 
@@ -475,10 +551,23 @@ def _clauses(tree: exp.Expression, found: set[str]) -> None:
             found.add("ast:cte:plain")
 
 
+def _is_assignment(node: exp.Expression) -> bool:
+    """Top-level `=` of UPDATE SET, MERGE UPDATE SET, SET, or PRAGMA. Not a comparison."""
+    parent = node.parent
+    if isinstance(parent, exp.Update) and node.arg_key == "expressions":
+        return True
+    if isinstance(parent, exp.SetItem):
+        return True
+    return isinstance(parent, exp.Pragma)
+
+
 def _predicates(tree: exp.Expression, found: set[str]) -> None:
     for kind, leaf in _CMP_LEAF.items():
-        if any(True for _ in tree.find_all(kind)):
+        for node in tree.find_all(kind):
+            if kind is exp.EQ and _is_assignment(node):
+                continue
             found.add(leaf)
+            break
     for node in tree.find_all(exp.Is):
         if not isinstance(node.args.get("expression"), exp.Null):
             continue
@@ -576,13 +665,74 @@ def _source_names(scope: Scope) -> set[str]:
     return {name.casefold() for name in scope.sources if isinstance(name, str) and name}
 
 
-def _outer_names(scope: Scope) -> set[str]:
-    names: set[str] = set()
+def _outer_names(scope: Scope, extra: set[str]) -> set[str]:
+    names = set(extra)
     parent = scope.parent
     while parent is not None:
         names.update(_source_names(parent))
         parent = parent.parent
     return names
+
+
+def _labels_under(node: object) -> set[str]:
+    """Table names and aliases of a DML relation. Do not walk into a nested query."""
+    if isinstance(node, exp.Table):
+        labels: set[str] = set()
+        if isinstance(node.name, str) and node.name:
+            labels.add(node.name.casefold())
+        alias = node.alias
+        if isinstance(alias, str) and alias:
+            labels.add(alias.casefold())
+        for join in node.args.get("joins") or []:
+            labels |= _labels_under(join)
+        return labels
+    if isinstance(node, exp.Join):
+        return _labels_under(node.this)
+    if isinstance(node, exp.From):
+        labels = _labels_under(node.this)
+        for join in node.args.get("joins") or []:
+            labels |= _labels_under(join)
+        return labels
+    if isinstance(node, exp.Lateral):
+        return _labels_under(node.this)
+    if isinstance(node, exp.Subquery):
+        labels = set()
+        alias = node.alias
+        if isinstance(alias, str) and alias:
+            labels.add(alias.casefold())
+        for join in node.args.get("joins") or []:
+            labels |= _labels_under(join)
+        return labels
+    return set()
+
+
+def _dml_names(tree: exp.Expression) -> set[str]:
+    """Relations of UPDATE / DELETE / MERGE. The target of INSERT or CTAS is not outer."""
+    if isinstance(tree, exp.Delete):
+        names = _labels_under(tree.this)
+        for item in tree.args.get("using") or []:
+            names |= _labels_under(item)
+        return names
+    if isinstance(tree, exp.Update):
+        names = _labels_under(tree.this)
+        source = tree.args.get("from_")
+        if isinstance(source, exp.Expression):
+            names |= _labels_under(source)
+        return names
+    if isinstance(tree, exp.Merge):
+        names = _labels_under(tree.this)
+        using = tree.args.get("using")
+        if isinstance(using, exp.Expression):
+            names |= _labels_under(using)
+        elif isinstance(using, list):
+            for item in using:
+                names |= _labels_under(item)
+        return names
+    return set()
+
+
+def _outermost_queries(tree: exp.Expression) -> list[exp.Expression]:
+    return [node for node in tree.find_all(*_QUERY) if node.find_ancestor(*_QUERY) is None]
 
 
 def _bare_column(node: exp.Expression | None) -> exp.Column | None:
@@ -601,18 +751,30 @@ def _qualifier(column: exp.Column) -> str:
 def _correlation(tree: exp.Expression, found: set[str]) -> None:
     # Scope building is not part of parsing. A failure here leaves the statement
     # parsed and simply records no correlation, instead of flipping it to fallback.
+    extra = _dml_names(tree)
     try:
         if build_scope(tree) is None:
-            return
-        scopes = traverse_scope(tree)
+            # UPDATE / DELETE / MERGE are not queries. Scope each nested query on its own.
+            scopes: list[Scope] = []
+            apart = True
+            for query in _outermost_queries(tree):
+                try:
+                    if build_scope(query) is None:
+                        continue
+                    scopes.extend(traverse_scope(query))
+                except Exception:
+                    continue
+        else:
+            scopes = list(traverse_scope(tree))
+            apart = False
     except Exception:
         return
     by_expression = {id(scope.expression): scope for scope in scopes}
     correlated = False
     for scope in scopes:
-        if scope.parent is None:
+        if scope.parent is None and not apart:
             continue
-        outer = _outer_names(scope)
+        outer = set(extra) if scope.parent is None else _outer_names(scope, extra)
         if any(_qualifier(column) in outer for column in scope.external_columns):
             correlated = True
     if correlated:
@@ -620,18 +782,21 @@ def _correlation(tree: exp.Expression, found: set[str]) -> None:
     for kind, leaf in _CORR_LEAF.items():
         for cmp in tree.find_all(kind):
             scope = _scope_of(cmp, by_expression)
-            if scope is None or scope.parent is None:
+            if scope is None or (scope.parent is None and not apart):
                 continue
             left = _bare_column(cmp.this)
             right = _bare_column(cmp.expression)
             if left is None or right is None:
                 continue
             local = _source_names(scope)
-            outer = _outer_names(scope)
+            outer = set(extra) if scope.parent is None else _outer_names(scope, extra)
             left_name = _qualifier(left)
             right_name = _qualifier(right)
-            left_local, right_local = left_name in local, right_name in local
-            left_outer, right_outer = left_name in outer, right_name in outer
+            # A qualifier this scope defines is local, even when an outer scope uses it too.
+            left_local = bool(left_name) and left_name in local
+            right_local = bool(right_name) and right_name in local
+            left_outer = bool(left_name) and left_name in outer and left_name not in local
+            right_outer = bool(right_name) and right_name in outer and right_name not in local
             if (left_local and right_outer) or (right_local and left_outer):
                 found.add(leaf)
 
@@ -713,6 +878,7 @@ def _fallback(sql: str) -> set[str]:
     masked = _mask(sql)
     _fallback_windows(masked, found)
     _fallback_joins(masked, found)
+    _fallback_statement(masked, found)
     without_filter = re.sub(r"\bfilter\s*\(\s*where\b", " ", masked, flags=re.IGNORECASE)
     if re.search(r"\bwhere\b", without_filter, re.IGNORECASE):
         found.add("ast:clause:where")
@@ -759,6 +925,15 @@ def _fallback_windows(masked: str, found: set[str]) -> None:
             found.add("ast:window_fn:aggregate")
     if count >= 2:
         found.add("ast:window_trait:multiple")
+
+
+def _fallback_statement(masked: str, found: set[str]) -> None:
+    """One statement whose first word is a known kind. WITH, parentheses, and multi-statement text stay unguessed."""
+    if _ONE_STATEMENT.search(masked):
+        return
+    match = _STATEMENT_WORD.match(masked)
+    if match:
+        found.add(f"ast:stmt:{match.group(1).casefold()}")
 
 
 def _consume(pattern: str, leaf: str, text: str, found: set[str]) -> str:
@@ -830,16 +1005,17 @@ def _fallback_keywords(masked: str, found: set[str]) -> None:
         found.add("ast:clause:offset")
     if re.search(r"\bqualify\b", masked, re.IGNORECASE):
         found.add("ast:clause:qualify")
-    if re.search(r"\bwith\s+recursive\b", masked, re.IGNORECASE):
+    if _CTE_RECURSIVE.search(masked):
         found.add("ast:cte:recursive")
-    elif re.search(r"\bwith\b", masked, re.IGNORECASE):
+    if _CTE_PLAIN.search(_CTE_RECURSIVE.sub(" ", masked)):
         found.add("ast:cte:plain")
     if re.search(r"\bis\s+not\s+null\b", masked, re.IGNORECASE):
         found.add("ast:pred:is_not_null")
     null_rest = re.sub(r"\bis\s+not\s+null\b", " ", masked, flags=re.IGNORECASE)
     if re.search(r"\bis\s+null\b", null_rest, re.IGNORECASE):
         found.add("ast:pred:is_null")
-    if re.search(r"\bbetween\b", masked, re.IGNORECASE):
+    # A frame's BETWEEN is not the predicate. Judge it only outside OVER (...).
+    if re.search(r"\bbetween\b", _strip_over(masked), re.IGNORECASE):
         found.add("ast:pred:between")
     if re.search(r"\b(like|ilike)\b", masked, re.IGNORECASE):
         found.add("ast:pred:like")

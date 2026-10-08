@@ -601,3 +601,218 @@ def test_known_families_are_pairwise_distinct() -> None:
         for right in names[index + 1:]:
             assert found[left] != found[right], (left, right)
     assert found["DF-A"] ^ found["DF-B"] == {"ast:set_op:except_all", "ast:set_op:intersect_all"}
+
+
+_SUBQUERY_FORMS = {
+    "ast:subquery:exists",
+    "ast:subquery:not_exists",
+    "ast:subquery:in",
+    "ast:subquery:not_in",
+    "ast:subquery:all",
+    "ast:subquery:any",
+    "ast:subquery:derived",
+    "ast:subquery:scalar",
+}
+
+
+def _expect(sql: str, required: set[str], forbidden: set[str], engine: str = "duckdb", status: str = "ok") -> None:
+    features, got = extract_ast(sql, engine)
+    assert got == status, (sql, got)
+    assert required <= features, (sql, sorted(required - features))
+    assert not (forbidden & features), (sql, sorted(forbidden & features))
+
+
+def test_a_subquery_is_a_nested_query_not_a_pair_of_parentheses() -> None:
+    _expect(
+        "(SELECT a FROM t) UNION ALL (SELECT b FROM u) ORDER BY 1",
+        {"ast:stmt:select", "ast:set_op:union_all", "ast:clause:order_by"},
+        {"ast:subquery:scalar", "ast:subquery:derived", "ast:subquery_pos:from"},
+        engine="postgres",
+    )
+    _expect(
+        "INSERT INTO t (SELECT a FROM u)",
+        {"ast:stmt:insert"},
+        {"ast:subquery:scalar", "ast:stmt:select"},
+    )
+    _expect("(SELECT 1)", {"ast:stmt:select"}, {"ast:subquery:scalar"})
+    _expect(
+        "SELECT * FROM (a JOIN b ON a.x = b.x)",
+        {"ast:join:inner", "ast:join_cond:on"},
+        {"ast:subquery:derived", "ast:subquery_pos:from"},
+        engine="postgres",
+    )
+    _expect(
+        "SELECT ARRAY(SELECT a FROM t)",
+        {"ast:subquery:scalar", "ast:subquery_pos:select"},
+        {"ast:subquery:derived"},
+    )
+    for engine, sql in (
+        ("postgres", "SELECT a FROM t WHERE a = ANY (ARRAY[1, 2])"),
+        ("duckdb", "SELECT a FROM t WHERE a = ANY ([1, 2])"),
+    ):
+        _expect(sql, {"ast:clause:where", "ast:cmp:eq"}, {"ast:subquery:any", "ast:subquery_pos:where"}, engine=engine)
+    wrapped = _ok("SELECT a FROM t WHERE a IN ((SELECT max(b) FROM u))")
+    present = _SUBQUERY_FORMS & wrapped
+    assert present <= {"ast:subquery:in", "ast:subquery:scalar"}
+    assert len(present) == 1
+
+
+def test_named_windows_take_their_specification_from_the_definition() -> None:
+    _expect(
+        "SELECT sum(a) OVER w FROM t WINDOW w AS (PARTITION BY b ORDER BY a)",
+        {"ast:window_fn:aggregate", "ast:window_spec:partition", "ast:window_spec:order"},
+        {
+            "ast:window_spec:empty",
+            "ast:window_trait:multiple",
+            "ast:window_fn:other",
+            "ast:agg:sum",
+            "ast:clause:order_by",
+        },
+    )
+    _expect(
+        "SELECT rank() OVER w, sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)",
+        {"ast:window_fn:ranking", "ast:window_fn:aggregate", "ast:window_spec:order", "ast:window_trait:multiple"},
+        {"ast:window_spec:empty", "ast:window_spec:partition", "ast:window_fn:other"},
+    )
+    _expect(
+        "SELECT rank() OVER (w ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t "
+        "WINDOW w AS (PARTITION BY b ORDER BY a)",
+        {
+            "ast:window_fn:ranking",
+            "ast:window_spec:partition",
+            "ast:window_spec:order",
+            "ast:window_spec:frame",
+            "ast:window_frame:rows",
+            "ast:window_frame:preceding",
+        },
+        {"ast:window_spec:empty", "ast:window_trait:multiple", "ast:window_fn:other"},
+    )
+    _expect(
+        "SELECT sum(a) OVER w FROM t WINDOW w AS (PARTITION BY b, b)",
+        {"ast:window_trait:dup_partition_key"},
+        set(),
+    )
+
+
+def test_null_treatment_does_not_hide_the_windowed_function() -> None:
+    _expect(
+        "SELECT first_value(a) IGNORE NULLS OVER (ORDER BY b), lag(a) RESPECT NULLS OVER (ORDER BY b) FROM t",
+        {"ast:window_fn:navigation", "ast:window_spec:order", "ast:window_trait:multiple"},
+        {"ast:agg:other", "ast:window_fn:aggregate", "ast:window_fn:other"},
+    )
+    _expect(
+        "SELECT first(a IGNORE NULLS) OVER (ORDER BY b) FROM t",
+        {"ast:window_fn:aggregate"},
+        {"ast:agg:other", "ast:window_fn:other"},
+    )
+
+
+def test_dml_subqueries_can_reference_the_statement_relations() -> None:
+    _expect(
+        "DELETE FROM t WHERE NOT EXISTS (SELECT 1 FROM u WHERE u.k = t.k)",
+        {
+            "ast:stmt:delete",
+            "ast:subquery:not_exists",
+            "ast:subquery_pos:where",
+            "ast:subquery_trait:correlated",
+            "ast:corr_cmp:eq",
+        },
+        {"ast:subquery:exists", "ast:stmt:select"},
+    )
+    _expect(
+        "DELETE FROM t x WHERE EXISTS (SELECT 1 FROM u WHERE u.k >= x.k)",
+        {"ast:subquery_trait:correlated", "ast:corr_cmp:ge"},
+        set(),
+    )
+    _expect(
+        "UPDATE t SET a = (SELECT max(v) FROM u WHERE u.k <> t.k) WHERE b > 2",
+        {
+            "ast:stmt:update",
+            "ast:subquery:scalar",
+            "ast:subquery_trait:correlated",
+            "ast:corr_cmp:neq",
+            "ast:cmp:neq",
+            "ast:cmp:gt",
+        },
+        {"ast:cmp:eq", "ast:corr_cmp:eq", "ast:subquery_pos:where"},
+    )
+    _expect(
+        "MERGE INTO t USING u ON t.k = u.k WHEN MATCHED AND EXISTS "
+        "(SELECT 1 FROM w WHERE w.k < t.k) THEN UPDATE SET v = u.v",
+        {
+            "ast:stmt:merge",
+            "ast:merge:matched",
+            "ast:merge:update",
+            "ast:subquery:exists",
+            "ast:subquery_trait:correlated",
+            "ast:corr_cmp:lt",
+            "ast:cmp:eq",
+            "ast:cmp:lt",
+        },
+        {"ast:corr_cmp:eq"},
+    )
+    _expect(
+        "INSERT INTO t SELECT a FROM u WHERE EXISTS (SELECT 1 FROM w WHERE w.k = t.k)",
+        set(),
+        {"ast:subquery_trait:correlated", "ast:corr_cmp:eq"},
+    )
+    _expect(
+        "DELETE FROM t WHERE EXISTS (SELECT 1 FROM u WHERE u.k > 0)",
+        set(),
+        {"ast:subquery_trait:correlated"},
+    )
+
+
+def test_assignment_is_not_a_comparison() -> None:
+    _expect("UPDATE t SET a = 1 WHERE b > 2", {"ast:cmp:gt"}, {"ast:cmp:eq"})
+    _expect("UPDATE t SET a = 1 WHERE b = 2", {"ast:cmp:eq"}, set())
+    _expect(
+        "MERGE INTO t USING u ON t.k < u.k WHEN MATCHED THEN UPDATE SET v = u.v",
+        {"ast:cmp:lt"},
+        {"ast:cmp:eq"},
+    )
+    _expect("SET threads = 1", set(), {"ast:cmp:eq"})
+
+
+def test_a_name_defined_in_the_subquery_is_local() -> None:
+    _expect(
+        "SELECT a FROM t WHERE EXISTS (SELECT 1 FROM t WHERE t.k = t.j)",
+        {"ast:subquery:exists", "ast:cmp:eq", "ast:join_trait:self"},
+        {"ast:corr_cmp:eq", "ast:subquery_trait:correlated"},
+    )
+
+
+def test_fallback_does_not_guess_frames_with_ties_or_several_statements() -> None:
+    _expect(
+        "SELECT {agg}(id) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t1",
+        set(),
+        {"ast:pred:between", "ast:clause:order_by", "ast:window_spec:empty"},
+        status="fallback",
+    )
+    _expect(
+        "SELECT * FROM J1_TBL JOIN J2_TBL USING (i) AS x ORDER BY 1 FETCH FIRST 1 ROW WITH TIES",
+        set(),
+        {"ast:cte:plain", "ast:cte:recursive"},
+        engine="postgres",
+        status="fallback",
+    )
+    _expect(
+        "SELECT id, {agg}(id) OVER (PARTITION BY ch ORDER BY id ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) "
+        "FROM t1 ORDER BY 1",
+        {"ast:stmt:select"},
+        set(),
+        status="fallback",
+    )
+    _expect(
+        "SELECT * FROM J1_TBL JOIN J2_TBL USING (i) AS x WHERE J1_TBL.t = 'one'",
+        {"ast:stmt:select"},
+        set(),
+        engine="postgres",
+        status="fallback",
+    )
+    _expect(
+        "SELECT 1; DELETE FROM t",
+        set(),
+        {"ast:stmt:select", "ast:stmt:delete"},
+        status="fallback",
+    )
