@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from surprise.harness.contracts import INVALID_REASONS, ORACLE_IDS, SqlCase
+from surprise.harness.contracts import INVALID_REASONS, Label, ORACLE_IDS, SqlCase
 from surprise.harness.evaluate import evaluate
 from surprise.harness.ledger import Ledger
 from surprise.harness.oracles import IMPLEMENTED, judge
@@ -29,9 +29,28 @@ _SETUP = (
 )
 
 
+_LATER_IDS = (
+    "index_presence",
+    "equivalent_query",
+    "version_differential",
+    "cross_dbms",
+)
+
+
 def _case(query: str = "SELECT a, b FROM t", predicate: str | None = "a > 0",
           engine: str = "duckdb", setup: tuple[str, ...] = _SETUP) -> SqlCase:
     return SqlCase(engine=engine, setup=setup, query=query, predicate=predicate)
+
+
+def _fake_pass_handler(oracle_id: str):
+    def judge_case(case, *, factory, timeout_s, options):
+        return Label(y="pass", oracle=oracle_id)
+
+    return judge_case
+
+
+def _absent_module(oracle_id: str) -> str:
+    return f"surprise.harness.oracles._s03_registry_absent_{oracle_id}"
 
 
 def test_implemented_is_the_seven_plan_ids() -> None:
@@ -71,7 +90,21 @@ def test_register_and_get_handler_for_sound_oracles() -> None:
         get_handler("TLP")
 
 
-def test_missing_later_module_is_not_a_pass() -> None:
+def test_missing_later_module_is_not_a_pass(monkeypatch) -> None:
+    planted = dict(registry._HANDLERS)
+    fakes = {oracle_id: _fake_pass_handler(oracle_id) for oracle_id in _LATER_IDS}
+    planted.update(fakes)
+    monkeypatch.setattr(registry, "_HANDLERS", planted)
+    assert get_handler("index_presence") is fakes["index_presence"]
+
+    handlers = dict(registry._HANDLERS)
+    modules = dict(registry._LAZY_MODULES)
+    for oracle_id in _LATER_IDS:
+        handlers.pop(oracle_id, None)
+        modules[oracle_id] = _absent_module(oracle_id)
+    monkeypatch.setattr(registry, "_HANDLERS", handlers)
+    monkeypatch.setattr(registry, "_LAZY_MODULES", modules)
+
     with pytest.raises(ImportError):
         get_handler("index_presence")
     with pytest.raises(ImportError):
@@ -173,7 +206,7 @@ def test_datafusion_setup_error_and_not_applicable() -> None:
     assert (limited.y, limited.invalid_reason) == ("invalid", "nondeterministic")
 
 
-def test_evaluate_accounts_datafusion_and_missing_handler(tmp_path) -> None:
+def test_evaluate_accounts_datafusion_and_missing_handler(tmp_path, monkeypatch) -> None:
     ledger = Ledger(tmp_path / "ledger.sqlite")
     try:
         ledger.start_run("run-1", {})
@@ -182,6 +215,19 @@ def test_evaluate_accounts_datafusion_and_missing_handler(tmp_path) -> None:
         assert ledger.count(run_id="run-1") == 1
         assert record.label.to_dict() == judge(case, "tlp").to_dict()
         assert record.label.y == "pass"
+
+        planted = dict(registry._HANDLERS)
+        fake = _fake_pass_handler("index_presence")
+        planted["index_presence"] = fake
+        monkeypatch.setattr(registry, "_HANDLERS", planted)
+        assert get_handler("index_presence") is fake
+
+        handlers = dict(registry._HANDLERS)
+        handlers.pop("index_presence", None)
+        modules = dict(registry._LAZY_MODULES)
+        modules["index_presence"] = _absent_module("index_presence")
+        monkeypatch.setattr(registry, "_HANDLERS", handlers)
+        monkeypatch.setattr(registry, "_LAZY_MODULES", modules)
 
         missing = evaluate(_case(), "index_presence", ledger=ledger, run_id="run-1", purpose="s03")
         assert (missing.label.y, missing.label.invalid_reason) == ("invalid", "harness_error")
