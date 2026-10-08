@@ -54,3 +54,23 @@
 | 2026-10-08 | S1 修订 | 旧版 DataFusion 维持 50.0.0 | 没有新的信息要求换；S3 实际做 Version differential 时若 50.0.0 与复现用到的 SQL 特性不合，再换 |
 | 2026-10-08 | S1 修订 | 审查时留下的两处小出入（`oracles/db_runner.py` 少一个空行、`DuckDBRunner` 的日志记录器改名）不返工 | 都不影响行为。补一个空行要另派一个工作包，不值；S12 整理旧代码时顺手补 |
 | 2026-10-08 | S1 修订 | 修订在 `session/s01` 上提交，合并回 main 后另打 tag `s01-done-r2`，不移动 `s01-done`；S2 从 `s01-done-r2` 起 | 沿用 S0 的做法：tag 里要含最新的 CLAUDE.md 与交接文件，已有 tag 不改写 |
+| 2026-10-08 | S2 | 五个数据契约按"谁写"分两个文件：`surprise/harness/contracts.py` 放 SQL 用例、身份证据、标签、实验记录；`surprise/theory/contracts.py` 放规格、假设、理论编辑。实验记录里的规格存成 dict，harness 不 import 理论层 | 编排者定。CLAUDE.md 规定 S4 之后 `harness/` 冻结；后三个契约到 S5–S7 才定型，放进 harness 会被提前冻住。划分依据是 PLAN.md 第 4 节契约表的"谁写"一列 |
+| 2026-10-08 | S2 | PLAN 决策表第 6 条（实验账本用 SQLite，不用被测的 DuckDB）在 S2 采用 | SESSIONS.md 的 S2 范围明写"SQLite 实验账本"，PLAN 的 Phase 1 也这样写；没有单独再问用户 |
+| 2026-10-08 | S2 | x 的形状定为 `SqlCase(engine, setup, query, predicate)`。`full_query(case)` 规定怎样把谓词并进查询：没有谓词原样返回；分组或去重形态用旧 `tlp_groupby.build_query` 把谓词放在 GROUP BY 之前；其余用旧 `tlp.inject_predicate`，拼出不合法 SQL 时执行报错、标签为 invalid | 编排者定。TLP 与 NoREC 的旧接口要求谓词单独给；三个 oracle 共用一种 x，plan variant 与确定性筛查需要一条完整语句 |
+| 2026-10-08 | S2 | 标签字段：`fail_kind` 取 wrong_result / error_mismatch / crash；`invalid_reason` 登记七种来源（setup_error、nondeterministic、not_applicable、query_error、value_dependent_error、timeout、harness_error）；`oracle` 取 PLAN 确认的七类 id；`cve` 留空 dict 给 S4 | PLAN.md 第 3 节：崩溃是 fail 的子类型；Phase 1 要求 invalid 来源统一登记。查询层面的"不适用"归 invalid（更新 Kᵛ），引擎层面的"不适用"留给 S3 |
+| 2026-10-08 | S2 | 适配器只包不改：fail 当且仅当旧 oracle 的 `check()` 返回 Candidate；适配器用一个记录每次执行的 runner 代理，把旧接口的 None 拆成 pass 与 invalid。拆分规则：有超时判 timeout；有报错且全是值依赖错误判 value_dependent_error，否则 query_error；全部成功才是 pass。筛查顺序固定为 setup → 确定性 → 前提 | PLAN 总原则第 2 条"判定代码只搬不改"。确定性筛查必须在调用旧 oracle 之前：实测含 `random()` 的查询会让三个旧 oracle 都报出假差异 |
+| 2026-10-08 | S2 | plan variant：切换开关的语句不参与判定；个别变体超时或报值依赖错误时跳过该变体，其余变体一致仍判 pass；一个变体都没比较成才判 invalid | 贴合旧 oracle 的语义（它对这些情况是 `continue`）。DuckDB 1.5.5 上有开关语句本身就报错，不能把它们算作查询失败 |
+| 2026-10-08 | S2 | S2 的身份证据：`switches` 取 plan variant 见证差异的变体标签（TLP、NoREC 为空）；`error_class` 取报错文本第一个冒号之前的部分；`behavior` 取 `{missing, extra}` 两个计数 | PLAN 逐项表：plan variant 的开关集同时是 bisect 的干预基。最小 fix set、plan diff、版本梯要等 S4 的画像 |
+| 2026-10-08 | S2 | TLP 接入 `tlp_groupby`：适配器从查询文本识别两种形态（选择列表等于分组键的 GROUP BY；SELECT DISTINCT），其余不适用。PINOLO-lite（`conjoin`）不接 | 旧 `tlp_groupby` 要求调用方拆好了传入，没有现成的驱动；x 里只有一个谓词，PINOLO 需要第二个。PINOLO 不在七类之内 |
+| 2026-10-08 | S2 | harness 哈希的范围是 `surprise/harness/**/*.py` 加十个旧模块（`oracles/` 下的 tlp、tlp_groupby、norec、plan_variant、errors、determinism、normalize、models、db_runner 和 `targets/duckdb_runner.py`）；文件摘要先把 CRLF 归一成 LF | 适配器调用的是旧模块，只哈希新代码查不出旧判定逻辑被改。本机 git 开着 `core.autocrlf`，同一提交在不同检出里行尾可能不同；实测主检出区与 worktree 算出的哈希相同 |
+| 2026-10-08 | S2 | 账本只能追加；每次写入在返回前提交；整条记录存规范 JSON，另拆 run、seq、oracle、y、理论代号等列供查询；库里记 schema 版本，版本不符拒绝打开 | PLAN 总原则第 5 条：每次执行都留账，指标只从账本算 |
+| 2026-10-08 | S2 | `evaluate()`：判定过程中的异常记成 invalid / harness_error 并照样入账；凡是会让记录构造失败的参数在执行前拒绝 | "每次执行都进账本"是 S2 的门槛项。后半句是审查时发现的缺口，见下一条 |
+| 2026-10-08 | S2 | 审查 s02-oracles 时给 `gates/s02.py` 的 evaluate 组补了一项检查（坏参数必须在执行前被拒绝，没有 runner 被打开、没有新记录），提交 522434c；并让该包返工一轮 | 任务说明和门槛都漏了：`purpose`、`p_t`、`spec` 原先在判定之后才校验，参数不合法时出现"执行了但没记账"。补的检查先实测能拦下第 1 轮的代码，再发返工意见 |
+| 2026-10-08 | S2 | 拆包：s02-contracts（契约、常数、账本）先合并，然后 s02-manifest 与 s02-oracles（含 `evaluate`）并行。门槛分五组并支持 `--only`，每个包跑自己的几组 | ORCHESTRATION.md 第 8 节。账本的表结构与实验记录契约绑得紧，放进共享接口那一包；`evaluate` 依赖账本与适配器，归到后做的那个包，省掉一个串行的集成包 |
+| 2026-10-08 | S2 | 门槛用例表 `gates/s02_cases.py` 的期望值是派发前用旧 oracle 在 DuckDB 1.5.5 上实测的；编排者另写了一份一次性的参考映射，把 20 个用例 × 3 个 oracle 的期望逐项核对过（含两次判定一致）。参考映射没有入库 | 门槛先于实现写，期望值写错会白白用掉返工轮次。实现代码全部来自 grok 分支 |
+| 2026-10-08 | S2 | 门槛的已知复现只用 F1、F2、F7（plan variant）和账本条目 AUTO-a8be20c9、AUTO-ad38bad6 的最小化用例（TLP、NoREC）；不用 F3、F8（未指定语义）、F9（调试开关）、F10（会让进程崩溃）、F5、F6、F11 | S2 的 fail 是未经 CVE 的原始判定；前三类的最终标签要等 S4。F10 实测会直接杀掉解释器进程。F5 本机抓不到，F6 的 recall 条目没有数据，F11 是 MERGE |
+| 2026-10-08 | S2 | s02-manifest 第 1 轮被编排者误操作终止（`gw status --wait --timeout 9` 的 `--timeout` 是包的运行上限），随后用 `gw resume` 在原会话续跑。这一轮不算质量返工 | 当时分支上没有提交、没有未提交文件，续跑保留了已有的分析。教训写进 HANDOFF 的操作提醒 |
+| 2026-10-08 | S2 | 工作包结论：s02-contracts 一次通过；s02-manifest 质量上一次通过（另有上一条的续跑）；s02-oracles 返工 1 轮（起因在任务说明）。grok 上报花费合计约 3.16 美元 | 编排者独立复跑：合并后 pytest 149 passed、门槛 2/2。读完全部新代码；核对了三个包各自的全部 shell 命令与文件路径 |
+| 2026-10-08 | S2 | 审查 s02-oracles 时在门槛之外做了一次差分核对：60 个种子经旧变异器得到 196 个用例，三个 oracle 各判两次共 588 组，与一份直接调用旧 oracle 的独立映射比较，出入为 0 | 门槛只有 20 个固定用例；种子变异能碰到真实的超时、值依赖错误和 error_mismatch。脚本在 `.orch/scratch/`，不入库 |
+| 2026-10-08 | S2 | 归档的审查结论事后订正过三处，各一个提交：一个数错的测试函数个数、一句写错模块名的话、一个被展开成真实 NUL 的转义序列 | 都是编排者自己写结论时的错，订正后内容属实；NUL 字节会让 git 把文件当二进制 |
+| 2026-10-08 | S2 | 编排者的审查辅助脚本改放 `.orch/scratch/` | 会话的临时目录在 S2 中途失效，放在里面的脚本不能再用 |

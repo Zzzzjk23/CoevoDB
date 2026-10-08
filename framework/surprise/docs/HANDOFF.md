@@ -5,8 +5,8 @@
 | 会话 | 内容 | 状态 | tag | 门槛 |
 |---|---|---|---|---|
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
-| S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订，S2 从这里起） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
-| S2 | Phase 1a 契约、账本、三类健全 oracle | 进行中（分支 `session/s02`） | | |
+| S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
+| S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
 | S3 | Phase 1b 其余三类 oracle | 未开始 | | |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
@@ -18,114 +18,132 @@
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
-S0 的交接全文在 tag `s00-done-r2` 的本文件里；其中仍然有效的未决问题已并入下面的清单。
+以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 当前会话：S2 契约、账本、三类健全 oracle（进行中，2026-10-08）
+## 最近一次会话：S2 契约、账本、三类健全 oracle（2026-10-08）
 
-分支 `session/s02`，起点 tag `s01-done-r2`（7632c03）。起点检查：pytest 64 passed, 3 skipped；门槛 `s01` 7/7。接手时先跑 `gw list` 看包的状态。
-
-### 拆包清单
-
-先合并共享接口一包，再并行两包（ORCHESTRATION.md 第 8 节）。门槛 `gates/s02.py` 分五组：`contracts`、`ledger`、`manifest`、`oracles`、`evaluate`，每个包对应其中几组，可以用 `python -m surprise.gates.s02 --only <组>` 单独跑。
-
-| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
-|---|---|---|---|---|---|
-| s02-contracts | 五个数据契约（harness 侧：SQL 用例、身份证据、标签、实验记录；理论侧：规格、假设、理论编辑）与序列化；harness 常数模块；SQLite 实验账本 | `framework/surprise/harness/contracts.py`、`constants.py`、`ledger.py`，`framework/surprise/theory/contracts.py`，`framework/tests/test_surprise_contracts.py`、`test_surprise_ledger.py` | 无 | contracts、ledger | 待派发 |
-| s02-manifest | run manifest、harness 哈希、校验命令 `python -m surprise.harness.manifest hash/write/verify` | `framework/surprise/harness/manifest.py`，`framework/tests/test_surprise_manifest.py` | s02-contracts | manifest | 待派发 |
-| s02-oracles | TLP（WHERE、GROUP BY、DISTINCT 三种形态）、NoREC、Plan variant 的三值适配器与身份证据；`evaluate()` 把每次执行写进账本 | `framework/surprise/harness/oracles/**`、`framework/surprise/harness/evaluate.py`，`framework/tests/test_surprise_oracles.py`、`test_surprise_evaluate.py` | s02-contracts | oracles、evaluate | 待派发 |
-
-## 最近一次会话：S1 冻结基线与仓库整理（2026-10-08）
-
-分支 `session/s01`，起点 tag `s00-done-r2`（4eaa4ed），收尾合并回 main 并打 `s01-done`。
+分支 `session/s02`，起点 tag `s01-done-r2`（7632c03），收尾合并回 main 并打 `s02-done`。
 
 ### 完成了什么
 
-- 基线核对：tag `v1-baseline` 已存在，指向 55c5512，没有重打；`.env` 没有被跟踪。
-- 测试基线：`.venv` 装了 psycopg2-binary 之后，`cd framework; ../.venv/Scripts/python.exe -m pytest -q testing tests` → **64 passed, 3 skipped**，退出码 0。3 个跳过都是因为没有 PostgreSQL（2 个缺 `pgserver` 包，1 个没有 PG 构建）。装之前是收集阶段失败。整理之后仍是 64 passed, 3 skipped。
-- 旧系统基线 run：整理之前跑了 `python main.py --engine duckdb --mode no_llm --iterations 2`，退出码 0，存档在 `framework/surprise/docs/baseline/`（说明见该目录的 README.md）。整理之后用同一条命令重跑，`summary.json` 除计时字段外与存档完全相同（3992 次 SQL 执行、0 候选）。full 模式没跑。
-- 引擎环境（都不入库）：`.venv` 加装 DataFusion 54.0.0 与 psycopg2-binary 2.9.13；新建 `.venvs/duckdb-1.1.3`（DuckDB 1.1.3 + psycopg2-binary）与 `.venvs/datafusion-50.0.0`（DataFusion 50.0.0）。路径与版本已填进 CLAUDE.md。
-- 仓库整理（工作包 s01-reorg，只有移动）：
-  - 41 个 `framework/scripts/pg_*.py` 移到 `framework/campaigns/`。39 个文件内容不变；`pg_probe_run.py`、`pg_ssi_sibling.py` 各改一行导入路径（`scripts.` → `campaigns.`）。`scripts/` 里还剩 29 个非 PG 脚本。
-  - `class DuckDBRunner` 移到 `framework/targets/duckdb_runner.py`，类体与基线逐字节相同。`oracles/db_runner.py` 保留 `QueryResult` 与 `bags_equal`，并在文件末尾兼容导出 `DuckDBRunner`；所有调用方都没有改。
-- `framework/surprise/` 骨架：`__init__.py` 与九个子包（`harness features theory hunter diagnoser roles metrics experiments baselines`），每个只有一行文档字符串；`gates/` 有 `all.py` 与 `s01.py`。
-- CLAUDE.md 改了两处（用户同意）："引擎环境"填了实际路径与版本；测试命令写明用 `.venv` 的解释器。`.gitignore` 加了 `.venvs/`。
+- 五个数据契约与序列化，按"谁写"分成两个文件：
+  - `framework/surprise/harness/contracts.py`：`SqlCase`（x）、`IdentityEvidence`（身份证据）、`Label`（y 及证据）、`ExperimentRecord`（实验记录），以及四张取值表 `LABELS`、`ORACLE_IDS`（七类）、`FAIL_KINDS`、`INVALID_REASONS`。
+  - `framework/surprise/theory/contracts.py`：`Spec`（规格）、`Hypothesis`（假设）、`TheoryEdit`（理论编辑）。只有类型和序列化，S5–S7 再细化。
+- `framework/surprise/harness/constants.py`：harness 的数值常数，现在只有 `QUERY_TIMEOUT_S = 10.0`；`as_dict()` 自动收集，写进 manifest。
+- `framework/surprise/harness/ledger.py`：SQLite 实验账本，只能追加；按 run、理论代号、标签、oracle 查询；pass 和 invalid 一样入账。
+- `framework/surprise/harness/manifest.py`：run manifest、harness 哈希、校验命令。哈希覆盖新 harness 的全部 `.py`（现在 12 个）加十个会影响标签的旧模块，共 22 个文件；摘要与行尾无关，主检出区和 worktree 算出来相同。
+- `framework/surprise/harness/oracles/`：TLP（WHERE、GROUP BY、DISTINCT 三种形态，后两种接入了原先无人调用的 `oracles/tlp_groupby.py`）、NoREC、Plan variant 的三值适配器。什么算差异仍由旧 oracle 的 `check()` 决定，适配器只做执行前筛查、把旧接口的 None 拆成 pass 与 invalid、整理身份证据。旧代码一个字没改。
+- `framework/surprise/harness/evaluate.py`：`evaluate()` 判定一个用例并写一条实验记录；判定过程抛异常也记成 `invalid / harness_error`。
+- 测试 85 个（`framework/tests/test_surprise_*.py` 五个文件）。
 
 ### 门槛结果
 
-在 `session/s01` 合并之后、主检出区里跑的：
+在 `session/s02` 三个包都合并之后、主检出区里跑的：
 
 | 命令（在 `framework/` 下，解释器 `../.venv/Scripts/python.exe`） | 结果 |
 |---|---|
-| `-m pytest -q testing tests` | 64 passed, 3 skipped，退出码 0 |
-| `-m surprise.gates.all` | `s01: PASS`（7/7），退出码 0 |
+| `-m pytest -q testing tests` | 149 passed, 3 skipped，退出码 0（S1 的 64 个都在，新增 85 个） |
+| `-m surprise.gates.all` | `s01: PASS`（7/7）、`s02: PASS`（5/5），退出码 0 |
 
-`gates/s01.py` 的七项：tag `v1-baseline` 指向 55c5512；骨架存在且能导入；三个环境各自在自己的解释器里报出期望版本（主环境 DuckDB 1.5.5、DataFusion 54.0.0、SQLite 3.51.0）；`main.py --help` 退出码 0；pytest 退出码 0 且通过数不少于 64；41 个脚本都在 `campaigns/`，其中 39 个 `--help` 正常（与整理前相同）；`DuckDBRunner` 在六种导入顺序下都是同一个类，旧版 venv 里 `oracles._remote_exec` 能导入。
+`gates/s02.py` 的五组与 SESSIONS.md 的对应：
+
+- `oracles`：20 个固定用例 × 3 个 oracle 共 60 组，每组判两次结果相同（"同一输入两次判定一致"）；已知复现判 fail：TLP 与 NoREC 各抓到账本条目 AUTO-a8be20c9 / AUTO-ad38bad6 的最小化用例，plan variant 抓到 `recall_repros.json` 的 F1、F2、F7 和旧测试里的 deliminator 用例，身份证据里的开关都是 `no_optimizer`（"已知复现里这三类能抓的判 fail"）；四个值依赖错误用例判 `invalid / value_dependent_error`（"值依赖错误样例判 invalid"）；另有崩溃、一侧报错、超时三条注入路径。
+- `evaluate`：11 次执行对应 11 条记录，pass、fail、invalid 都有（"每次执行（含 pass）都进账本"）；参数不合法时在执行前拒绝，不留记录。
+- `contracts`、`ledger`、`manifest`：往返与校验；写入、过滤、重开；哈希稳定、校验命令能指出被改的文件。
+
+用例表 `gates/s02_cases.py` 里的期望值是派发前用旧 oracle 实测的。
 
 ### 工作包
 
 | 包号 | 目标 | 结论 |
 |---|---|---|
-| s01-reorg | PG 脚本移到 `campaigns/`；`DuckDBRunner` 移到 `targets/duckdb_runner.py`；`surprise/` 骨架 | 一次通过，返工 0 轮。3 个提交，11 分 22 秒，grok 上报花费 0.60 美元。审查包唯一的红旗（"新增宽泛的异常捕获 4 处"）是误报：那是随类搬走的原有代码 |
+| s02-contracts | 契约、常数、账本 | 一次通过，返工 0 轮。16 分 35 秒，0.91 美元 |
+| s02-manifest | manifest、harness 哈希、校验命令 | 质量上一次通过。记录里有第 2 轮，是编排者误操作把第 1 轮提前终止后的续跑，不是返工。0.48 美元（被终止的那一轮没有上报花费） |
+| s02-oracles | 三个适配器与 `evaluate()` | 返工 1 轮。起因是任务说明和门槛都漏了一点（`evaluate` 的部分参数在判定之后才校验），不是执行者理解错了；编排者补了门槛检查后返工，第 2 轮改对。两轮共 1.77 美元 |
 
-brief、report、审查包（含编排者的结论）在 `framework/surprise/docs/orch/s01/`。
+brief、report、审查包（含编排者的结论）和返工意见在 `framework/surprise/docs/orch/s02/`。
+
+审查时在门槛之外另做了一次差分核对：从种子语料取 60 个种子、经旧的变异器得到 196 个用例，每个用例对三个 oracle 各判两次，共 588 组；新标签与一份直接调用旧 oracle 的独立映射逐组比较，出入为 0。
 
 ### 新增或改动的接口
 
-- `framework/surprise/gates/all.py`：`python -m surprise.gates.all`（在 `framework/` 下）把每个 `gates/sNN.py` 当独立进程依次运行，全部通过才退出码 0。输出只用 ASCII。之后每个会话加一个 `sNN.py` 即可，不用改 `all.py`。
-- `framework/surprise/gates/s01.py`：引擎 venv 不入库、放在主检出区，门槛经 git 的公共目录找到它们，所以在 worktree 里也能跑；环境变量 `COEVO_VENVS` 可以覆盖 venv 所在目录。
-- `framework/targets/duckdb_runner.py`：`DuckDBRunner` 的定义处。`from oracles.db_runner import DuckDBRunner, QueryResult, bags_equal` 照旧可用；`QueryResult`、`bags_equal` 的定义仍在 `oracles/db_runner.py`。
-- `framework/campaigns/pg_*.py`：PG 专项脚本的新位置，用法是在 `framework/` 下 `python campaigns/pg_xxx.py …`，模块名 `campaigns.pg_xxx`。和 `scripts/` 一样没有 `__init__.py`。
-- 引擎环境：见 CLAUDE.md 的"引擎环境"。解释器是 `<venv>/Scripts/python.exe`。
-- 基线存档：`framework/surprise/docs/baseline/`。
+- `SqlCase(engine, setup, query, predicate=None)`：`query` 是被测查询（给 TLP / NoREC 时是不含划分谓词的那部分，可以自带 WHERE），`predicate` 是划分谓词。
+- `Label(y, oracle, fail_kind, invalid_reason, identity, cve, detail)`：`y` 为 fail 时必须有 `fail_kind`，为 invalid 时必须有 `invalid_reason`，为 pass 时两者都是 None。`cve` 现在是空 dict，S4 填。
+- `surprise.harness.oracles.judge(case, oracle, *, runner_factory=None, timeout_s=10.0) -> Label`：只判定，不记账。`IMPLEMENTED = ("tlp", "norec", "plan_variant")`，只支持 `engine == "duckdb"`，其余抛 `ValueError`。
+- `surprise.harness.oracles.forms.full_query(case)`：把划分谓词并进查询后的那一条语句，确定性筛查与 plan variant 用它。`split_grouped(query)` 识别 `SELECT 键 FROM … [WHERE …] GROUP BY 键` 与 `SELECT DISTINCT 列 FROM … [WHERE …]` 两种形态。
+- `surprise.harness.evaluate.evaluate(case, oracle, *, ledger, run_id, purpose, spec, phi, theory_version, p_t, runner_factory, timeout_s) -> ExperimentRecord`：每调用一次恰好写一条记录。
+- `Ledger(path)`：`start_run`、`run_manifest`、`run_ids`、`next_seq`、`append`、`records`、`count`、`label_counts`；出错抛 `LedgerError`。
+- `python -m surprise.harness.manifest hash | write PATH [--run-id ID] | verify PATH`（在 `framework/` 下执行）：`verify` 退出码 0 表示 harness 未变，1 表示有文件变了并逐个列出，2 表示 manifest 读不了。
+- `python -m surprise.gates.s02 --only <组> …`：只跑指定的组，给工作包做部分验收用。
+
+`judge` 的流程是固定顺序：`setup` 有语句报错 → `setup_error`；`is_usable_for_oracles` 不通过 → `nondeterministic`；不满足该 oracle 的前提 → `not_applicable`；然后才调用旧 oracle。旧 oracle 返回 None 时，记录下来的查询形式里有超时 → `timeout`，有报错且全是值依赖错误 → `value_dependent_error`，有别的报错 → `query_error`，全部成功才是 pass。
 
 ### 与 PLAN 的偏差及原因
 
-与 PLAN.md 没有冲突。和 SESSIONS.md 的 S1 一节有这几处出入，细节在 DECISIONS.md：
+与 PLAN.md 没有冲突。下面几处是 PLAN 和 SESSIONS 没有写到、由编排者定下的，细节在 DECISIONS.md：
 
-- `oracles/db_runner.py` 不是纯 re-export。整体搬走会循环导入（`targets/__init__.py` → `postgres_runner` → `oracles.db_runner` → `targets.duckdb_runner`），实测报 ImportError；所以只搬 `DuckDBRunner`，共享的 `QueryResult`、`bags_equal` 留下。
-- 门槛比 SESSIONS 列的四项多三项（tag 指向、campaign 脚本对照、导入顺序与旧版子进程入口）；pytest 判定是"不少于 64"而不是"等于 64"，这样之后的会话加了测试，本门槛仍然通过。
-- SESSIONS 里"确认在 git 管理下、补 `.gitignore`、打 `v1-baseline`"三条在基线提交和 S0 时已经做完，本会话只核对。
-- PLAN 没有指定旧版 DataFusion 的版本，选了 50.0.0。
-- 旧版 DuckDB 的 venv 里多装了 psycopg2-binary（原因见未决问题第 1 条）。
+- 五个契约分放 `harness/` 与 `theory/` 两个文件，而不是集中一处。原因是 CLAUDE.md 规定 S4 之后 `harness/` 冻结，规格、假设、理论编辑到 S5–S7 才定型，放进去会被提前冻住。实验记录里的规格因此存成 dict，harness 不依赖理论层。
+- PLAN 决策表第 6 条（实验账本用 SQLite）仍标着"建议"，本会话按 SESSIONS.md 的 S2 范围直接采用，没有单独再问。
+- TLP 的 GROUP BY / DISTINCT 形态需要从查询文本里识别形态，这段识别是新写的（旧 `tlp_groupby` 要求调用方拆好了传进来）；PINOLO-lite（`conjoin` 参数）没有接。
+- harness 哈希的范围除了 `surprise/harness/`，还列入了十个旧模块：适配器调用的是它们，只哈希新代码查不出旧判定逻辑被改。
+- 门槛比 SESSIONS 列的四项多了契约、账本、manifest 三组，以及 `evaluate` 的参数校验一项（后者是审查中发现缺口后补的）。
 
-### 验收后的修订（s01-done-r2，2026-10-08）
+### 未决问题（S3 及之后需要知道的）
 
-用户验收时让编排者把点名的五处人工检查项复核一遍，并按编排者的推荐处理其中没定的事。复核结果与 `s01-done` 时报告的一致，没有改任何代码和门槛；改动只有文档：
+S2 新发现：
+1. `duckdb/F10_window_frame_underflow.sql` 里前两条查询会让解释器进程直接崩溃：第二条是实测的（子进程退出码 0xC0000094），文件注释只把它描述成 INTERNAL 错误；第一条按文件注释就是硬崩溃，没有去试。进程内的适配器判不了它们，本会话的门槛和测试都避开了。S4 的新进程重跑要先到位，才能把这一族判成 fail。该文件后两条查询不崩溃，但会被确定性筛查判成 `nondeterministic`（窗口的 ORDER BY 键不唯一）。
+2. 已知复现在本机 DuckDB 1.5.5 上被这三类 oracle 抓到的情况（S4 的门槛要求 confirmed 族全部判 fail，下面几条到时候要处理）：
+   - `recall_repros.json` 的 F1、F2、F7：plan variant 判 fail，开关 `no_optimizer`。
+   - F3、F8（账本里是 unspecified-semantics）：plan variant 的原始判定同样是 fail，要靠 S4 的 CVE 降成 invalid。
+   - F9：plan variant 在 `window_combine` 下判 fail（账本里是 debug-setting 一档）。
+   - F5（靠线程数）：plan variant 抓不到。
+   - F6：`recall_repros.json` 里这一条的 setup 只有两条 CREATE TABLE，没有数据，查询返回 0 行，什么都复现不了。`duckdb/F6_null_exists_notin.sql` 里有带数据的版本，本会话没有用它。
+   - F11 是 MERGE 语句，不是查询，没有试。
+3. TLP 的 GROUP BY / DISTINCT 形态没有已知的失败复现，门槛只覆盖了它的 pass 与 invalid。
+4. `(query, predicate)` 只在 TLP 认识的形态下能合成一条合法语句。例如带聚合的分组查询再给一个谓词，`full_query` 会拼出 `… GROUP BY b WHERE (…)`，执行报错，三个 oracle 都判 invalid。这是有意的（坏用例就是 invalid），但 S8 的 Hunter 生成用例时要知道。
+5. plan variant 的 28 个变体里，`ordered_agg_off` 的开关语句 `SET ordered_aggregate_threshold=0` 在 DuckDB 1.5.5 上报 Parser Error，这个变体实际是空操作：查询照默认设置跑一遍，被算进 `variants_compared`。这是旧代码变体表的问题，没有动。
+6. 契约拒绝非有限的浮点数（JSON 表示不了 NaN 和无穷大）。S6 算惊讶时如果 P_T 取到 0 或 1，要先截断再写进 `ExperimentRecord.surprise`。
+7. `Label.cve` 现在只是一个空 dict 占位，四步（rerun、premise、minimize、profile）各自记什么由 S4 定。`INVALID_REASONS` 现有七项，S3、S4 需要新的来源（改写不等价、方向不可定、法定数不足、重跑不稳定等）时往表里加，S4 冻结之前可以改。
+8. `judge` 和 `evaluate` 对 `engine != "duckdb"` 直接抛 `ValueError`。S3 接 DataFusion 时要加引擎到 runner 的映射；`PlanVariantOracle` 本身已有 DataFusion 的变体表。
+9. `oracles/forms.py` 依赖旧模块 `oracles.determinism` 里带下划线的两个函数（`_top_level_positions`、`_top_level_from_pos`）；`theory/contracts.py` 复用了 `harness/contracts.py` 里带下划线的序列化辅助函数。S12 整理旧代码、或 S4 之后想动这些辅助函数时要同步。
+10. 种子语料在 DuckDB 1.5.5 上的无效率不低：差分核对的 196 个种子变异里有 72 个在 setup 阶段就报错。S8 用种子做探索起点时会看到很多 `setup_error`。
+11. manifest 的环境一节只记了 Python、平台和三个引擎的版本，没有记 pyarrow 等间接依赖（`.venv` 继承 anaconda base，环境不完全可复现，见下面沿用的第 7 条）。
 
-- CLAUDE.md 的门槛命令也写明了解释器：`../.venv/Scripts/python.exe -m surprise.gates.all`。
-- 下面未决问题第 1、2、6、8、9 条写上了处理决定；第 1 条原先只提 psycopg2，不完整，已改正。
-- 决定都记在 DECISIONS.md。
-
-### 未决问题（S2 及之后需要知道的）
-
-S1 新发现：
-1. 要导入 `oracles.*` 或 `targets.*`，解释器里必须同时有 duckdb 和 psycopg2。duckdb 是一直都要的（`oracles/__init__.py` 导入 `db_runner`，它在模块顶层 `import duckdb`）；psycopg2 是这次移动带来的（`oracles/db_runner.py` → `targets/duckdb_runner.py` → `targets/__init__.py` → `postgres_runner`）。`.venvs/duckdb-1.1.3` 两样都有，`oracles._remote_exec` 能导入（门槛在查）。`.venvs/datafusion-50.0.0` 两样都没有，实测 `import targets.datafusion_runner` 先缺 psycopg2、再缺 duckdb。**决定**：这个 venv 保持只有 DataFusion，不为了凑导入链往里装别的引擎；S3 给旧版 DataFusion 写的子进程入口只导入 `datafusion` 和标准库，把原始行用 JSON 传回，归一化在主进程里做。S3 开工时觉得不合适可以推翻，装包只是一条命令。根治要改 `targets/__init__.py`，那是 S12 才允许的事。
-2. 旧代码把旧版解释器写死成 `<venv>/bin/python`（`oracles/differential.py` 第 37 行、`main.py` 第 142 行），Windows 上 venv 的解释器是 `Scripts/python.exe`。所以旧主循环在这台机器上 Version differential 恒为 disabled，本会话的基线 run 里也没有它。**决定**：S12 之前不改旧代码，也不在 venv 里造一个 `bin/python` 的替身；S3 的 Version differential 适配器自己按平台定位解释器（`gates/s01.py` 的 `venv_python()` 是现成的写法）。旧主循环缺这一类信号的影响有限：它在旧系统里只记 `version_divergence`，单独命中不计为 bug（PLAN.md 第 3 节逐项表）。S11 跑对照组时如果需要它，再向用户提出，到 S12 允许改旧逻辑时修。
-3. `campaigns/pg_upgrade_mxact.py` 第 55 行在模块顶层抛 TypeError（`str(...) / "results"`），连 `--help` 都跑不了。旧 bug，没修。
-4. `campaigns/pg_repack_mvcc.py` 没有 argparse 也没有 `__main__` 守卫，导入即执行。门槛对这两个脚本只查语法。
-5. 文档里还是旧路径 `scripts/pg_*.py`：`framework/AGENTS.md`、`STATUS_AND_ROADMAP.md`、`NEXT_RESEARCH_PLAN.md`、几份 `PG_*PLAN*.md`、`seeds/pg_transform_probes*.py` 的文档字符串，以及 campaign 脚本自己的用法说明。留给 S12 更新文档时一起改。
-6. `gates/s01.py` 里写死了：41 个脚本、基线通过数 64、三个环境的版本号、`v1-baseline` 的提交号。**决定**：保留不改，它们记录的就是冻结下来的基线事实。S12 再移动旧代码或换引擎版本时要同步改这个门槛，改之前问用户。
-7. `.venv` 是 `include-system-site-packages = true` 的 uv venv，底下是 anaconda base（pyarrow 21.0.0、pandas 等都来自 anaconda）。环境不完全可复现；S2 的 run manifest 如果记录依赖版本，要记实际解析到的版本。
-8. （已关闭）CLAUDE.md 的门槛命令原先没有写明解释器，`s01-done-r2` 里已改成 `../.venv/Scripts/python.exe -m surprise.gates.all`。ORCHESTRATION.md 和任务说明模板里的 `python -m surprise.gates.all` 没有动：前者是泛指，后者是给执行者的，执行者的 `python` 本来就指向项目解释器。
-9. 两处不影响行为的小出入：`oracles/db_runner.py` 里 import 与 `@dataclass` 之间少一个空行；`DuckDBRunner` 的 debug 日志记录器名字从 `oracles.db_runner` 变成了 `targets.duckdb_runner`。**决定**：都不返工。空行等 S12 整理旧代码时顺手补；记录器改名是把类搬走的必然结果，没有测试或配置依赖旧名字。
-10. 执行者写文件用的是放在 `.orch/tmp` 的 Python 脚本，deny 规则管不到这种写法（与 S0 的结论一致）。本包以 diff 为准核对过，没有越界；之后的包照旧靠审查兜底。
+沿用自 S1、仍然有效的（编号沿用 S1 交接里的）：
+1. 要导入 `oracles.*` 或 `targets.*`，解释器里必须同时有 duckdb 和 psycopg2。`.venvs/duckdb-1.1.3` 两样都有；`.venvs/datafusion-50.0.0` 两样都没有。决定：这个 venv 保持只有 DataFusion，S3 给旧版 DataFusion 写的子进程入口只导入 `datafusion` 和标准库，原始行用 JSON 传回，归一化在主进程做；S3 开工时可以推翻。
+2. 旧代码把旧版解释器写死成 `<venv>/bin/python`（`oracles/differential.py` 第 37 行、`main.py` 第 142 行），Windows 上是 `Scripts/python.exe`，所以旧主循环在本机 Version differential 恒为 disabled。决定：S12 之前不改旧代码；S3 的适配器自己按平台定位解释器（`gates/s01.py` 的 `venv_python()` 是现成写法）。
+3. `campaigns/pg_upgrade_mxact.py` 第 55 行在模块顶层抛 TypeError；`campaigns/pg_repack_mvcc.py` 导入即执行。旧问题，没修。
+5. 文档里还是旧路径 `scripts/pg_*.py`，留给 S12。
+6. `gates/s01.py` 里写死了 41 个脚本、基线通过数 64、三个环境的版本号、`v1-baseline` 的提交号；`gates/s02_cases.py` 里的期望值是在 DuckDB 1.5.5 上测的。换引擎版本或再移动旧代码时要同步改门槛，改之前问用户。
+7. `.venv` 是继承 anaconda base 的 uv venv，环境不完全可复现。
+9. `oracles/db_runner.py` 少一个空行，S12 顺手补。
+10. 执行者可以用脚本写文件，deny 规则管不到，靠审查兜底。
 
 沿用自 S0 与规划会话、仍然有效的：
-- 仓库没有配置远端（`git remote -v` 为空），异地备份是用户的事。
-- 新会话里 Claude Code 的安全分类器可能拒绝启动 grok（本会话没有被拒）。用户的长期批准记在 DECISIONS.md；再被拒就停下来问用户，不要绕过。
-- deny 规则挡不住包一层再执行的命令（`cmd /c …`、`powershell -Command …`、`python -c …`），也挡不住用 shell 或脚本写禁区文件，见 ORCHESTRATION.md 第 10 节。
+- 仓库没有配置远端，异地备份是用户的事。
+- 新会话里 Claude Code 的安全分类器可能拒绝启动 grok（S1、S2 都没有被拒）。用户的长期批准记在 DECISIONS.md；再被拒就停下来问用户，不要绕过。
 - 执行者的 shell 是 Windows PowerShell 5.1：没有 `&&`，中文输出乱码。
-- `SESSIONS.md` 开头还写着开场提示词在 `claude/coevodb-session-runbook.md`，实际是同目录的 `RUNBOOK.md`。那是用户的文件，没有改。
-- `%USERPROFILE%\.grok\config.toml` 里没有 `auto_update = false`；脚本每次都传 `--no-auto-update`，派发不受影响。
+- `SESSIONS.md` 开头写的开场提示词路径不对，实际是同目录的 `RUNBOOK.md`。那是用户的文件，没有改。
 - `framework/test_api.py` 在设置了 `DEEPSEEK_API_KEY` 时会真的调用 API；日常测试命令只跑 `testing/` 和 `tests/`。
-- `coevo/` 被 `tests/test_verified_loop.py` 依赖，S1 没有动；它的新进程执行在 S4 被吸收，S12 再归档。
-- `framework/config.yml` 里 `database.version` 写的是 1.5.2，实际是 1.5.5；`database.old_venv` 是旧机器上的路径，以环境变量 `COEVO_OLD_VENV` 为准（本机没有设置）。
-- PLAN.md 决策表第 2、4–10 条仍是建议，到对应会话开工时再定。S2 会碰到第 6 条（实验账本用 SQLite）。
+- `coevo/` 被 `tests/test_verified_loop.py` 依赖；它的新进程执行在 S4 被吸收，S12 再归档。
+- `framework/config.yml` 里 `database.version` 写的是 1.5.2，实际是 1.5.5；`database.old_venv` 是旧机器上的路径。
+- PLAN.md 决策表第 2、4、5、7–10 条仍是建议，到对应会话开工时再定（第 6 条本会话已采用）。
+
+### 给下一个编排者的操作提醒
+
+这几条都是本会话或上一会话实际踩到的：
+
+- **`gw status --wait` 不要加 `--timeout`**。那个参数是"包运行超过这么多分钟就终止"，不是"最多等这么久"。本会话因此误杀了一个跑了 11 分半的包。想限制等待时间，用后台任务或命令自身的超时。
+- 任务说明里写明"不要清理 `.orch/tmp`"。执行者收尾时喜欢清理临时文件，递归删除会被 deny 规则拦下，然后它会改成逐个删除，擦着"被拒绝的操作不要换写法重试"的边。
+- CLAUDE.md 里的测试与门槛命令写的是 `../.venv/Scripts/python.exe`，这个路径在 worktree 里不存在。任务说明里要写明直接用 `python`。
+- 往审查包里写结论时，文本里不要出现反斜杠转义（如反斜杠加 0、反斜杠加 n）：它们会被展开成真的 NUL 和换行，git 会把文件当成二进制。本会话为此补过一次提交。
+- `git merge` 不能用 `-F -` 从标准输入读提交信息，要用 `-m`；合并成功并核对过之后再打 tag，两步不要连在一条命令里。
+- 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
+- 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
 ### 下一会话的起点
 
-- S2 从 tag `s01-done-r2` 建分支 `session/s02`（`s01-done` 不含验收后的修订，不要从它起）。
-- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 64 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (1/1 passed)`。
-- S2 按 ORCHESTRATION.md 第 8 节拆：先五个数据契约一包并合并，再两包并行。审查时 `--expect-passed 64`。
+- S3 从 tag `s02-done` 建分支 `session/s03`。
+- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 149 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (2/2 passed)`。
+- S3 按 ORCHESTRATION.md 第 8 节可拆 3–4 包并行。四类新 oracle 都落在 `framework/surprise/harness/oracles/` 下，按文件归属拆包时注意 `oracles/__init__.py`（`IMPLEMENTED` 与 `judge` 的分发）是公共文件，要么先单独一包把分发改成注册式，要么指定只由一个包来改。审查时 `--expect-passed 149`。
 - 派发脚本一律用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；合并时设 `ORCH_COMMIT_TRAILER` 给合并提交加署名尾注。
-- 收尾合并回 main 时注意：`git merge` 不能用 `-F -` 从标准输入读提交信息，要用 `-m`；合并成功并核对过之后再打 tag，两步不要用 `;` 连在一条命令里。S1 收尾时就因为这个把 `s01-done` 打在了旧的 main 上，当场删掉重打了。
