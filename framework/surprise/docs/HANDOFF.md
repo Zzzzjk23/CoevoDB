@@ -30,7 +30,7 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | 未派发 |
+| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | 已派发（基线 067a2fa，上限 120 分钟），运行中。说明在 `.orch/briefs/s05-vocab.md` |
 | s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 未派发 |
 | s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 未派发 |
 
