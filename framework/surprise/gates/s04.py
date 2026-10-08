@@ -647,6 +647,13 @@ def check_tier2() -> str:
     require(cve["profile"].get("behavior_shape") == "extra_only" and cve["profile"].get("fix_set") == [],
             f"DF-B profile: {cve['profile']}")
 
+    # A candidate that tier 1 rejects is never attributed, and the evidence says why.
+    rejected = certify("F3", "plan_variant", hypothesis={"hypothesis_id": "h-f3", "engine": "duckdb",
+                                                         "interventions": ["join_order"]})
+    cve = expect_label(rejected, "invalid", "unspecified_semantics", "F3 with a hypothesis")
+    require(cve["attribution"] == {"status": "skipped", "reason": "tier1_rejected"},
+            f"attribution after a tier-1 rejection: {cve['attribution']}")
+
     # A prediction that does not come true is not a candidate at all.
     clean = certify("plain", "plan_variant", hypothesis=C.H_F1)
     cve = expect_label(clean, "pass", None, "plain predicted as an F1 instance")
@@ -758,6 +765,8 @@ def check_tier3() -> str:
     unstable = certify("F8", "plan_variant", diagnose=True)
     cve = expect_label(unstable, "invalid", "unstable_rerun", "F8 with diagnose=True")
     require(skipped(cve, "minimize", "profile"), "tier 3 is not spent on a candidate that failed tier 1")
+    require(cve["minimize"]["reason"] == cve["profile"]["reason"] == "tier1_rejected",
+            f"a requested tier 3 that tier 1 rejected must say so: {cve['minimize']} {cve['profile']}")
     return (f"{len(C.CONFIRMED)} confirmed cases profiled: fix sets as measured and as in recall_repros.json, "
             "version ladder, minimised subsequence; noise removed; lost candidate downgraded")
 

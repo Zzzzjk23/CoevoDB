@@ -33,7 +33,7 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
 | s04-tier1 | 新进程执行器（崩溃、超时分类）；第 1 档重跑与前提检查；最终标签入口 `certify` 与入账入口 `evaluate_final`；`Label.cve` 结构；新增 invalid 来源与常数；manifest 环境字段 | harness/cve/**、harness/evaluate.py、contracts.py、constants.py、manifest.py；tests/test_surprise_s04_*.py、test_surprise_contracts.py、test_surprise_manifest.py、test_surprise_s03_registry.py（后三个只许定向更新，见说明） | s03-done | contracts isolation tier1 premise environment | 已合并 7b12a85（返工 1 轮），worktree 已清理。独立复跑 264 passed / 3 skipped；归档在 `docs/orch/s04/` |
-| s04-tier23 | 第 2 档归属测试接口；第 3 档最小化与完整画像（fix set 二分、plan diff、版本梯）；降级规则；接入 `certify` | harness/cve/**、harness/constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 已合并 | tier2 tier3 m1（连同前五组） | 已派发（基线 f87373f，上限 180 分钟），运行中。说明在 `.orch/briefs/s04-tier23.md` |
+| s04-tier23 | 第 2 档归属测试接口；第 3 档最小化与完整画像（fix set 二分、plan diff、版本梯）；降级规则；接入 `certify` | harness/cve/**、harness/constants.py、manifest.py；tests/test_surprise_s04_*.py | s04-tier1 已合并 | tier2 tier3 m1（连同前五组） | 首轮 558bd7e 已审查：S04 八组门槛通过，门槛外探测全部通过；pytest 272 passed / 1 failed，失败的是说明漏放的常数快照断言（执行者按规矩停下上报）。第 1 轮返工进行中，四处：放行该断言、第 1 档被拒后的跳过原因、干预名单重复查询、最小化后的再验证改用原始判定。意见在 `.orch/feedback/s04-tier23-r1.md` |
 | （编排者） | 冻结：生成 `gates/s04_frozen.json`，哈希与常数校验 | gates/ | 两包都已合并 | freeze | 未做 |
 
 表内 harness、tests 路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s04 --only <组>`；全部九组通过才是 S04 通过。
