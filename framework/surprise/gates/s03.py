@@ -142,7 +142,29 @@ def constant_factory(rows):
 
 def check_cross():
     from oracles.normalize import loose_bag
-    from surprise.harness.oracles.pg_reference import PostgresReferenceRunner
+    from surprise.harness.oracles.pg_reference import PostgresReferenceRunner, is_readonly_query
+    from oracles.db_runner import QueryResult
+    require(not is_readonly_query('SELECT 1; SELECT 2'), 'PG reference accepted multiple statements')
+    require(not is_readonly_query('SELECT 1; SET ROLE coevo'), 'PG reference accepted embedded state change')
+
+    class SetupRecorder(PostgresReferenceRunner):
+        def __init__(self):
+            super().__init__()
+            self.executed = []
+        def _reset(self):
+            self._schema = 's03_gate_recorder'
+        def _execute(self, statement, *, timeout_ms, fetch):
+            self.executed.append(statement)
+            return QueryResult()
+
+    recorder = SetupRecorder()
+    try:
+        for unsafe in ('SELECT 1; COMMIT', 'CREATE TABLE z(a INT); END'):
+            outcomes = recorder.setup([unsafe])
+            require(outcomes and outcomes[0][1] is not None, 'PG setup accepted embedded transaction control')
+        require(not recorder.executed, 'PG setup executed a statement that can commit its private schema')
+    finally:
+        recorder.close()
     r = PostgresReferenceRunner()
     try:
         require(str(r.engine_version).startswith('16.'), f'expected PostgreSQL 16, got {r.engine_version}')

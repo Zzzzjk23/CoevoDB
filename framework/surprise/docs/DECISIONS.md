@@ -92,3 +92,4 @@
 | 2026-10-09 | S3 | s03-registry 合并：返工1轮，只修新增测试假定后续模块不存在的问题；使用monkeypatch模拟缺模块，保留导入失败与harness_error记账断言。独立pytest165 passed/3 skipped，S01 7/7、S02 5/5、S03 registry PASS。两轮约0.9707美元 | 编排者完整diff、返工diff、全部15条shell命令审查。没有改旧实现、门槛或conftest，没有新增skip/xfail；部分门槛因未派发包而红是预期 |
 | 2026-10-09 | S3 | registry懒导入后由模块自行register，避免并行包改公共文件；old_python为字符串路径；参照None表示默认、空dict表示无参照 | 共享接口实现选择，后三包brief已同步。不改变PLAN契约 |
 | 2026-10-09 | S3 | 首包合并时嵌套PowerShell提前展开ORCH_COMMIT_TRAILER，赋值失败但merge已成功；保留历史不重写。后续用.orch/scratch/s3_gw.py设置子进程环境并调用原grok_worker.py，尾注Co-authored-by: Codex <noreply@openai.com> | 编排者命令转义错误，未影响代码和审查。辅助脚本不入库，标准gw恢复命令仍可用 |
+| 2026-10-09 | S3 | Cross审查补门槛：拒绝SELECT 1; SELECT 2、SELECT 1; SET ROLE，以及setup中嵌入COMMIT/END，拒绝必须在后端执行前发生。第1版独立复跑确实被此门槛拦下，要求返工 | PG runner承诺单条只读查询和未提交的独立事务，但第1版只检查首词。setup使用不连DB的记录runner作反例，不让测试本身提交schema；属于S3参照runner隔离要求 |
