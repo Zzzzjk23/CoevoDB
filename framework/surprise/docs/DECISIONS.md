@@ -31,3 +31,18 @@
 | 2026-10-08 | S0 | S0 在分支 `session/s00` 上做，收尾合并回 main 再打 `s00-done` | 与 S1 起的会话分支约定一致 |
 | 2026-10-08 | S0 | CLAUDE.md 写入"执行者模式"一节；"收尾协议"改名为"收尾协议（编排者）"，第 1 条写明门槛在派发前写好；"命令"一节加编排命令一行（注明在仓库根执行） | 用户同意 S0 收尾消息里的草稿与两处配套小改 |
 | 2026-10-08 | S0 | 写入 CLAUDE.md 之后另打 tag `s00-done-r2`，不移动 `s00-done`；S1 从 `s00-done-r2` 起 | 会话分支从上一会话的 tag 建，tag 里要含"执行者模式"；沿用修复会话的 `-r2` 命名，不改写已有 tag |
+| 2026-10-08 | S1 | 测试基线不绿的处理：往 `.venv` 装 psycopg2-binary（装到 2.9.13）。装完 `pytest -q testing tests` 为 64 passed、3 skipped，作为 S1 基线 | 用户。开场提示词里这一条带着"贴之前请确认"的备注，编排者问过一次后才装 |
+| 2026-10-08 | S1 | 引擎环境由编排者直接装，不派给执行者：`.venv` 加 `datafusion==54.0.0`；用 `D:\anaconda3\python.exe -m venv` 加 pip 新建 `.venvs/duckdb-1.1.3`（duckdb 1.1.3）与 `.venvs/datafusion-50.0.0`（datafusion 50.0.0，依赖带进 pyarrow 25.0.1）；两个新 venv 都不继承系统包；`.gitignore` 加 `.venvs/`。PostgreSQL 本体没装 | 用户同意由编排者直接装；位置、建法由编排者定。执行者不许碰 worktree 之外的东西 |
+| 2026-10-08 | S1 | 旧版 DataFusion 选 50.0.0 | 编排者定（确认环境准备时列给用户看过，用户没有改）。PLAN 只说"一个更早的版本"；与 54 隔 4 个大版本，和 DuckDB 1.5.5 对 1.1.3 的间隔相当，Python 接口是同一代。S3 做 Version differential 时可以换 |
+| 2026-10-08 | S1 | `.venvs/duckdb-1.1.3` 里另装 psycopg2-binary 2.9.13 | `DuckDBRunner` 移进 `targets/` 之后，`import oracles`（含旧版子进程入口 `oracles._remote_exec`）会经过 `targets/__init__.py` 导入 psycopg2；整理前这个入口只需要 duckdb。S12 之前不改 `targets/__init__.py`，所以在环境侧补上 |
+| 2026-10-08 | S1 | CLAUDE.md 改两处：填"引擎环境"；测试命令写明用 `.venv` 的解释器。其他地方没动 | 用户同意。前一处是 SESSIONS.md 的 S1 要求，后一处对应 S0 未决问题第 2 条 |
+| 2026-10-08 | S1 | 旧系统基线 run 的存档入库，放在 `framework/surprise/docs/baseline/`（约 15 KB），其中 `run.log` 用 `git add -f` 加入 | `results/` 不入库，放在那里会丢；`*.log` 在 `.gitignore` 里。full 模式按用户指示不跑 |
+| 2026-10-08 | S1 | `DuckDBRunner` 的移法：只把 `class DuckDBRunner` 搬到 `targets/duckdb_runner.py`；`QueryResult`、`bags_equal` 留在 `oracles/db_runner.py`，文件末尾兼容导入 `DuckDBRunner`。其他文件一律不改 | 整体搬走加纯 re-export 会循环导入（`targets/__init__.py` → `postgres_runner` → `from oracles.db_runner import QueryResult`），派发前实测报 ImportError。SESSIONS 写的是"`oracles/db_runner.py` 保留为兼容导入"，这里多留了两个共享定义 |
+| 2026-10-08 | S1 | PG 脚本 41 个全部移到 `framework/campaigns/`，只改两处 `scripts.pg_*` 导入；`campaigns/` 不建 `__init__.py`；文档与文档字符串里的旧路径不改 | 牵连很少（没有别的代码按模块名或路径依赖这些脚本），不需要用 SESSIONS 给的"原地不动"退路；`scripts/` 本来就是命名空间包；文档更新是 S12 的范围 |
+| 2026-10-08 | S1 | `gates/s01.py` 在 SESSIONS 列的四项之外加三项：tag `v1-baseline` 指向 55c5512；campaign 脚本对照整理前的 `--help` 结果（39 个正常，另 2 个只查语法）；`DuckDBRunner` 六种导入顺序加旧版 venv 里 `oracles._remote_exec` 可导入 | 四项查不出"移动弄坏了导入"；这三项都是 S1 交付物的直接后果。S12 再移动旧代码时要同步改门槛 |
+| 2026-10-08 | S1 | `gates/s01.py` 的 pytest 判定是"退出码 0 且通过数不少于 64"，不是"等于 64" | 之后的会话会加测试，前面的门槛必须一直通过。S1 自身核对的是恰好 64 passed、3 skipped |
+| 2026-10-08 | S1 | 门槛经 git 公共目录定位主检出区的 `.venvs/`，环境变量 `COEVO_VENVS` 可覆盖；版本检查用各环境自己的解释器、`-I` 加空目录执行，比对 `__version__` | 审查在 worktree 里复跑门槛，而 venv 只在主检出区；仓库根的 `duckdb/`、`datafusion/` 目录会让 import 假成功（S0 未决问题第 4 条） |
+| 2026-10-08 | S1 | `gates/all.py` 把每个 `sNN.py` 当独立进程运行，前面的失败不中断后面的；门槛输出只用 ASCII | 进程隔离避免门槛之间互相带入已导入的模块；执行者的 PowerShell 5.1 会把中文输出弄乱 |
+| 2026-10-08 | S1 | 派发前，编排者在会话临时目录的仓库克隆里一次性试做了整理，用来确认门槛能被满足、朴素做法会被门槛拦下；克隆已删除，没有任何内容进入仓库 | 门槛写错会白白用掉返工轮次。仓库里的实现代码全部来自 `grok/s01-reorg` |
+| 2026-10-08 | S1 | 工作包结论：s01-reorg 一次通过，返工 0 轮。审查包的一条红旗（新增宽泛异常捕获 4 处）核对后是误报；少一个空行与日志记录器改名两处小出入不返工 | 编排者独立复跑：pytest 64 passed、门槛 7/7；从 git 对象逐字节比对类体与两个共享定义；核对了执行者的全部 23 条 shell 命令 |
+| 2026-10-08 | S1 | 整理之后用基线 run 的同一条命令重跑旧主循环，`summary.json` 除计时字段外与存档相同 | SESSIONS 没有要求；PLAN 的 Phase 0 要"确认旧 main.py 可复现"，顺手做的核对，结果不入库 |

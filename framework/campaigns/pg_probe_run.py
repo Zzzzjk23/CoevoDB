@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from targets.postgres_runner import PostgresRunner  # noqa: E402
-from scripts.pg_recall_check import classify  # noqa: E402
+from campaigns.pg_recall_check import classify  # noqa: E402
 
 
 def load_cases(module: str) -> list[dict]:
