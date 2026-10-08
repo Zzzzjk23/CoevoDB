@@ -7,7 +7,7 @@
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
-| S3 | Phase 1b 其余三类 oracle | 未开始 | | |
+| S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
@@ -20,7 +20,77 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 最近一次会话：S2 契约、账本、三类健全 oracle（2026-10-08）
+## 最近完成会话：S3（2026-10-09）
+
+Codex 担任编排者，全部实现来自 grok 工作包。会话分支 `session/s03` 从 `s02-done-r2`（caec153）建立；起点独立复跑 149 passed, 3 skipped 与 GATES PASS 2/2。四包全部合并，最终独立集成通过。收尾合并回 main，tag `s03-done`；S4 从此 tag 起。下方保留 S2 的历史接口与 M1 逐族期望，当前接口以本节为准。
+
+### 交付与门槛
+
+- 七类 `tlp/norec/plan_variant/index_presence/equivalent_query/version_differential/cross_dbms` 统一注册分发；DuckDB 与 DataFusion 都可调用 `judge`、`evaluate`。DataFusion 的 Index presence 是 `invalid / not_applicable`。标签仍只有 pass/fail/invalid，全部 `cve={}`，S4 才接 CVE。
+- Index presence 比较 DuckDB ART 索引有/无的结果；Equivalent query 只使用三条附等价性论证的机械规则 `double_negation`、`demorgan`、`case_to_coalesce`。NULL、重复行、BETWEEN/CASE 内部 AND、引用字符串与不可信 pair 均有反例。
+- Cross 复用旧 `classify_divergence`，至少三个独立成功引擎、目标唯一异类才 fail。DF-A/DF-B 以 DuckDB 与 PostgreSQL 作参照；SQLite 3.51.0 不支持两个 ALL 语句，报错不能投票。DF-B 正确 bag 包含 NULL，旧 SQL 注释不改。
+- Version 比较 DuckDB 1.1.3/1.5.5、DataFusion 50.0.0/54.0.0；仅独立多数支持旧结果或前四类在新版上独立见证 fail，才判回归。F2 两条方向证据支路均已实测；无参照的 SELECT version() 只判 `invalid / direction_unknown`。
+
+最终在 `framework/` 下、四包合并后的主检出区（94b602c）独立运行：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 242 passed, 3 skipped，退出码 0 |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5；GATES: PASS (3/3 passed)，退出码 0 |
+
+S3 五组 `registry/local/cross/version/matrix` 全通过。matrix 实际写入七类 × 两引擎共 14 条账本记录，并检查无隐藏 harness_error、DataFusion 索引不适用、标签稳定、manifest 校验。派发前期望来自本机实测；审查反例也先实测再加门槛，没有降低法定数或把版本当独立引擎。
+
+### 拆包清单与结论（全部已合并）
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 结论 |
+|---|---|---|---|---|---|
+| s03-registry | 注册分发、两引擎映射、S2 三类接 DataFusion、options、invalid 来源与 manifest 范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_contracts.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 合并1cae8cd；返工1轮，仅修新增测试的长期有效性。独立165 passed/3 skipped；15条shell命令已审查 |
+| s03-local | ART Index presence、确定性改写规则 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry | local | 合并0293ace；返工2轮（De Morgan/pair前提、E字符串边界）。独立186 passed/3 skipped；30条shell命令已审查 |
+| s03-cross | PG16参照 runner、法定数及唯一异类 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry、PG就绪 | cross | 合并a60a287；返工2轮（多语句/事务边界、WITH SELECT INTO）。独立188 passed/3 skipped；29条shell命令已审查 |
+| s03-version | 两引擎新旧子进程、回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross | version | 合并7454d8d；返工1轮（类型兼容、证据稳定、协议/错误标签）。独立221 passed/3 skipped；34条shell命令已审查 |
+
+表内 harness、tests 路径相对 `framework/surprise/`、`framework/`。公共文件仅 registry 改；local/cross 并行，cross 合并后派 version，同时最多两包。每包合并即提交 HANDOFF 状态。四包 brief、报告、最新独立审查结论、各轮返工意见已归档 `framework/surprise/docs/orch/s03/`，总花费约 8.93 美元。没有推翻包，没有超过两轮返工。
+
+### 当前接口与证据
+
+- `judge(case, oracle, *, runner_factory, timeout_s, rewrite_rule, paired_query, old_python, reference_factories)`；`evaluate` 同样支持这四个新增 options，仍每次写一条账本记录。
+- `register(id, handler)`、`get_handler(id)`、`runner_factory_for(engine)` 在 `harness/oracles/registry.py`。模块末尾自行注册，公共入口懒导入。handler 签名 `judge_case(case, *, factory, timeout_s, options)`。
+- `OracleOptions` 为冻结 dataclass：`rewrite_rule/paired_query/old_python/reference_factories`。old_python 是字符串路径；参照 None 使用默认集合，空 dict 明确无参照。只接受独立 ID duckdb/datafusion/sqlite/postgres，拒绝目标和版本别名；PG/SQLite 只作参照。
+- `INVALID_REASONS` 共十一项；本次追加 `untrusted_rewrite/direction_unknown/insufficient_engines/non_unique_outlier`，没有第四个标签。S4 冻结前可继续登记 CVE 的 invalid 来源。
+- Version detail 保存 `old_version/new_version/old_rows/new_rows/direction/direction_evidence`；行证据按 bag 规范排序，保留重复、NULL、类型。独立 sound 见证保存完整 `Label.to_dict()`，包含 SQL、身份与 detail。
+- manifest 覆盖 39 个文件（新 harness 21 个、旧依赖18个），哈希 `59255df29e81050de12488862127e21c18762c2f1a5acc8edf2d28f377bae33e`。旧实现与 PLAN/SESSIONS/ORCHESTRATION/CLAUDE/AGENTS/tools/orch/.grok 零改动。当前未统一记录的环境版本见下面未决问题。
+
+### PostgreSQL 与旧版环境的恢复
+
+本机参照为 EDB PostgreSQL 16.15 Windows x64，免安装二进制与数据在不入库的 `.orch/pg16/`，无系统服务、无全局 PATH 修改；下载源及 SHA256 记在 DECISIONS。仅监听 127.0.0.1:55432，用户 coevo、数据库 postgres、本机 trust。
+
+先查状态（仓库根）：
+
+`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data status`
+
+仅服务器未运行时启动，已有数据不得重新 initdb：
+
+`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`
+
+参照默认 DSN 为 `host=127.0.0.1 port=55432 user=coevo dbname=postgres connect_timeout=5`，`COEVO_REFERENCE_PG_DSN` 可覆盖。每 runner 用独立未提交 schema/事务，close 回滚；最终人工核查遗留 schema 数为 0。
+
+旧解释器默认从 git 公共目录定位 `.venvs/duckdb-1.1.3`、`.venvs/datafusion-50.0.0`，按平台找 Scripts/python.exe 或 bin/python，`COEVO_VENVS` 可覆盖。version_worker 经文件路径和 `-I` 启动，空临时工作目录；旧 DF 只直接导入 datafusion 与标准库，原始 typed JSON 回主进程再归一化。独立核查旧 DF 环境仍无 duckdb/psycopg2，没有安装依赖或使用旧代码写死的 bin/python。
+
+### PI 已自行核查并定下的选择
+
+1. PG 只作参照，直接 psycopg2 包装事务隔离；查询限单条只读，setup 事务控制在执行前拒绝，不让参照 schema 被误提交。
+2. 改写仅上述三条证明规则；外部 pair 只容许关键词大小写、外部空格、单尾分号等一致写法，字面量/引用标识符/评论文本变化拒绝。U& 形态保守不适用，不扩大规则覆盖。
+3. Index 门槛不强迫小表计划选索引。另用2万行人工核查确实出现 ART Index Scan，结果仍 pass；测试的是索引存在/不存在的结果等价。
+4. Version 旧 DF 原始类型在主进程调用既有 `targets.datafusion_runner._norm` 后共享 normalize，与同一目标 runner 兼容；不从字符串猜日期。DATE/bytes/Decimal 的真实端到端标签都 pass。双方成功同一错误 bag 仍 pass，双方 SQL 错误 invalid；非零退出、缺实际版本号、垃圾 JSON/损坏 typed cell invalid/harness_error。只精确跳过不存在的可选 index 模块，其它依赖异常传播。
+5. 继承自旧 Cross 的 DATE 格式假候选按范围纪律留 S4 前提检查，详细反例在下面未决问题；S3 raw fail 不等于确认 bug。
+
+### 与计划的偏差
+
+没有与 PLAN 冲突，没有接 CVE、LLM 改写或理论层。为满足用户点出的前提，拆出 registry 公共包并把 S2 三类接到 DataFusion；增加 PG16 参照 runner 和新的旧版 JSON 子进程入口。规则选三条可证明的机械规则，未实现 SESSIONS 举例的全部种类。门槛在独立审查中补了实际反例，既有旧逻辑未改。
+
+操作偏差也已记录 DECISIONS：registry 首次合并的署名环境变量被嵌套 PowerShell 展开，保留历史不重写；后续使用 PI 的 `.orch/scratch/s3_gw.py` 设置尾注。version 首轮 tmp 递归删除被 deny，核查目录一直保留，后续没有重试删除；最终仅按用户授权由 gw 清理已合并的整个 worktree。PI local 门槛一处漏导入已自行修正，未算执行者返工。
+
+## 最近一次已完成会话：S2 契约、账本、三类健全 oracle（2026-10-08）
 
 分支 `session/s02`，起点 tag `s01-done-r2`（7632c03），收尾合并回 main 并打 `s02-done`。
 
@@ -130,7 +200,12 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S3 及之后需要知道的）
+### 未决问题（S4 及之后需要知道的）
+
+S3发现、留后续会话：
+- `datafusion/`的DF-B SQL注释漏了正确bag中的NULL，旧文件不改，留S12；S3门槛按实测包含NULL。
+- manifest的environment还只记主Python、平台和DuckDB/DataFusion/SQLite；PG及旧版版本记录在oracle detail，PG二进制SHA256记在DECISIONS。S4冻结前评估是否补齐环境字段，S3不扩大环境重构范围。
+- 实测旧CrossEngineOracle已把`SELECT DATE '2020-01-02' AS d`当跨库差异候选：DF旧runner返回ISO字符串，DuckDB/PG返回temporal前缀；S3 raw Cross标签也为fail/wrong_result（无CVE）。这是旧归一化的假差异，不应算确认bug。按范围纪律不改旧normalizer、不追加Cross返工；S4必须在跨库前提检查里保守invalid或建立兼容的比较前提。版本包自己的DF新旧传输差异在S3修正，两版本原始类型/值确实相同。
 
 S2 新发现：
 1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
@@ -139,8 +214,8 @@ S2 新发现：
 4. `(query, predicate)` 只在 TLP 认识的形态下能合成一条合法语句。例如带聚合的分组查询再给一个谓词，`full_query` 会拼出 `… GROUP BY b WHERE (…)`，执行报错，三个 oracle 都判 invalid。这是有意的（坏用例就是 invalid），但 S8 的 Hunter 生成用例时要知道。验收时定为维持不改：遇到 TLP 不认识的形态，把过滤条件写进 `query`、`predicate` 留空。
 5. plan variant 的 28 个变体里，`ordered_agg_off` 的开关语句 `SET ordered_aggregate_threshold=0` 在 DuckDB 1.5.5 上报 Parser Error，这个变体实际是空操作：查询照默认设置跑一遍，被算进 `variants_compared`。这是旧代码变体表的问题，没有动。
 6. 契约拒绝非有限的浮点数（JSON 表示不了 NaN 和无穷大）。S6 算惊讶时如果 P_T 取到 0 或 1，要先截断再写进 `ExperimentRecord.surprise`。
-7. `Label.cve` 现在只是一个空 dict 占位，四步（rerun、premise、minimize、profile）各自记什么由 S4 定。`INVALID_REASONS` 现有七项，S3、S4 需要新的来源（改写不等价、方向不可定、法定数不足、重跑不稳定等）时往表里加，S4 冻结之前可以改。
-8. `judge` 和 `evaluate` 对 `engine != "duckdb"` 直接抛 `ValueError`。S3 接 DataFusion 时要加引擎到 runner 的映射；`PlanVariantOracle` 本身已有 DataFusion 的变体表。
+7. `Label.cve` 仍是空 dict 占位，四步（rerun、premise、minimize、profile）各自记什么由 S4 定。S3已给`INVALID_REASONS`追加untrusted_rewrite、direction_unknown、insufficient_engines、non_unique_outlier，共十一项；S4的重跑不稳定等来源继续往表里加，冻结之前可以改。
+8. 已解决：S3 registry包已让`judge`和`evaluate`支持DuckDB/DataFusion，两引擎映射统一；SQLite/PG仅作参照，不作首发目标。
 9. `oracles/forms.py` 依赖旧模块 `oracles.determinism` 里带下划线的两个函数（`_top_level_positions`、`_top_level_from_pos`）；`theory/contracts.py` 复用了 `harness/contracts.py` 里带下划线的序列化辅助函数。S12 整理旧代码、或 S4 之后想动这些辅助函数时要同步。
 10. 种子语料在 DuckDB 1.5.5 上的无效率不低：差分核对的 196 个种子变异里有 72 个在 setup 阶段就报错。S8 用种子做探索起点时会看到很多 `setup_error`。
 11. manifest 的环境一节只记了 Python、平台和三个引擎的版本，没有记 pyarrow 等间接依赖（`.venv` 继承 anaconda base，环境不完全可复现，见下面沿用的第 7 条）。
@@ -149,7 +224,7 @@ S2 新发现：
 14. （验收时发现）`duckdb/F5_parallel_cte_offset.sql` 的注释"Expected: 8 rows"是错的（正确是 12 行），`duckdb/F6_null_exists_notin.sql` 的数据复现不出它声称的现象。两个文件都没有改，留给 S12 整理复现文件时处理。
 
 沿用自 S1、仍然有效的（编号沿用 S1 交接里的）：
-1. 要导入 `oracles.*` 或 `targets.*`，解释器里必须同时有 duckdb 和 psycopg2。`.venvs/duckdb-1.1.3` 两样都有；`.venvs/datafusion-50.0.0` 两样都没有。决定：这个 venv 保持只有 DataFusion，S3 给旧版 DataFusion 写的子进程入口只导入 `datafusion` 和标准库，原始行用 JSON 传回，归一化在主进程做；S3 开工时可以推翻。
+1. 要导入 `oracles.*` 或 `targets.*`，解释器里必须同时有duckdb和psycopg2。`.venvs/duckdb-1.1.3`两样都有；`.venvs/datafusion-50.0.0`两样都没有。S3保持此隔离，旧版DF子进程只直接导入datafusion与标准库，原始行JSON传回，主进程归一化；新入口version_worker.py已完成并独立验证。
 2. 旧代码把旧版解释器写死成 `<venv>/bin/python`（`oracles/differential.py` 第 37 行、`main.py` 第 142 行），Windows 上是 `Scripts/python.exe`，所以旧主循环在本机 Version differential 恒为 disabled。决定：S12 之前不改旧代码；S3 的适配器自己按平台定位解释器（`gates/s01.py` 的 `venv_python()` 是现成写法）。
 3. `campaigns/pg_upgrade_mxact.py` 第 55 行在模块顶层抛 TypeError；`campaigns/pg_repack_mvcc.py` 导入即执行。旧问题，没修。
 5. 文档里还是旧路径 `scripts/pg_*.py`，留给 S12。
@@ -180,9 +255,10 @@ S2 新发现：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点
+### 下一会话的起点：S4
 
-- S3 从 tag `s02-done-r2` 建分支 `session/s03`（`s02-done` 不含验收后的修订，不要从它起）。
-- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 149 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (2/2 passed)`。
-- S3 按 ORCHESTRATION.md 第 8 节可拆 3–4 包并行。四类新 oracle 都落在 `framework/surprise/harness/oracles/` 下，按文件归属拆包时注意 `oracles/__init__.py`（`IMPLEMENTED` 与 `judge` 的分发）是公共文件，要么先单独一包把分发改成注册式，要么指定只由一个包来改。审查时 `--expect-passed 149`。
-- 派发脚本一律用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；合并时设 `ORCH_COMMIT_TRAILER` 给合并提交加署名尾注。
+- 从 main 的 `s03-done` 建分支 `session/s04`。先检查主分支/tag/工作区和 PG 状态；服务器停止时按本文件恢复命令启动。
+- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 242 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (3/3 passed)`。
+- S4 做 CVE 三档流水线与 harness 冻结；已知族门槛照本文件保留的 M1 表。新增继承 Cross DATE 假差异的前提检查用例，冻结前评估 manifest 环境字段；不把原始候选直接算确认 bug。
+- 派发一律根目录 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 直接用 `python`。审查测试通过数至少242，完整 diff、每条执行命令及分支当前HEAD独立复跑均不可省。默认两轮返工上限。
+- 四个 S3 包都已合并，清理后 gw list 应显示 cleaned，没有活跃执行者。历史 brief/report/review/反馈在 `docs/orch/s03/`；PI 探测与审查助手在 `.orch/scratch/`（不入库）。恢复时看 git log、HANDOFF 和 gw list。

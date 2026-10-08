@@ -206,8 +206,8 @@ def test_judge_rejects_unknown_oracle_and_engine_and_is_stable() -> None:
     with pytest.raises(ValueError):
         judge(plain, "TLP")
     with pytest.raises(ValueError):
-        judge(plain, "index_presence")
-    alien = SqlCase(engine="datafusion", setup=plain.setup, query=plain.query, predicate=plain.predicate)
+        judge(plain, "no_such_oracle")
+    alien = SqlCase(engine="sqlite", setup=plain.setup, query=plain.query, predicate=plain.predicate)
     with pytest.raises(ValueError):
         judge(alien, "tlp")
 
@@ -218,6 +218,30 @@ def test_judge_rejects_unknown_oracle_and_engine_and_is_stable() -> None:
     assert "elapsed" not in json.dumps(first.to_dict())
     bug = judge(_named("metrics_small"), "tlp")
     assert bug.to_dict() == judge(_named("metrics_small"), "tlp").to_dict()
+
+    df = _case("SELECT a, b FROM t", engine="datafusion")
+    df_first = judge(df, "tlp")
+    assert (df_first.y, df_first.fail_kind, df_first.invalid_reason) == ("pass", None, None)
+    assert df_first.to_dict() == judge(df, "tlp").to_dict()
+    assert df_first.cve == {}
+    assert "elapsed" not in json.dumps(df_first.to_dict())
+
+    df_setup = judge(
+        _case("SELECT a, b FROM t", engine="datafusion",
+              setup=("INSERT INTO no_such_table VALUES (1)",)),
+        "plan_variant",
+    )
+    assert (df_setup.y, df_setup.invalid_reason) == ("invalid", "setup_error")
+    assert df_setup.detail["error"]
+
+    df_skipped = judge(_case("SELECT a, b FROM t", None, engine="datafusion"), "tlp")
+    assert (df_skipped.y, df_skipped.invalid_reason) == ("invalid", "not_applicable")
+
+    def explode() -> None:
+        raise RuntimeError("runner exploded")
+
+    with pytest.raises(RuntimeError, match="runner exploded"):
+        judge(df, "tlp", runner_factory=explode)
 
 
 # ---- tlp --------------------------------------------------------------------
