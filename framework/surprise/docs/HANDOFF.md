@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订，S2 从这里起） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
-| S2 | Phase 1a 契约、账本、三类健全 oracle | 未开始 | | |
+| S2 | Phase 1a 契约、账本、三类健全 oracle | 进行中（分支 `session/s02`） | | |
 | S3 | Phase 1b 其余三类 oracle | 未开始 | | |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
@@ -19,6 +19,20 @@
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 S0 的交接全文在 tag `s00-done-r2` 的本文件里；其中仍然有效的未决问题已并入下面的清单。
+
+## 当前会话：S2 契约、账本、三类健全 oracle（进行中，2026-10-08）
+
+分支 `session/s02`，起点 tag `s01-done-r2`（7632c03）。起点检查：pytest 64 passed, 3 skipped；门槛 `s01` 7/7。接手时先跑 `gw list` 看包的状态。
+
+### 拆包清单
+
+先合并共享接口一包，再并行两包（ORCHESTRATION.md 第 8 节）。门槛 `gates/s02.py` 分五组：`contracts`、`ledger`、`manifest`、`oracles`、`evaluate`，每个包对应其中几组，可以用 `python -m surprise.gates.s02 --only <组>` 单独跑。
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
+|---|---|---|---|---|---|
+| s02-contracts | 五个数据契约（harness 侧：SQL 用例、身份证据、标签、实验记录；理论侧：规格、假设、理论编辑）与序列化；harness 常数模块；SQLite 实验账本 | `framework/surprise/harness/contracts.py`、`constants.py`、`ledger.py`，`framework/surprise/theory/contracts.py`，`framework/tests/test_surprise_contracts.py`、`test_surprise_ledger.py` | 无 | contracts、ledger | 待派发 |
+| s02-manifest | run manifest、harness 哈希、校验命令 `python -m surprise.harness.manifest hash/write/verify` | `framework/surprise/harness/manifest.py`，`framework/tests/test_surprise_manifest.py` | s02-contracts | manifest | 待派发 |
+| s02-oracles | TLP（WHERE、GROUP BY、DISTINCT 三种形态）、NoREC、Plan variant 的三值适配器与身份证据；`evaluate()` 把每次执行写进账本 | `framework/surprise/harness/oracles/**`、`framework/surprise/harness/evaluate.py`，`framework/tests/test_surprise_oracles.py`、`test_surprise_evaluate.py` | s02-contracts | oracles、evaluate | 待派发 |
 
 ## 最近一次会话：S1 冻结基线与仓库整理（2026-10-08）
 
