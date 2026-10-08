@@ -12,8 +12,10 @@ Two kinds:
 """
 from __future__ import annotations
 
+import ctypes
 import os
 import re
+import signal
 import time
 import uuid
 from typing import Any, Callable
@@ -32,6 +34,26 @@ EXIT_CODE = 77
 REFERENCE_EXIT_CODE = 78
 
 
+def die(code: int) -> None:
+    """End this process at once with ``code``, running no exit handlers.
+
+    ``os._exit`` still unloads the engine's library while its worker threads
+    run; on Windows that ends the process with an access violation
+    (0xC0000005) instead of ``code`` about once in two hundred times
+    (measured: 2 of 400, then 0 of 600 with this function). A fixture whose
+    exit code is part of the expectation has to die deterministically.
+    """
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code)
+    else:
+        os.kill(os.getpid(), signal.SIGKILL)
+    os._exit(code)
+
+
 class TokenLogRunner(DuckDBRunner):
     """A real DuckDB runner that records which process executed each statement."""
 
@@ -48,7 +70,7 @@ class ExitingRunner(DuckDBRunner):
 
     def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
         if EXIT_MARK in sql:
-            os._exit(EXIT_CODE)
+            die(EXIT_CODE)
         return super().run(sql, timeout_s=timeout_s)
 
 
@@ -87,7 +109,7 @@ class ExitingReference(_ConstantReference):
     """A reference engine whose process dies while it runs the query."""
 
     def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
-        os._exit(REFERENCE_EXIT_CODE)
+        die(REFERENCE_EXIT_CODE)
 
 
 _SINGLE_THREAD = re.compile(r"\bthreads\s*(=|\bto\b)\s*1\b", re.IGNORECASE)
