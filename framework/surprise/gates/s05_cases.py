@@ -357,15 +357,66 @@ AST_PROBES: list[tuple[str, str, tuple[str, ...], tuple[str, ...]]] = [
     ("duckdb", "DELETE FROM t WHERE a = 1 RETURNING a", ("ast:stmt:delete", "ast:clause:where"), ("ast:stmt:select",)),
     ("duckdb", "UPDATE t SET b = b + 1 WHERE a = 2", ("ast:stmt:update", "ast:expr:arith"), ("ast:stmt:select",)),
     ("duckdb", "INSERT INTO t VALUES (9, 90)", ("ast:stmt:insert",), ("ast:stmt:select",)),
+    # counterexamples found in the review of s05-ast (first round)
+    # a named window: the reference is not OVER (), the definition is not a second window call
+    ("duckdb", "SELECT sum(a) OVER w FROM t WINDOW w AS (PARTITION BY b ORDER BY a)",
+     ("ast:window_fn:aggregate", "ast:window_spec:partition", "ast:window_spec:order"),
+     ("ast:window_spec:empty", "ast:window_trait:multiple", "ast:window_fn:other", "ast:agg:sum", "ast:clause:order_by")),
+    ("duckdb", "SELECT rank() OVER w, sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)",
+     ("ast:window_fn:ranking", "ast:window_fn:aggregate", "ast:window_spec:order", "ast:window_trait:multiple"),
+     ("ast:window_spec:empty", "ast:window_spec:partition", "ast:window_fn:other")),
+    # IGNORE NULLS / RESPECT NULLS do not change which function is windowed
+    ("duckdb", "SELECT first_value(a) IGNORE NULLS OVER (ORDER BY b), lag(a) RESPECT NULLS OVER (ORDER BY b) FROM t",
+     ("ast:window_fn:navigation", "ast:window_spec:order", "ast:window_trait:multiple"),
+     ("ast:agg:other", "ast:window_fn:aggregate", "ast:window_fn:other")),
+    ("duckdb", "SELECT first(a IGNORE NULLS) OVER (ORDER BY b) FROM t", ("ast:window_fn:aggregate",),
+     ("ast:agg:other", "ast:window_fn:other")),
+    # a subquery is a nested query, not a pair of parentheses
+    ("postgres", "(SELECT a FROM t) UNION ALL (SELECT b FROM u) ORDER BY 1",
+     ("ast:stmt:select", "ast:set_op:union_all", "ast:clause:order_by"),
+     ("ast:subquery:scalar", "ast:subquery:derived", "ast:subquery_pos:from")),
+    ("duckdb", "INSERT INTO t (SELECT a FROM u)", ("ast:stmt:insert",), ("ast:subquery:scalar", "ast:stmt:select")),
+    ("postgres", "SELECT * FROM (a JOIN b ON a.x = b.x)", ("ast:join:inner", "ast:join_cond:on"),
+     ("ast:subquery:derived", "ast:subquery_pos:from")),
+    ("duckdb", "SELECT ARRAY(SELECT a FROM t)", ("ast:subquery:scalar", "ast:subquery_pos:select"), ("ast:subquery:derived",)),
+    ("postgres", "SELECT a FROM t WHERE a = ANY (ARRAY[1, 2])", ("ast:clause:where", "ast:cmp:eq"),
+     ("ast:subquery:any", "ast:subquery_pos:where")),
+    # correlation inside UPDATE, DELETE and MERGE: the statement's own relations are the outer query
+    ("duckdb", "DELETE FROM t WHERE NOT EXISTS (SELECT 1 FROM u WHERE u.k = t.k)",
+     ("ast:stmt:delete", "ast:subquery:not_exists", "ast:subquery_pos:where", "ast:subquery_trait:correlated", "ast:corr_cmp:eq"),
+     ("ast:subquery:exists", "ast:stmt:select")),
+    # ... and an assignment is not a comparison
+    ("duckdb", "UPDATE t SET a = (SELECT max(v) FROM u WHERE u.k <> t.k) WHERE b > 2",
+     ("ast:stmt:update", "ast:subquery:scalar", "ast:subquery_trait:correlated", "ast:corr_cmp:neq", "ast:cmp:neq", "ast:cmp:gt"),
+     ("ast:cmp:eq", "ast:corr_cmp:eq", "ast:subquery_pos:where")),
+    ("duckdb", "MERGE INTO t USING u ON t.k = u.k WHEN MATCHED AND EXISTS (SELECT 1 FROM w WHERE w.k < t.k) "
+               "THEN UPDATE SET v = u.v",
+     ("ast:stmt:merge", "ast:merge:matched", "ast:merge:update", "ast:subquery:exists", "ast:subquery_trait:correlated",
+      "ast:corr_cmp:lt", "ast:cmp:eq", "ast:cmp:lt"), ("ast:corr_cmp:eq",)),
+    ("duckdb", "SET threads = 1", (), ("ast:cmp:eq",)),
+    # an alias the subquery defines itself is local, even when the outer query has the same one
+    ("duckdb", "SELECT a FROM t WHERE EXISTS (SELECT 1 FROM t WHERE t.k = t.j)",
+     ("ast:subquery:exists", "ast:cmp:eq", "ast:join_trait:self"), ("ast:corr_cmp:eq", "ast:subquery_trait:correlated")),
 ]
 
 # statements sqlglot 30.21.0 cannot parse (both are in seeds/corpus.json): regex fallback
 FALLBACK_PROBES: list[tuple[str, str, tuple[str, ...]]] = [
     # (engine, sql, ids that must be in the closure of the features)
     ("duckdb", "SELECT id, {agg}(id) OVER (PARTITION BY ch ORDER BY id ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) FROM t1 ORDER BY 1",
-     ("ast:parse:fallback", "ast:window", "ast:clause:order_by")),
+     ("ast:parse:fallback", "ast:window", "ast:clause:order_by", "ast:stmt:select")),
     ("postgres", "SELECT * FROM J1_TBL JOIN J2_TBL USING (i) AS x WHERE J1_TBL.t = 'one'",
-     ("ast:parse:fallback", "ast:join", "ast:clause:where")),
+     ("ast:parse:fallback", "ast:join", "ast:clause:where", "ast:stmt:select")),
+]
+# the fallback is honest: (engine, sql, leaves it must not claim). Found in the review of s05-ast.
+FALLBACK_LACK: list[tuple[str, str, tuple[str, ...]]] = [
+    # BETWEEN and ORDER BY of a window frame are not a predicate and not the query's ORDER BY
+    ("duckdb", "SELECT {agg}(id) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t1",
+     ("ast:pred:between", "ast:clause:order_by", "ast:window_spec:empty")),
+    # WITH that does not open a common table expression
+    ("postgres", "SELECT * FROM J1_TBL JOIN J2_TBL USING (i) AS x ORDER BY 1 FETCH FIRST 1 ROW WITH TIES",
+     ("ast:cte:plain", "ast:cte:recursive")),
+    # two statements: the kind of "the" statement is not known
+    ("duckdb", "SELECT 1; DELETE FROM t", ("ast:stmt:select", "ast:stmt:delete")),
 ]
 
 # pairs that must give exactly the same ast features: names, case, layout and comments are not features

@@ -320,6 +320,11 @@ def check_ast() -> str:
         closure = registry.closure(features)
         require(status == "fallback" and set(ids) <= closure,
                 f"fallback probe {sql[:60]!r}: status {status!r}, closure lacks {sorted(set(ids) - closure)}")
+    for engine, sql, ids in C.FALLBACK_LACK:
+        features, status = ast_of(sql, engine)
+        unwanted = sorted(set(ids) & features)
+        require(status == "fallback" and not unwanted,
+                f"fallback probe {sql[:60]!r}: status {status!r}, claims {unwanted}")
     for left, right in C.AST_INVARIANT:
         a, _ = ast_of(left, "duckdb")
         b, _ = ast_of(right, "duckdb")
@@ -343,7 +348,8 @@ def check_ast() -> str:
             and "ast:expr:gate_marker" not in ast_of("SELECT a FROM t", "duckdb", mine)[0]
             and "ast:expr:gate_marker" not in ast_of(marked, "duckdb")[0],
             "an accepted regex feature is emitted exactly where its pattern matches, by its own registry")
-    return (f"{len(C.AST_PROBES)} probes, {len(C.FALLBACK_PROBES)} fallbacks, {len(C.AST_INVARIANT)} invariance pairs; "
+    return (f"{len(C.AST_PROBES)} probes, {len(C.FALLBACK_PROBES) + len(C.FALLBACK_LACK)} fallbacks, "
+            f"{len(C.AST_INVARIANT)} invariance pairs; "
             f"{len(by_family)} families show their core features and are pairwise distinct ({pairs} pairs)")
 
 

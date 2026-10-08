@@ -33,7 +33,7 @@ Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
 | s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | **已合并**（4b55eb1，返工 1 轮）。合并后 pytest 297 passed / 3 skipped，S01–S04 通过，S05 的 `vocab spec units` 通过。返工修了 `Phi.from_dict` 与 `Registry.load` 不校验，并把 S4 测试夹具的进程退出改成立即终止。留下一处小问题交给 `s05-ast` 顺带改：`_require_layers` 对不可哈希的层状态取值抛 `TypeError` 而不是 `ValueError` |
-| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 已派发（2026-10-09，基线 cc4856f 之后的文档提交；验收基线 297 passed）。说明另含 `phi.py` 的一处小修 |
+| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | 第一轮完成（e1d8332，316 passed，S05 的 `vocab spec units ast` 通过），审查发现七处判错，**第 1 轮返工已派发**（意见在 `.orch/feedback/s05-ast-r1.md`）。反例已加进门槛表（`AST_PROBES` 末尾 14 条、`FALLBACK_LACK` 3 条、两条兜底要求 `ast:stmt:select`），worktree 里的门槛是旧的，审查时用 `.orch/scratch/s5_gate_probe_check.py` 对着新表跑，合并后 `ast` 组才按新表检查 |
 | s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 未派发 |
 
 表内路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s05 --only <组>`，九组全过才是 S05 通过。`harness/` 已冻结，三个包都不许碰。
