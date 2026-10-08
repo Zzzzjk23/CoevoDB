@@ -28,9 +28,10 @@
 
 - 前置实测脚本在 `.orch/scratch/s3_probe.py`、`s3_probe2.py`、`s3_versions.py`，不入库。
 - SQLite 3.51.0 对 EXCEPT ALL / INTERSECT ALL 都报语法错误；DuckDB 1.5.5 与 DataFusion 54.0.0 都能执行并且不同。DF-B 的正确 bag 包含 NULL：`1, 2, NULL`（原 SQL 文件注释漏了 NULL，旧文件不改）。
-- 本机 PATH 没有 PostgreSQL 命令，pgserver 未安装。已下载 EDB PostgreSQL 16.15 Windows x64 二进制包到 `.orch/pg16/`（已被 .gitignore 的 .orch/ 规则覆盖）；解压正在运行，尚未启动服务器。恢复时先核实解压完整，不要重复解压或覆盖已初始化的数据目录。
+- 本机 PATH 没有 PostgreSQL 命令，pgserver 未安装，pip 仅二进制下载也返回 no matching distribution。EDB PostgreSQL 16.15 Windows x64 已放在 `.orch/pg16/`（已有忽略规则覆盖），服务器监听 127.0.0.1:55432，用户 coevo、数据库 postgres、仅本机 trust，无系统服务。两种 ALL 运算经 psycopg2 实测与 DuckDB 一致。
 - F2 已实测：1.1.3 返回 `[(10,30),(20,30)]`，1.5.5 返回 `[(10,10),(20,20)]`；新版 plan variant 独立判 fail / wrong_result。S3 回归门槛选 F2，不用语义未指定的 F3。
-- 尚未写 S3 门槛、尚未派发工作包；先完成 PostgreSQL 初始化和三引擎实测，再固定门槛期望。
+- 已写 `gates/s03.py` 五组门槛（registry/local/cross/version/matrix），正准备派发 registry。关键期望在派发前实测，包含三个改写的 NULL 样例和 SELECT version() 的方向不可定样例。
+- PostgreSQL 恢复命令（根目录）：`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`。已有服务器时只查 status。参照 runner 默认此连接，`COEVO_REFERENCE_PG_DSN` 可覆盖；参照用例由独立事务隔离，close 回滚，禁止注册服务、改全局 PATH。
 - 恢复命令：`git status --short --branch`、`git log -8 --oneline`、`.venv/Scripts/python.exe tools/orch/grok_worker.py list`。
 
 ### 预定拆包（门槛提交后才派发）

@@ -84,3 +84,8 @@
 | 2026-10-09 | S2 修订 | F10 在 M1 不要求判 fail，也不新写识别帧子句的确定性筛查；会让进程崩溃的两条语句改作新进程执行器的验证用例 | 旧筛查把帧子句当排序键，显式写帧的窗口查询一律判不确定。改它是新的判定逻辑，与 PLAN 总原则第 2 条冲突，要用户明确同意 |
 | 2026-10-09 | S2 修订 | 写数据的语句（MERGE 等）在 S4 第 1 档只接受 crash，wrong_result 候选判 invalid | plan variant 在同一个连接上依次跑各变体，后面的变体看到的是被改过的数据。F11 是 crash，不受影响 |
 | 2026-10-09 | S2 修订 | F9 在 M1 判 fail，"调试开关一档"只作报告时的分层 | 标签只由 oracle 与 CVE 决定；账本把 F9 算作一族，被剔除的只有 F4 那种护栏报错 |
+| 2026-10-09 | S3 | Codex 接替 Claude Code 担任 PI，实现继续通过 grok_worker.py 派发给 grok；每合并一包立即提交 HANDOFF 状态 | 用户本会话指示，既有编排流程不变 |
+| 2026-10-09 | S3 | PostgreSQL 16.15 免安装二进制放 `.orch/pg16/`；由 pg_ctl 启动本机 127.0.0.1:55432，不注册系统服务，使用 psycopg2，不安装 pgserver。默认 DSN 为 host=127.0.0.1 port=55432 user=coevo dbname=postgres，COEVO_REFERENCE_PG_DSN 可覆盖。用独立事务隔离各参照用例，close 回滚 | 用户明确授权本机准备 PG16。SQLite 对两个 ALL 语句报语法错；pgserver 未安装且仅二进制 pip 下载无版本。EDB 官方源 https://get.enterprisedb.com/postgresql/postgresql-16.15-1-windows-x64-binaries.zip；本地 SHA256 25e6fcdfb8caec38691bf461125e7564508760666f7b8e5dc6a5f0818f58f81e。首次 initdb 在解压未完成时失败，等待解压完成后成功，无数据被覆盖 |
+| 2026-10-09 | S3 | Cross-DBMS 的 DF-A/DF-B 用 DuckDB、DataFusion、PostgreSQL 三个独立引擎；SQLite 报错不能算投票。DF-B 正确 bag 包含 NULL，门槛为 1、2、NULL，旧 SQL 注释不改 | 派发前在本机三引擎实测；保持法定数，SQL 注释订正留 S12 |
+| 2026-10-09 | S3 | Version differential 回归门槛选 F2；1.1.3 为 (10,30)/(20,30)，1.5.5 为 (10,10)/(20,20)，新版 plan variant 独立见证 wrong_result。不选 F3 | 从 FAMILY_LEDGER_155 的版本梯挑选并先实测；F3 的 ASOF 并列语义未指定 |
+| 2026-10-09 | S3 | 先合并 registry 包，公共文件只归它；local 与 cross 并行，cross 合并后派 version，最多两包运行。七类共用显式 options；S2 原有拒绝 DataFusion/index_presence 的过时接口断言由 registry 包定向更新为新的支持行为，保留并强化未知 ID/未知引擎拒绝测试 | 用户指出公共文件冲突与引擎覆盖缺口；这是需求变化必需的测试更新，不删有效断言、不放宽错误判定 |
