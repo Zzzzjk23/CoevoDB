@@ -36,11 +36,26 @@ class Phi:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Phi:
+        if not isinstance(data, Mapping) or set(data) != {"schema", "engine", "features", "layers", "vocab"}:
+            raise ValueError("phi keys must be exactly schema, engine, features, layers, vocab")
+        if data["schema"] != 1:
+            raise ValueError("phi schema must be 1")
+        engine = data["engine"]
+        vocab = data["vocab"]
+        if not isinstance(engine, str) or not engine:
+            raise ValueError("engine must be a non-empty string")
+        if not isinstance(vocab, str) or not vocab:
+            raise ValueError("vocab must be a non-empty string")
+        features = data["features"]
+        if not isinstance(features, list) or any(not isinstance(item, str) for item in features):
+            raise ValueError("features must be a list of strings")
+        if any(features[index] >= features[index + 1] for index in range(len(features) - 1)):
+            raise ValueError("features must be strictly sorted")
         return cls(
-            engine=data["engine"],
-            features=tuple(data["features"]),
-            layers=dict(data["layers"]),
-            vocab=data["vocab"],
+            engine=engine,
+            features=tuple(features),
+            layers=_require_layers(data["layers"]),
+            vocab=vocab,
         )
 
 

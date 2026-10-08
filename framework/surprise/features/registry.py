@@ -72,28 +72,8 @@ class Registry:
         return frozenset(out)
 
     def register(self, definition: FeatureDef) -> None:
-        feature_id = definition.feature_id
-        if not is_feature_id(feature_id):
-            raise ValueError(f"invalid feature id: {feature_id!r}")
-        if self.known(feature_id):
-            raise ValueError(f"already known: {feature_id}")
-        if definition.kind != "leaf":
-            raise ValueError("invented features must be leaves")
-        if not isinstance(definition.source, str) or not definition.source or definition.source == "base":
-            raise ValueError("invented features need a non-base source")
-        if definition.layer != layer_of(feature_id):
-            raise ValueError("layer must match the first segment of the id")
-        if definition.layer != "ast":
-            raise ValueError("this session only supports invented ast features")
-        parent = self._defs.get(definition.parent) if definition.parent else None
-        if parent is None or parent.kind != "class":
-            raise ValueError("parent must be a registered class")
-        if parent.layer != definition.layer:
-            raise ValueError("parent must be in the same layer")
-        regex = _require_regex_definition(definition.definition)
-        if definition.accepted is not False or definition.acceptance is not None:
-            raise ValueError("invented features start unaccepted")
-        self._defs[feature_id] = replace(definition, definition=regex)
+        checked = self._checked_invented(definition, allow_accepted=False)
+        self._defs[checked.feature_id] = checked
 
     def accept(self, feature_id: str, acceptance: dict[str, Any]) -> None:
         if feature_id not in self._defs:
@@ -130,11 +110,48 @@ class Registry:
             raise ValueError("unrecognised registry file")
         registry = default_registry()
         for item in items:
-            definition = FeatureDef.from_dict(item)
-            if definition.feature_id in registry._defs:
-                raise ValueError(f"already registered: {definition.feature_id}")
-            registry._defs[definition.feature_id] = definition
+            if not isinstance(item, dict):
+                raise ValueError("invented features must be objects")
+            try:
+                definition = FeatureDef.from_dict(item)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"invalid invented feature: {exc}") from exc
+            checked = registry._checked_invented(definition, allow_accepted=True)
+            registry._defs[checked.feature_id] = checked
         return registry
+
+    def _checked_invented(self, definition: FeatureDef, *, allow_accepted: bool) -> FeatureDef:
+        feature_id = definition.feature_id
+        if not is_feature_id(feature_id):
+            raise ValueError(f"invalid feature id: {feature_id!r}")
+        if self.known(feature_id):
+            raise ValueError(f"already known: {feature_id}")
+        if definition.kind != "leaf":
+            raise ValueError("invented features must be leaves")
+        if not isinstance(definition.source, str) or not definition.source or definition.source == "base":
+            raise ValueError("invented features need a non-base source")
+        if definition.layer != layer_of(feature_id):
+            raise ValueError("layer must match the first segment of the id")
+        if definition.layer != "ast":
+            raise ValueError("this session only supports invented ast features")
+        parent = self._defs.get(definition.parent) if definition.parent else None
+        if parent is None or parent.kind != "class":
+            raise ValueError("parent must be a registered class")
+        if parent.layer != definition.layer:
+            raise ValueError("parent must be in the same layer")
+        regex = _require_regex_definition(definition.definition)
+        if allow_accepted:
+            if definition.accepted is True:
+                stored = _json_object(definition.acceptance, "acceptance")
+                return replace(definition, definition=regex, acceptance=stored)
+            if definition.accepted is False:
+                if definition.acceptance is not None:
+                    raise ValueError("unaccepted features cannot have acceptance")
+                return replace(definition, definition=regex)
+            raise ValueError("accepted must be true or false")
+        if definition.accepted is not False or definition.acceptance is not None:
+            raise ValueError("invented features start unaccepted")
+        return replace(definition, definition=regex)
 
     def _family_of(self, feature_id: str) -> str | None:
         if feature_id in self._defs or not is_feature_id(feature_id):

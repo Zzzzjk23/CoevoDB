@@ -233,3 +233,117 @@ def test_make_phi_rejects_invalid_payloads() -> None:
     accepted = make_phi("duckdb", ("ast:expr:gate_marker",), all_ok, registry=mine)
     assert "ast:expr:gate_marker" in accepted.features
     assert accepted.vocab == mine.digest()
+
+
+def _phi_dict(**overrides):
+    data = make_phi(
+        "duckdb",
+        ("ast:set_op:except_all", "ast:stmt:select"),
+        {"ast": "ok", "plan": "skipped", "data": "unavailable"},
+    ).to_dict()
+    data.update(overrides)
+    return data
+
+
+def test_phi_from_dict_round_trip_and_direct_construction() -> None:
+    phi = make_phi(
+        "duckdb",
+        ("plan:HASH_JOIN", "ast:stmt:select"),
+        {"ast": "ok", "plan": "ok", "data": "ok"},
+    )
+    assert Phi.from_dict(phi.to_dict()) == phi
+    fallback = make_phi(
+        "postgres",
+        ("ast:parse:fallback",),
+        {"ast": "fallback", "plan": "unavailable", "data": "skipped"},
+    )
+    assert Phi.from_dict(fallback.to_dict()) == fallback
+    raw = Phi(engine="duckdb", features=("z", "a"), layers={"ast": "ok"}, vocab="x")
+    assert raw.features == ("z", "a")
+
+
+def test_phi_from_dict_rejects_each_malformed_payload() -> None:
+    cases = [
+        {**_phi_dict(), "extra": 1},
+        {k: v for k, v in _phi_dict().items() if k != "schema"},
+        _phi_dict(schema=2),
+        _phi_dict(engine=""),
+        _phi_dict(engine=1),
+        _phi_dict(vocab=""),
+        _phi_dict(vocab=None),
+        _phi_dict(features="ast:stmt:select"),
+        _phi_dict(features=("ast:set_op:except_all", "ast:stmt:select")),
+        _phi_dict(features=["ast:stmt:select", "ast:set_op:except_all"]),
+        _phi_dict(features=["ast:stmt:select", "ast:stmt:select"]),
+        _phi_dict(features=["ast:stmt:select", 1]),
+        _phi_dict(layers={"ast": "ok", "plan": "ok"}),
+        _phi_dict(layers={"ast": "ok", "plan": "ok", "data": "ok", "extra": "ok"}),
+        _phi_dict(layers={"ast": "ok", "plan": "maybe", "data": "ok"}),
+        _phi_dict(layers={"ast": "ok", "plan": "fallback", "data": "ok"}),
+        _phi_dict(layers={"ast": "skipped", "plan": "ok", "data": "ok"}),
+    ]
+    for payload in cases:
+        with pytest.raises(ValueError):
+            Phi.from_dict(payload)
+
+
+def _write_invented(tmp_path: Path, *definitions: FeatureDef, name: str = "invented.json") -> Path:
+    path = tmp_path / name
+    path.write_text(
+        json.dumps({"invented": [definition.to_dict() for definition in definitions]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_load_round_trips_accepted_and_unaccepted(tmp_path: Path) -> None:
+    unaccepted = default_registry()
+    unaccepted.register(_invented())
+    path = _write_invented(tmp_path, unaccepted.get("ast:expr:gate_marker"), name="unaccepted.json")
+    loaded = Registry.load(path)
+    assert loaded.get("ast:expr:gate_marker") == unaccepted.get("ast:expr:gate_marker")
+    assert loaded.digest() == unaccepted.digest()
+
+    accepted_reg = default_registry()
+    accepted_reg.register(_invented(feature_id="ast:expr:other_marker"))
+    accepted_reg.accept("ast:expr:other_marker", {"decided_by": "gate", "records": 3})
+    path = tmp_path / "accepted.json"
+    accepted_reg.save(path)
+    restored = Registry.load(path)
+    assert restored.digest() == accepted_reg.digest()
+    assert restored.get("ast:expr:other_marker") == accepted_reg.get("ast:expr:other_marker")
+
+
+def test_load_rejects_each_invalid_invented_feature(tmp_path: Path) -> None:
+    cases = [
+        _invented(feature_id="not-an-id"),
+        _invented(feature_id="ast:expr:case"),
+        _invented(feature_id="plan:HASH_JOIN", parent="plan", layer="plan"),
+        _invented(kind="class"),
+        _invented(source="base"),
+        _invented(source=""),
+        _invented(feature_id="plan:expr:x", parent="ast:expr", layer="ast"),
+        _invented(feature_id="data:table:gate_empty", parent="data:table", layer="data"),
+        _invented(feature_id="ast:nowhere:x", parent="ast:nowhere"),
+        _invented(feature_id="ast:expr:cross", parent="data:table"),
+        _invented(feature_id="ast:expr:case:deep", parent="ast:expr:case"),
+        _invented(feature_id="ast:fn:gate_fn", parent="ast:fn"),
+        _invented(definition=None),
+        _invented(definition={"kind": "ast", "pattern": "x"}),
+        _invented(definition={"kind": "regex", "pattern": "("}),
+        _invented(accepted=True, acceptance=None),
+        _invented(accepted=True, acceptance={}),
+        _invented(accepted=False, acceptance={"x": 1}),
+        _invented(accepted="yes", acceptance={"x": 1}),
+    ]
+    for index, definition in enumerate(cases):
+        path = _write_invented(tmp_path, definition, name=f"bad-{index}.json")
+        with pytest.raises(ValueError):
+            Registry.load(path)
+    duplicate = _write_invented(tmp_path, _invented(), _invented(), name="dup.json")
+    with pytest.raises(ValueError):
+        Registry.load(duplicate)
+    not_object = tmp_path / "not-object.json"
+    not_object.write_text(json.dumps({"invented": ["ast:expr:gate_marker"]}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        Registry.load(not_object)
