@@ -347,5 +347,5 @@ GATES: FAIL (1/2 passed)
 - 第 2 轮的改法与返工意见一致：在 `judge` 之前用一个占位标签把 `ExperimentRecord` 构造一遍，校验规则仍只有契约里那一份；另加了一个测试。只改了 `evaluate.py` 和它的测试文件，适配器没有动，所以上面的差分核对结果仍然有效。
 - 用主检出区的新门槛对这个分支的代码复核：contracts、ledger、oracles、evaluate 四组全部通过。
 
-留意但不处理的一点：`theory/contracts.py`（上一个包）和这个包都依赖 `oracles.determinism` 里带下划线的函数（`_top_level_positions`、`_top_level_from_pos`），任务说明允许。S12 整理旧代码时如果动到它们，要同步改 `forms.py`。
+留意但不处理的一点：`oracles/forms.py` 依赖旧模块 `oracles.determinism` 里带下划线的两个函数（`_top_level_positions`、`_top_level_from_pos`），任务说明允许。S12 整理旧代码时如果动到它们，要同步改 `forms.py`。
 
