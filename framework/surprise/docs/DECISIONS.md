@@ -98,3 +98,4 @@
 | 2026-10-09 | S3 | cross第2轮返工只补WITH起头的SELECT INTO执行前拒绝；不因第1轮多语句修正通过就接受遗漏的只读前提 | 第1轮独立pytest186 passed/3 skipped，多语句cross组通过；新断言实测WITH x AS (SELECT 1 AS a) SELECT a INTO z FROM x被错误接受。返工上限仍为2，不扩授权 |
 | 2026-10-09 | S3 | local第2轮只修E转义字符串词法边界；同类字符串内SQL文本不得成为改写产物。不增加规则或依赖 | 第1轮修正后新增独立实测：转义引号包裹的CASE文本被当成代码改写，两引擎假fail/wrong_result。保守拒绝不支持的引号形式可以接受；门槛自己的SqlCase漏导入改用现有case()助手，未归咎执行者 |
 | 2026-10-09 | S3 | s03-cross合并a60a287，返工2轮（多语句/事务边界、WITH SELECT INTO），共2.8134美元。PostgresReferenceRunner只作参照，不新增PG目标引擎；三引擎法定数不变 | 独立pytest188 passed/3 skipped，S01/S02与增强cross PASS；完整代码/返工diff和全部29条shell命令审查。14处捕获为参照错误/版本回退/清理，假密码扫描命中是测试数据。无新skip、越界修改、LLM标签或旧逻辑改变 |
+| 2026-10-09 | S3 | s03-local合并0293ace，返工2轮（De Morgan语法/pair校验、E字符串边界），共2.3360美元。规则库只取double_negation、demorgan、case_to_coalesce；U&不适用，pair只容许关键词大小写/外部空格/单尾分号变化，引用文本/标识符/评论变化拒绝 | 独立pytest186 passed/3 skipped，S01/S02与增强local PASS；完整diff和全部30条shell命令审查。2万行另实测ART Index Scan；不强制小表计划使用索引，比较的是索引有/无的结果。无新skip、越界或旧逻辑修改 |
