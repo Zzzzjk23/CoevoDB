@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
 | S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
-| S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
+| S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
 | S3 | Phase 1b 其余三类 oracle | 未开始 | | |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
 | S5 | Phase 2 φ | 未开始 | | |
@@ -23,6 +23,20 @@
 ## 最近一次会话：S2 契约、账本、三类健全 oracle（2026-10-08）
 
 分支 `session/s02`，起点 tag `s01-done-r2`（7632c03），收尾合并回 main 并打 `s02-done`。
+
+### 验收后的修订（s02-done-r2，2026-10-09）
+
+用户验收时把点名的五处人工检查项交给编排者自行判断决定。复核没有改任何代码和门槛，改动只有本文件和 DECISIONS.md。五处的结论：
+
+1. **契约分放 `harness/contracts.py` 与 `theory/contracts.py`**：维持。冻结边界和"谁写"的边界是同一条线；实验记录里的规格存成 dict，harness 不依赖理论层。harness 一侧的字段名和四张取值表到 S4 冻结，在那之前 `FAIL_KINDS`、`INVALID_REASONS` 还可以加项。
+2. **`gates/s02_cases.py` 的 20 个用例期望**：全部维持，逐条看过。两点定下来：
+   - "不适用"就是 `invalid / not_applicable`，不另设第四个标签值。S3 门槛里说的"明确'不适用'"指的就是它。以后统计无效率时把这一项单列，它不代表用例坏。
+   - 划分谓词只对 TLP 认识的三种形态有定义（普通 `SELECT … FROM … [WHERE …]`、选择列表等于分组键的 GROUP BY、SELECT DISTINCT）。别的形态再给谓词就是坏用例，判 invalid（`grouped_with_aggregate` 在 plan variant 下是 `query_error`）；`full_query` 不改。生成用例的一方遇到别的形态，把过滤条件直接写进 `query`、`predicate` 留空，这样不损失任何可测的查询。
+3. **F5、F6、F10 等已知复现在 S4 门槛里怎么算**：见下面"S4 门槛（M1）对已知复现的期望"一节。为此补查了事实；未决问题"S2 新发现"第 1、2 条已按实测改写，原先有三处写得不对（F5 不是抓不到；F6 补上数据就能复现；F10 经适配器根本不会被执行，所以也不会崩）。
+4. **实际标签**（`metrics_small` × TLP）：看过，`y`、`fail_kind`、身份证据（`missing: 1, extra: 0`）与判定依据（`detail` 里的两条语句）齐全，没有要改的。
+5. **`orch/s02/s02-oracles.review.md` 第 8 节**：复核无异议。返工的起因在任务说明，补的门槛检查现在是 `evaluate` 组的一部分，本次重跑通过。
+
+复核时在主检出区重跑：pytest 149 passed, 3 skipped；门槛 `s01`、`s02` 都通过。
 
 ### 完成了什么
 
@@ -88,19 +102,41 @@ brief、report、审查包（含编排者的结论）和返工意见在 `framewo
 - harness 哈希的范围除了 `surprise/harness/`，还列入了十个旧模块：适配器调用的是它们，只哈希新代码查不出旧判定逻辑被改。
 - 门槛比 SESSIONS 列的四项多了契约、账本、manifest 三组，以及 `evaluate` 的参数校验一项（后者是审查中发现缺口后补的）。
 
+### S4 门槛（M1）对已知复现的期望（验收时定，2026-10-09）
+
+SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身份证据正确"。下表把每个族落到具体的复现和期望上，S4 写门槛时照这张表。"本机实测"都是 DuckDB 1.5.5、S2 的适配器、未经 CVE 的原始判定；探测脚本是 `.orch/scratch/` 下的 `m1_probe.py`、`m1_probe2.py`、`m1_probe3.py`（不入库）。
+
+| 族 | 用哪份复现 | 本机实测 | M1 期望 | S4 要做的 |
+|---|---|---|---|---|
+| F1、F2、F7 | `recall_repros.json` | plan variant 判 fail / wrong_result，开关 `no_optimizer`，稳定 | fail | 第 3 档二分把开关细化成 fix set，与该条目的 `fix_set` 对照 |
+| F9 | `recall_repros.json` | plan variant 判 fail，开关 `window_combine`，稳定 | fail | "调试开关一档"只是报告时的分层，不影响标签 |
+| F11 | `duckdb/F11_merge_nmbs_rowid.sql` 里的 MERGE | plan variant 判 fail / crash，`error_class` 为 `InternalException`，开关 `no_optimizer`，稳定 | fail（crash） | 二分应落到 `build_side_probe_side`。写数据的语句只认 crash，见表后第 2 点 |
+| F6 | `recall_repros.json` 的表结构和查询，补三行数据（表后第 1 点） | 不带谓词：plan variant 判 fail，开关 `no_optimizer`，`missing: 1`。带谓词 `o1.placed IS NOT NULL`：TLP、NoREC 判 fail，plan variant 判 pass | fail | 身份证据以二分结果为准，不要求等于该条目的空 `fix_set` |
+| F3 | `recall_repros.json` | plan variant 判 fail，开关 `no_optimizer`，稳定 | invalid | 结果稳定，重跑筛不掉；要一条前提规则（ASOF 连接右侧有并列时取哪一行未指定） |
+| F8 | `recall_repros.json` | 同一进程里三次判定相同（fail）；60 个新连接出现 8 种不同结果 | invalid | 新进程重跑不一致即可筛掉 |
+| F5 | `recall_repros.json` | 200 个新连接里 20 次结果不对（10%）；plan variant 三次判定不一致，第一次是 fail，开关 `no_statistics` | invalid（重跑不稳定） | 第 1 档重跑加 threads=1 复判；把观察到的比例记进 `Label.cve` |
+| F10 | `duckdb/F10_window_frame_underflow.sql` | 经适配器：试过的六种写法全部 invalid / nondeterministic，查询没有被执行。直接执行：前两条 ntile 语句都让进程以 0xC0000094 退出 | invalid；记为已知的召回缺口，不要求 fail | 新进程执行器要把"子进程异常退出"报成 crash，用这两条语句直接验证执行器（表后第 3 点） |
+
+另有两份 `.sql` 文件按文件里的数据复现不出来，M1 期望 pass：
+- `duckdb/F5_parallel_cte_offset.sql`：默认设置、threads=1、关优化器各 80 个新连接，全部返回 12 行。文件注释写的"Expected: 8 rows"是错的，正确行数就是 12。
+- `duckdb/F6_null_exists_notin.sql`：默认与关优化器都返回 `[(1, 1)]`，三个 oracle 都判 pass。文件声称的"12 行对 8 行"出自原始见证，那份数据不在仓库里（全仓库只有文档提到 σ 键 `ab630f7b`）。
+
+几点说明：
+
+1. F6 的补充数据：`INSERT INTO orders VALUES (2, 1, -1e308, 'a', DATE '2021-06-15'), (3, NULL, NULL, NULL, NULL), (9, 1, 0.0, 'a', DATE '2015-05-05')`，照门槛用例 `metrics_small` 的三行改的。带谓词的形态把选择列表换成了 `o1.order_id, o1.amount`。这是重建的复现，不是原始见证；它很可能就是 F1 的机制落在 F6 的查询形态上（账本自己也这么猜）。二分落到 F1 的 fix set（`deliminator`、`filter_pushdown`）就把 F6 记成与 F1 同一机制。
+2. plan variant 在同一个连接上依次跑各个变体。MERGE 这类写数据的语句每跑一次都改数据，后面的变体看到的是改过的表，结果比较不可信。S4 第 1 档的前提检查里，非 SELECT 语句只接受 crash，wrong_result 候选一律判 invalid。
+3. F10 不要求判 fail 的原因：旧的确定性筛查（`oracles/determinism.py` 的 `has_nondeterministic_tiebreak`）把窗口里 ORDER BY 之后的帧子句也当成排序键，探测语句执行失败，于是判"不确定"。凡是显式写了帧的窗口查询都是这个结果，哪怕排序键唯一、写的就是默认帧。要让 F10 判 fail 得新写一段识别帧子句的筛查，这是新的判定逻辑，与 PLAN.md 总原则第 2 条"判定代码只搬不改"冲突，用户没有明确同意就不做。现状偏保守：只会少判，不会错判。
+4. F5 判 invalid 是 PLAN.md 标签规则的直接结果（"重跑不稳定或结果不确定的也归此类"）。后果是 F5 这类时有时无的真缺陷在新框架里不计惊讶，理论学不到它；评估时把它和 F8 一起算作"不稳定"一类单独报告。
+
+这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
+
 ### 未决问题（S3 及之后需要知道的）
 
 S2 新发现：
-1. `duckdb/F10_window_frame_underflow.sql` 里前两条查询会让解释器进程直接崩溃：第二条是实测的（子进程退出码 0xC0000094），文件注释只把它描述成 INTERNAL 错误；第一条按文件注释就是硬崩溃，没有去试。进程内的适配器判不了它们，本会话的门槛和测试都避开了。S4 的新进程重跑要先到位，才能把这一族判成 fail。该文件后两条查询不崩溃，但会被确定性筛查判成 `nondeterministic`（窗口的 ORDER BY 键不唯一）。
-2. 已知复现在本机 DuckDB 1.5.5 上被这三类 oracle 抓到的情况（S4 的门槛要求 confirmed 族全部判 fail，下面几条到时候要处理）：
-   - `recall_repros.json` 的 F1、F2、F7：plan variant 判 fail，开关 `no_optimizer`。
-   - F3、F8（账本里是 unspecified-semantics）：plan variant 的原始判定同样是 fail，要靠 S4 的 CVE 降成 invalid。
-   - F9：plan variant 在 `window_combine` 下判 fail（账本里是 debug-setting 一档）。
-   - F5（靠线程数）：plan variant 抓不到。
-   - F6：`recall_repros.json` 里这一条的 setup 只有两条 CREATE TABLE，没有数据，查询返回 0 行，什么都复现不了。`duckdb/F6_null_exists_notin.sql` 里有带数据的版本，本会话没有用它。
-   - F11 是 MERGE 语句，不是查询，没有试。
+1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
+2. 已知复现在本机 DuckDB 1.5.5 上被这三类 oracle 抓到的情况，以及 S4 门槛对每一族的期望：见上面"S4 门槛（M1）对已知复现的期望"一节（2026-10-09 按实测重写；原先写的"F5 抓不到""F6 什么都复现不了""F11 没有试"都已更正）。
 3. TLP 的 GROUP BY / DISTINCT 形态没有已知的失败复现，门槛只覆盖了它的 pass 与 invalid。
-4. `(query, predicate)` 只在 TLP 认识的形态下能合成一条合法语句。例如带聚合的分组查询再给一个谓词，`full_query` 会拼出 `… GROUP BY b WHERE (…)`，执行报错，三个 oracle 都判 invalid。这是有意的（坏用例就是 invalid），但 S8 的 Hunter 生成用例时要知道。
+4. `(query, predicate)` 只在 TLP 认识的形态下能合成一条合法语句。例如带聚合的分组查询再给一个谓词，`full_query` 会拼出 `… GROUP BY b WHERE (…)`，执行报错，三个 oracle 都判 invalid。这是有意的（坏用例就是 invalid），但 S8 的 Hunter 生成用例时要知道。验收时定为维持不改：遇到 TLP 不认识的形态，把过滤条件写进 `query`、`predicate` 留空。
 5. plan variant 的 28 个变体里，`ordered_agg_off` 的开关语句 `SET ordered_aggregate_threshold=0` 在 DuckDB 1.5.5 上报 Parser Error，这个变体实际是空操作：查询照默认设置跑一遍，被算进 `variants_compared`。这是旧代码变体表的问题，没有动。
 6. 契约拒绝非有限的浮点数（JSON 表示不了 NaN 和无穷大）。S6 算惊讶时如果 P_T 取到 0 或 1，要先截断再写进 `ExperimentRecord.surprise`。
 7. `Label.cve` 现在只是一个空 dict 占位，四步（rerun、premise、minimize、profile）各自记什么由 S4 定。`INVALID_REASONS` 现有七项，S3、S4 需要新的来源（改写不等价、方向不可定、法定数不足、重跑不稳定等）时往表里加，S4 冻结之前可以改。
@@ -108,6 +144,9 @@ S2 新发现：
 9. `oracles/forms.py` 依赖旧模块 `oracles.determinism` 里带下划线的两个函数（`_top_level_positions`、`_top_level_from_pos`）；`theory/contracts.py` 复用了 `harness/contracts.py` 里带下划线的序列化辅助函数。S12 整理旧代码、或 S4 之后想动这些辅助函数时要同步。
 10. 种子语料在 DuckDB 1.5.5 上的无效率不低：差分核对的 196 个种子变异里有 72 个在 setup 阶段就报错。S8 用种子做探索起点时会看到很多 `setup_error`。
 11. manifest 的环境一节只记了 Python、平台和三个引擎的版本，没有记 pyarrow 等间接依赖（`.venv` 继承 anaconda base，环境不完全可复现，见下面沿用的第 7 条）。
+12. （验收时发现）F9 的触发面很宽：`SELECT id, count(*) OVER (ORDER BY v) FROM t1` 这样排序键唯一的普通窗口计数，plan variant 就在 `window_combine` 下判 fail（8 行全不同）。S8 的探索一碰窗口聚合就会反复撞上这一族，理论要能尽快把它归到一个假设里，否则预算会耗在重复上。
+13. （验收时发现）显式写了帧子句的窗口查询一律被确定性筛查判成 `invalid / nondeterministic`，原因见"S4 门槛（M1）对已知复现的期望"一节的第 3 点。S8 生成用例时要么不写帧子句，要么接受这部分全是 invalid。
+14. （验收时发现）`duckdb/F5_parallel_cte_offset.sql` 的注释"Expected: 8 rows"是错的（正确是 12 行），`duckdb/F6_null_exists_notin.sql` 的数据复现不出它声称的现象。两个文件都没有改，留给 S12 整理复现文件时处理。
 
 沿用自 S1、仍然有效的（编号沿用 S1 交接里的）：
 1. 要导入 `oracles.*` 或 `targets.*`，解释器里必须同时有 duckdb 和 psycopg2。`.venvs/duckdb-1.1.3` 两样都有；`.venvs/datafusion-50.0.0` 两样都没有。决定：这个 venv 保持只有 DataFusion，S3 给旧版 DataFusion 写的子进程入口只导入 `datafusion` 和标准库，原始行用 JSON 传回，归一化在主进程做；S3 开工时可以推翻。
@@ -143,7 +182,7 @@ S2 新发现：
 
 ### 下一会话的起点
 
-- S3 从 tag `s02-done` 建分支 `session/s03`。
+- S3 从 tag `s02-done-r2` 建分支 `session/s03`（`s02-done` 不含验收后的修订，不要从它起）。
 - 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 149 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (2/2 passed)`。
 - S3 按 ORCHESTRATION.md 第 8 节可拆 3–4 包并行。四类新 oracle 都落在 `framework/surprise/harness/oracles/` 下，按文件归属拆包时注意 `oracles/__init__.py`（`IMPLEMENTED` 与 `judge` 的分发）是公共文件，要么先单独一包把分发改成注册式，要么指定只由一个包来改。审查时 `--expect-passed 149`。
 - 派发脚本一律用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；合并时设 `ORCH_COMMIT_TRAILER` 给合并提交加署名尾注。
