@@ -169,6 +169,7 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 S3发现、留后续会话：
 - `datafusion/`的DF-B SQL注释漏了正确bag中的NULL，旧文件不改，留S12；S3门槛按实测包含NULL。
 - manifest的environment还只记主Python、平台和DuckDB/DataFusion/SQLite；PG及旧版版本记录在oracle detail，PG二进制SHA256记在DECISIONS。S4冻结前评估是否补齐环境字段，S3不扩大环境重构范围。
+- 实测旧CrossEngineOracle已把`SELECT DATE '2020-01-02' AS d`当跨库差异候选：DF旧runner返回ISO字符串，DuckDB/PG返回temporal前缀；S3 raw Cross标签也为fail/wrong_result（无CVE）。这是旧归一化的假差异，不应算确认bug。按范围纪律不改旧normalizer、不追加Cross返工；S4必须在跨库前提检查里保守invalid或建立兼容的比较前提。版本包自己的DF新旧传输差异在S3修正，两版本原始类型/值确实相同。
 
 S2 新发现：
 1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
