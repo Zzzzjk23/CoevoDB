@@ -38,7 +38,7 @@
 
 | 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 未派发 |
+| s03-registry | 注册分发、DuckDB/DataFusion 映射、S2 三类接 DataFusion、统一 options、invalid 来源、manifest 依赖范围 | harness/oracles/__init__.py、registry.py、sound.py；harness/evaluate.py、contracts.py、manifest.py；tests/test_surprise_oracles.py、test_surprise_evaluate.py、test_surprise_contracts.py、test_surprise_s03_registry.py | s02-done-r2 | registry | 已准备 brief，派发基线 0790d4c |
 | s03-local | DuckDB ART Index presence、确定性 Equivalent query 规则库 | harness/oracles/index_presence.py、equivalent_query.py、rewrites.py；tests/test_surprise_s03_local.py | registry 已合并 | local | 未派发 |
 | s03-cross | psycopg2 PostgreSQL 参照 runner、Cross-DBMS 法定数及唯一异类判定 | harness/oracles/cross_dbms.py、pg_reference.py；tests/test_surprise_s03_cross.py | registry 已合并，PostgreSQL 就绪 | cross | 未派发 |
 | s03-version | 两引擎新旧版子进程及回归方向证据 | harness/oracles/version_differential.py、version_worker.py；tests/test_surprise_s03_version.py | registry、cross 已合并 | version | 未派发 |
