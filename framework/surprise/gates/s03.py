@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -18,6 +20,27 @@ SETUP = ('CREATE TABLE t(a INT, b INT)', 'INSERT INTO t VALUES (1,1),(2,NULL),(3
 ALL_SETUP = ('CREATE TABLE t(v INT)', 'INSERT INTO t VALUES (1),(1),(2),(2),(2),(NULL)',
              'CREATE TABLE u(v INT)', 'INSERT INTO u VALUES (1),(2),(NULL)')
 EXPECTED = {'EXCEPT ALL': [[1], [2], [2]], 'INTERSECT ALL': [[1], [2], [None]]}
+
+
+def venvs_dir():
+    """Where the versioned interpreters live: beside the git common directory.
+
+    A worktree has no ``.venvs`` of its own; the main checkout's is used, the
+    same way ``gates/s01.py`` and the version oracle find it. ``COEVO_VENVS``
+    overrides.
+    """
+    override = os.environ.get('COEVO_VENVS')
+    if override:
+        return Path(override)
+    try:
+        proc = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                              cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ROOT / '.venvs'
+    common = proc.stdout.strip()
+    if proc.returncode == 0 and common:
+        return Path(common).parent / '.venvs'
+    return ROOT / '.venvs'
 
 
 def require(condition, message):
@@ -276,10 +299,9 @@ def check_version():
     require(len(calls) == 2 and first.to_dict() == second.to_dict(),
             'version evidence changes with unordered row permutation or ignores factory')
 
-    import subprocess
     from unittest.mock import patch
     from surprise.harness.oracles import version_differential as implementation
-    old_python = ROOT / '.venvs/duckdb-1.1.3/Scripts/python.exe'
+    old_python = venvs_dir() / 'duckdb-1.1.3/Scripts/python.exe'
     worker = Path(implementation.__file__).with_name('version_worker.py')
     payload = {'engine': 'duckdb', 'setup': list(ordered_case.setup), 'query': order_query}
     completed = subprocess.run([str(old_python), '-I', str(worker)], input=json.dumps(payload),
@@ -296,7 +318,7 @@ def check_version():
         with patch.object(implementation, '_run_worker', return_value=response):
             label_is(judge(ordered_case, 'version_differential', old_python=str(old_python)),
                      'invalid', 'harness_error')
-    require(not (ROOT / '.venvs/datafusion-50.0.0/Lib/site-packages/duckdb').exists(), 'old DF environment polluted with DuckDB')
+    require(not (venvs_dir() / 'datafusion-50.0.0/Lib/site-packages/duckdb').exists(), 'old DF environment polluted with DuckDB')
     return 'F2 old/new measured bags and regression direction; both old venvs work; directionless mismatch invalid'
 
 
