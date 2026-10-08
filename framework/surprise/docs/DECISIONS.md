@@ -96,3 +96,4 @@
 | 2026-10-09 | S3 | local审查补门槛：De Morgan拒绝BETWEEN和CASE内部AND；paired_query不能忽略字面量大小写。第1版两引擎实测把有效原查询改成非法SQL并假报fail/error_mismatch，要求返工1轮 | 证明只覆盖逻辑二元AND/OR，不覆盖语法内部AND；不扩大规则覆盖，保守invalid/not_applicable。字面量变化的外部pair按untrusted_rewrite拒绝 |
 | 2026-10-09 | S3 | version派发前补双支路门槛：F2有参照与空参照都fail/regression；DuckDB和DataFusion的SELECT version()无参照都invalid/direction_unknown | 已实测DF54/PG16/SQLite3.51的F2都等于旧DuckDB结果，新版plan variant独立fail并有no_optimizer身份；两引擎版本字符串只是metadata变化 |
 | 2026-10-09 | S3 | cross第2轮返工只补WITH起头的SELECT INTO执行前拒绝；不因第1轮多语句修正通过就接受遗漏的只读前提 | 第1轮独立pytest186 passed/3 skipped，多语句cross组通过；新断言实测WITH x AS (SELECT 1 AS a) SELECT a INTO z FROM x被错误接受。返工上限仍为2，不扩授权 |
+| 2026-10-09 | S3 | local第2轮只修E转义字符串词法边界；同类字符串内SQL文本不得成为改写产物。不增加规则或依赖 | 第1轮修正后新增独立实测：转义引号包裹的CASE文本被当成代码改写，两引擎假fail/wrong_result。保守拒绝不支持的引号形式可以接受；门槛自己的SqlCase漏导入改用现有case()助手，未归咎执行者 |

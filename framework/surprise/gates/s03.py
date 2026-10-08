@@ -132,13 +132,19 @@ def check_local():
         for engine in ('duckdb', 'datafusion'):
             label_is(judge(case(engine, query, None), 'equivalent_query', rewrite_rule='demorgan'),
                      'invalid', 'not_applicable')
-    literal_case = SqlCase(engine='duckdb', setup=('CREATE TABLE t(s VARCHAR)',
+    literal_case = case('duckdb', predicate=None, setup=('CREATE TABLE t(s VARCHAR)',
         "INSERT INTO t VALUES (NULL), ('ZZ')"),
         query="SELECT CASE WHEN s IS NOT NULL THEN s ELSE 'ABC' END FROM t")
     certified = apply_rule(literal_case.query, 'case_to_coalesce')
     require(isinstance(certified, str), 'literal CASE shape must remain supported')
     label_is(judge(literal_case, 'equivalent_query', rewrite_rule='case_to_coalesce',
         paired_query=certified.replace("'ABC'", "'abc'")), 'invalid', 'untrusted_rewrite')
+    escaped = r"SELECT E'abc\' CASE WHEN b IS NOT NULL THEN b ELSE 0 END \'xyz' FROM t"
+    require(apply_rule(escaped, 'case_to_coalesce') is None,
+            'CASE rule rewrote SQL text inside an escaped string literal')
+    for engine in ('duckdb', 'datafusion'):
+        label_is(judge(case(engine, escaped, None), 'equivalent_query',
+                       rewrite_rule='case_to_coalesce'), 'invalid', 'not_applicable')
     return 'ART exercised, injected mismatch caught; 3 proved rules x 2 engines incl NULL; untrusted pairs rejected'
 
 

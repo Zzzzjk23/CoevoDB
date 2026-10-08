@@ -35,6 +35,7 @@
 - Cross预读发现PG只读查询检查允许多语句、setup只检查首词事务控制。编排者已补门槛并实测第一版被拦下；setup用不连数据库的记录runner验证拒绝发生在执行前，避免测试自身提交参照schema。将作为cross第1轮返工项。
 - Cross第1轮返工dc20f00独立pytest186 passed/3 skipped，多语句门槛通过；完整复查新增发现WITH起头的SELECT INTO遗漏，门槛已拦下。第2轮（最后一轮）只修该只读前提，达到返工上限后若仍有必修问题必须问用户。
 - local独立审查实测De Morgan把BETWEEN和CASE内部AND误拆，导致两引擎假fail/error_mismatch；paired_query比较还会忽略字符串大小写。已补对应门槛，将作为local第1轮返工项。基础三条NULL/重复行用例保留。
+- local第1轮两项已修正；新增反例实测E转义字符串内的CASE文本被改写，两引擎假fail/wrong_result，第2轮只修词法引用边界。编排者新门槛的SqlCase漏导入已自行改为共用case()助手，执行者未动门槛。
 - 注册API：register(id, handler)、get_handler(id)、runner_factory_for(engine)。后续模块在末尾自行register；统一handler签名 judge_case(case, *, factory, timeout_s, options)。OracleOptions四字段rewrite_rule/paired_query/old_python/reference_factories；old_python使用字符串路径，None默认、空参照字典表示无参照。
 - registry审查与返工证据已归档到 docs/orch/s03/；新增缺模块测试现在在测试内模拟缺失，不依赖后续文件未实现。审查唯一红旗是S3其余模块尚缺，按部分门槛验收。
 - PostgreSQL 恢复命令（根目录）：`.orch/pg16/binaries/pgsql/bin/pg_ctl.exe -D D:/CoevoDB/.orch/pg16/data -l D:/CoevoDB/.orch/pg16/server.log -o "-h 127.0.0.1 -p 55432" -w start`。已有服务器时只查 status。参照 runner 默认此连接，`COEVO_REFERENCE_PG_DSN` 可覆盖；参照用例由独立事务隔离，close 回滚，禁止注册服务、改全局 PATH。
