@@ -10,6 +10,7 @@ from surprise.harness.oracles.equivalent_query import judge_case as judge_equiva
 from surprise.harness.oracles.index_presence import judge_case as judge_index
 from surprise.harness.oracles.registry import OracleOptions
 from surprise.harness.oracles.rewrites import RULES, apply_rule
+from targets.datafusion_runner import DataFusionRunner
 from targets.duckdb_runner import DuckDBRunner
 
 _SETUP = (
@@ -264,6 +265,103 @@ def test_same_parenthesized_case_expression_and_outer_not_still_rewrite() -> Non
     assert both == "SELECT COALESCE(b, 0), COALESCE(a, 1) FROM t"
 
 
+def test_between_and_case_and_are_not_demorgan_connectives() -> None:
+    # Syntax-internal AND is not p AND q. The original statements succeed and
+    # return [[4]]; the split a naive scanner used to emit is a syntax error.
+    review_setup = (
+        "CREATE TABLE t(a INT, b INT)",
+        "INSERT INTO t VALUES (1,1),(2,NULL),(3,3),(4,6)",
+    )
+    between = "SELECT a FROM t WHERE NOT (b BETWEEN 1 AND 3)"
+    case_and = (
+        "SELECT a FROM t WHERE NOT (CASE WHEN a > 0 THEN b > 0 AND b < 5 ELSE FALSE END)"
+    )
+    naive = {
+        between: "SELECT a FROM t WHERE (NOT (b BETWEEN 1)) OR (NOT (3))",
+        case_and: (
+            "SELECT a FROM t WHERE (NOT (CASE WHEN a > 0 THEN b > 0)) "
+            "OR (NOT (b < 5 ELSE FALSE END))"
+        ),
+    }
+    for query, broken in naive.items():
+        assert apply_rule(query, "demorgan") is None
+        for engine_name, factory in (("duckdb", DuckDBRunner), ("datafusion", DataFusionRunner)):
+            runner = factory()
+            try:
+                assert all(error is None for _statement, error in runner.setup(review_setup))
+                original = runner.run(query)
+                assert original.ok, original.error
+                assert _bag(original.rows) == _bag([[4]])
+                assert runner.run(broken).ok is False
+            finally:
+                runner.close()
+            opened: list[_Scripted] = []
+            label = judge(
+                _case(query, review_setup, engine=engine_name),
+                "equivalent_query",
+                rewrite_rule="demorgan",
+                runner_factory=_scripted(opened, lambda _sql: QueryResult(rows=[]),
+                                         lambda _sql, _n: QueryResult(rows=[[4]])),
+            )
+            _assert_ternary(label, "invalid", "not_applicable")
+            assert label.detail["rule"] == "demorgan"
+            assert label.detail["applicability"] == "rule_form"
+            assert all(runner.runs == [] for runner in opened)
+            real = judge(
+                _case(query, _SETUP, engine=engine_name),
+                "equivalent_query", rewrite_rule="demorgan",
+            )
+            _assert_ternary(real, "invalid", "not_applicable")
+
+    # A real connective still splits when BETWEEN or CASE is only an operand.
+    operand = "SELECT a FROM t WHERE NOT (b > 1 AND a BETWEEN 1 AND 3)"
+    operand_rw = "SELECT a FROM t WHERE (NOT (b > 1)) OR (NOT (a BETWEEN 1 AND 3))"
+    assert apply_rule(operand, "demorgan") == operand_rw
+    assert _bag(_rows_of(_SETUP, operand)) == _bag(_rows_of(_SETUP, operand_rw))
+    assert _bag(_rows_of(_SETUP, operand)) == _bag([[1]])
+    either = "SELECT a FROM t WHERE NOT (a = 1 OR b BETWEEN 4 AND 9)"
+    either_rw = "SELECT a FROM t WHERE (NOT (a = 1)) AND (NOT (b BETWEEN 4 AND 9))"
+    assert apply_rule(either, "demorgan") == either_rw
+    assert _bag(_rows_of(_SETUP, either)) == _bag([[3]])
+    assert _bag(_rows_of(_SETUP, either_rw)) == _bag([[3]])
+    nested_case = (
+        "SELECT a FROM t WHERE NOT (a = 1 OR "
+        "CASE WHEN a > 0 THEN b > 0 AND b < 5 ELSE FALSE END)"
+    )
+    nested_rw = (
+        "SELECT a FROM t WHERE (NOT (a = 1)) AND (NOT (CASE WHEN a > 0 "
+        "THEN b > 0 AND b < 5 ELSE FALSE END))"
+    )
+    assert apply_rule(nested_case, "demorgan") == nested_rw
+    assert _bag(_rows_of(review_setup, nested_case)) == _bag([[4]])
+    assert _bag(_rows_of(review_setup, nested_rw)) == _bag([[4]])
+
+    # Brackets, an unclosed form, and a lambda are not another connective.
+    braced = "SELECT a FROM t WHERE NOT (b > 1 AND a < {1 AND 2})"
+    assert apply_rule(braced, "demorgan") == (
+        "SELECT a FROM t WHERE (NOT (b > 1)) OR (NOT (a < {1 AND 2}))"
+    )
+    assert apply_rule("SELECT a FROM t WHERE NOT (a[1 AND 2] > 0)", "demorgan") is None
+    assert apply_rule("SELECT a FROM t WHERE NOT (a < {1 AND 2)", "demorgan") is None
+    assert apply_rule("SELECT a FROM t WHERE NOT (b BETWEEN 1)", "demorgan") is None
+    assert apply_rule(
+        "SELECT a FROM t WHERE NOT (CASE WHEN a > 0 THEN b > 0 AND b < 5)",
+        "demorgan",
+    ) is None
+    assert apply_rule(
+        "SELECT a FROM t WHERE NOT (a > 0 AND x -> x > 1)", "demorgan",
+    ) is None
+    # Words inside a string or a comment are not the connective.
+    hidden = "SELECT a FROM t WHERE NOT (b > 1 AND c <> 'BETWEEN 1 AND 3')"
+    assert apply_rule(hidden, "demorgan") == (
+        "SELECT a FROM t WHERE (NOT (b > 1)) OR (NOT (c <> 'BETWEEN 1 AND 3'))"
+    )
+    commented = "SELECT a FROM t WHERE NOT (b > 1 /* BETWEEN */ AND a < 3 /* CASE */)"
+    assert apply_rule(commented, "demorgan") == (
+        "SELECT a FROM t WHERE (NOT (b > 1)) OR (NOT (a < 3))"
+    )
+
+
 # ---- equivalent query -------------------------------------------------------
 
 
@@ -331,7 +429,8 @@ def test_untrusted_pairs_are_not_executed() -> None:
     for label in (unknown, mismatched, external):
         _assert_ternary(label, "invalid", "untrusted_rewrite")
     assert all(runner.runs == [] for runner in opened)
-    # A paired string that is only the certified text, up to case and space, may run.
+    # Keyword case and whitespace outside tokens may differ. The handler runs
+    # the mechanical statement, not the paired text.
     opened.clear()
     trusted = judge(
         _case(query), "equivalent_query", rewrite_rule="double_negation",
@@ -342,6 +441,66 @@ def test_untrusted_pairs_are_not_executed() -> None:
     handler = next(runner for runner in opened if runner.runs)
     assert handler.runs[1] == apply_rule(query, "double_negation")
     assert "select  a  from t where not (not (b > 1))" not in handler.runs
+
+
+def test_paired_literals_quotes_and_comments_are_not_rewritten_text() -> None:
+    literal = "SELECT CASE WHEN s IS NOT NULL THEN s ELSE 'ABC' END FROM t"
+    setup = ("CREATE TABLE t(s VARCHAR)", "INSERT INTO t VALUES (NULL), ('ZZ')")
+    certified = apply_rule(literal, "case_to_coalesce")
+    assert certified == "SELECT COALESCE(s, 'ABC') FROM t"
+    quoted = 'SELECT CASE WHEN "S" IS NOT NULL THEN "S" ELSE 0 END FROM t'
+    quoted_sql = apply_rule(quoted, "case_to_coalesce")
+    assert quoted_sql == 'SELECT COALESCE("S", 0) FROM t'
+    dollar = "SELECT CASE WHEN s IS NOT NULL THEN s ELSE $tag$ABC$tag$ END FROM t"
+    dollar_sql = apply_rule(dollar, "case_to_coalesce")
+    assert dollar_sql == "SELECT COALESCE(s, $tag$ABC$tag$) FROM t"
+    spaced = "SELECT CASE WHEN s IS NOT NULL THEN s ELSE 'A B' END FROM t"
+    spaced_sql = apply_rule(spaced, "case_to_coalesce")
+    assert spaced_sql == "SELECT COALESCE(s, 'A B') FROM t"
+
+    opened: list[_Scripted] = []
+
+    def factory():
+        runner = _Scripted(lambda _sql: QueryResult(rows=[]), lambda _sql, _n: QueryResult(rows=[[9]]))
+        opened.append(runner)
+        return runner
+
+    # A comment is not external whitespace, and an identifier is not a keyword.
+    rejected = (
+        (literal, "case_to_coalesce", certified.replace("'ABC'", "'abc'")),
+        (quoted, "case_to_coalesce", quoted_sql.replace('"S"', '"s"')),
+        (dollar, "case_to_coalesce", dollar_sql.replace("$tag$ABC$tag$", "$tag$abc$tag$")),
+        (spaced, "case_to_coalesce", spaced_sql.replace("'A B'", "'A  B'")),
+        ("SELECT a FROM t WHERE b > 1", "double_negation",
+         "SELECT A FROM t WHERE NOT (NOT (b > 1))"),
+        (literal, "case_to_coalesce", certified + " /* note */"),
+    )
+    for query, rule_id, paired in rejected:
+        opened.clear()
+        label = judge(
+            _case(query, setup), "equivalent_query", rewrite_rule=rule_id,
+            paired_query=paired, runner_factory=factory,
+        )
+        _assert_ternary(label, "invalid", "untrusted_rewrite")
+        assert all(runner.runs == [] for runner in opened)
+    real_untrusted = judge(
+        _case(literal, setup), "equivalent_query", rewrite_rule="case_to_coalesce",
+        paired_query=certified.replace("'ABC'", "'abc'"),
+    )
+    _assert_ternary(real_untrusted, "invalid", "untrusted_rewrite")
+
+    # The same literal matches once keyword case, external space, and one
+    # trailing semicolon are the only differences. The run is the mechanical text.
+    opened_real: list[_Trace] = []
+    trusted = judge(
+        _case(literal, setup), "equivalent_query", rewrite_rule="case_to_coalesce",
+        paired_query="select  COALESCE(s, 'ABC')  from t ;",
+        runner_factory=_traced(opened_real),
+    )
+    _assert_ternary(trusted, "pass")
+    handler = next(runner for runner in opened_real if runner.runs)
+    assert handler.runs[1] == certified
+    assert "select  COALESCE(s, 'ABC')  from t ;" not in handler.runs
 
 
 def test_equivalence_none_is_split_from_the_real_execution() -> None:

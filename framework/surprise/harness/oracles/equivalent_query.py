@@ -3,8 +3,10 @@
 A difference is a fail only when ``apply_rule`` produced the statement that
 ran. An unknown rule, a paired query with no certified product, or a paired
 query that is not that product is ``untrusted_rewrite`` and is not executed.
-``EquivalenceOracle`` still decides whether the two bags differ; a ``None``
-from it is split into pass or invalid from the recorded results.
+Keyword case and whitespace outside tokens may differ; literals, quoted
+identifiers, dollar quotes, and comments may not. ``EquivalenceOracle`` still
+decides whether the two bags differ; a ``None`` from it is split into pass
+or invalid from the recorded results.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from .common import (
 )
 from .forms import full_query
 from .registry import OracleOptions, register
-from .rewrites import RULES, apply_rule, is_read_only_query
+from .rewrites import RULES, apply_rule, is_read_only_query, same_statement
 
 ORACLE = "equivalent_query"
 
@@ -85,12 +87,8 @@ def _untrusted(full: str, rule_id: str) -> Label:
 
 
 def _same_query(left: str, right: str) -> bool:
-    """Whitespace-collapsed, case-folded equality, ignoring one trailing semicolon."""
-    return _canon(left) == _canon(right)
-
-
-def _canon(sql: str) -> str:
-    return " ".join(sql.strip().rstrip(";").split()).lower()
+    """Certified-text equality. Never used as a query to execute."""
+    return same_statement(left, right)
 
 
 register(ORACLE, judge_case)

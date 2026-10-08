@@ -14,7 +14,10 @@ Equivalence arguments (SQL three-valued logic):
 * ``demorgan`` rewrites a predicate that is exactly ``NOT (p AND q)`` or
   ``NOT (p OR q)`` into ``(NOT (p)) OR (NOT (q))`` or ``(NOT (p)) AND (NOT (q))``.
   Both identities hold when an operand is UNKNOWN. Mixed AND/OR, n-ary chains,
-  and a NOT that does not wrap the whole predicate are declined.
+  and a NOT that does not wrap the whole predicate are declined. An AND that
+  completes BETWEEN, and an AND or OR inside CASE, brackets, or braces, is
+  not that connective. Those shapes, a lambda arrow, and an unclosed CASE or
+  BETWEEN are declined instead of split.
 * ``case_to_coalesce`` rewrites ``CASE WHEN x IS NOT NULL THEN x ELSE y END``
   to ``COALESCE(x, y)`` only when both copies of ``x`` are the same safe
   expression. NULL yields ``y`` on both sides; a non-NULL ``x`` yields ``x``.
@@ -39,9 +42,11 @@ _DOUBLE_NEGATION_PROOF = (
 _DEMORGAN_PROOF = (
     "In SQL three-valued logic, NOT (p AND q) equals (NOT p) OR (NOT q) and "
     "NOT (p OR q) equals (NOT p) AND (NOT q), including when p or q is UNKNOWN. "
-    "The rule fires only when the WHERE predicate is exactly that binary form, "
-    "so mixed AND/OR, n-ary chains, and a NOT that covers only part of the "
-    "predicate are left untouched."
+    "The rule fires only when the WHERE predicate is exactly that binary form. "
+    "An AND that belongs to BETWEEN, and an AND or OR inside CASE, brackets, "
+    "or braces, is syntax rather than this connective, so those shapes are "
+    "declined. Mixed AND/OR, n-ary chains, a lambda arrow, and a NOT that "
+    "covers only part of the predicate are left untouched."
 )
 
 _CASE_TO_COALESCE_PROOF = (
@@ -59,11 +64,11 @@ RULES: dict[str, dict[str, str]] = {
 }
 
 _KEYWORDS = frozenset({
-    "ALL", "ALTER", "AND", "AS", "BY", "CALL", "CASE", "COPY", "CREATE",
-    "DELETE", "DROP", "ELSE", "END", "EXCEPT", "EXECUTE", "EXPLAIN", "FALSE",
-    "FETCH", "FOR", "FROM", "GRANT", "GROUP", "HAVING", "INSERT", "INTERSECT",
-    "INTO", "IS", "LIMIT", "MERGE", "NOT", "NULL", "OFFSET", "OR", "ORDER",
-    "QUALIFY", "RETURNING", "REVOKE", "SELECT", "SET", "THEN", "TRUE",
+    "ALL", "ALTER", "AND", "AS", "BETWEEN", "BY", "CALL", "CASE", "COPY",
+    "CREATE", "DELETE", "DROP", "ELSE", "END", "EXCEPT", "EXECUTE", "EXPLAIN",
+    "FALSE", "FETCH", "FOR", "FROM", "GRANT", "GROUP", "HAVING", "INSERT",
+    "INTERSECT", "INTO", "IS", "LIMIT", "MERGE", "NOT", "NULL", "OFFSET", "OR",
+    "ORDER", "QUALIFY", "RETURNING", "REVOKE", "SELECT", "SET", "THEN", "TRUE",
     "TRUNCATE", "UNION", "UPDATE", "VALUES", "WHEN", "WHERE", "WINDOW", "WITH",
 })
 
@@ -416,16 +421,86 @@ def _apply_double_negation(query: str) -> str | None:
     return rewritten
 
 
+def _logical_connectors(tokens: list[Tok]) -> list[int] | None:
+    """Indexes of logical AND/OR, or None when the fragment is unclassifiable.
+
+    BETWEEN consumes the next AND at the same parenthesis, CASE, and bracket
+    depth. AND/OR inside ``CASE`` ... ``END`` or inside ``[]`` / ``{}`` is not
+    a logical connective. An unclosed CASE or BETWEEN, an unmatched bracket,
+    or a ``->`` lambda declines the whole fragment.
+    """
+    case_depth = 0
+    bracket = 0
+    pending: list[tuple[int, int, int]] = []
+    found: list[int] = []
+    for index, tok in enumerate(tokens):
+        if tok.kind == "op" and tok.text == "->":
+            return None
+        if tok.text in "[{":
+            bracket += 1
+            continue
+        if tok.text in "]}":
+            if any(level == bracket for _depth, _case, level in pending):
+                return None
+            bracket -= 1
+            if bracket < 0:
+                return None
+            continue
+        if tok.kind != "kw":
+            continue
+        word = tok.text.upper()
+        context = (tok.depth, case_depth, bracket)
+        if word == "CASE":
+            case_depth += 1
+            continue
+        if word == "END":
+            if case_depth == 0 or any(
+                level == case_depth for _depth, level, _bracket in pending
+            ):
+                return None
+            case_depth -= 1
+            continue
+        if word == "BETWEEN":
+            if context in pending:
+                return None
+            pending.append(context)
+            continue
+        if word not in {"AND", "OR"}:
+            continue
+        if word == "AND" and context in pending:
+            if any(
+                depth > tok.depth or case > case_depth or level > bracket
+                for depth, case, level in pending
+            ):
+                return None
+            pending.remove(context)
+            continue
+        if context in pending or case_depth or bracket:
+            # An OR cannot complete BETWEEN. Nested AND/OR is not the split.
+            if context in pending:
+                return None
+            continue
+        if any(
+            depth > tok.depth or case > case_depth or level > bracket
+            for depth, case, level in pending
+        ):
+            return None
+        found.append(index)
+    if case_depth or bracket or pending:
+        return None
+    return found
+
+
 def _split_binary(sql: str, tokens: list[Tok]) -> tuple[str, str, str] | None:
-    """``(left_sql, connector, right_sql)`` for one top-level AND or OR."""
+    """``(left_sql, connector, right_sql)`` for one logical AND or OR."""
     current = _unwrap(tokens)
     if len(current) < 3:
         return None
+    found = _logical_connectors(current)
+    if not found:
+        return None
     base = min(tok.depth for tok in current)
-    connectors = [
-        index for index, tok in enumerate(current)
-        if tok.kind == "kw" and tok.text.upper() in {"AND", "OR"} and tok.depth == base
-    ]
+    connectors = [index for index in found if current[index].depth == base]
     if len(connectors) != 1:
         return None
     at = connectors[0]
@@ -522,6 +597,49 @@ def _apply_case_to_coalesce(query: str) -> str | None:
     if rewritten == query:
         return None
     return rewritten
+
+
+def same_statement(left: str, right: str) -> bool:
+    """True when two statements are the same certified text.
+
+    Keyword case and whitespace outside tokens may differ, and one trailing
+    semicolon is ignored. Unquoted identifiers, strings, quoted identifiers,
+    dollar quotes, and whitespace inside those tokens must match the source
+    text. A comment difference is a difference. A scan failure is not a match.
+    """
+    try:
+        left_tokens = tokenize(left)
+        right_tokens = tokenize(right)
+    except ScanError:
+        return False
+    left_body = _body(left_tokens)
+    right_body = _body(right_tokens)
+    if left_body is None or right_body is None or len(left_body) != len(right_body):
+        return False
+    for one, other in zip(left_body, right_body):
+        if one.kind != other.kind:
+            return False
+        if one.kind == "kw":
+            if one.text.upper() != other.text.upper():
+                return False
+        elif one.text != other.text:
+            return False
+    return _comment_gaps(left, left_tokens) == _comment_gaps(right, right_tokens)
+
+
+def _comment_gaps(sql: str, tokens: list[Tok]) -> tuple[str, ...]:
+    """Comment text between tokens. Whitespace-only gaps are ignored."""
+    gaps: list[str] = []
+    cursor = 0
+    for tok in tokens:
+        gap = sql[cursor:tok.start]
+        if gap.strip():
+            gaps.append(gap.strip())
+        cursor = tok.end
+    tail = sql[cursor:]
+    if tail.strip():
+        gaps.append(tail.strip())
+    return tuple(gaps)
 
 
 _IMPL = {
