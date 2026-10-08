@@ -5,7 +5,7 @@
 | 会话 | 内容 | 状态 | tag | 门槛 |
 |---|---|---|---|---|
 | S0 | 编排准备（派发工具） | 完成 | s00-done；s00-done-r2（CLAUDE.md 写入"执行者模式"之后） | 冒烟包 s00-smoke 四项确认全部通过（没有 gates/s00.py） |
-| S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
+| S1 | Phase 0 冻结基线与仓库整理 | 完成 | s01-done；s01-done-r2（验收后的修订，S2 从这里起） | `gates/s01.py` 7/7；pytest 64 passed, 3 skipped |
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 未开始 | | |
 | S3 | Phase 1b 其余三类 oracle | 未开始 | | |
 | S4 | Phase 1c CVE 流水线（M1） | 未开始 | | |
@@ -74,18 +74,26 @@ brief、report、审查包（含编排者的结论）在 `framework/surprise/doc
 - PLAN 没有指定旧版 DataFusion 的版本，选了 50.0.0。
 - 旧版 DuckDB 的 venv 里多装了 psycopg2-binary（原因见未决问题第 1 条）。
 
+### 验收后的修订（s01-done-r2，2026-10-08）
+
+用户验收时让编排者把点名的五处人工检查项复核一遍，并按编排者的推荐处理其中没定的事。复核结果与 `s01-done` 时报告的一致，没有改任何代码和门槛；改动只有文档：
+
+- CLAUDE.md 的门槛命令也写明了解释器：`../.venv/Scripts/python.exe -m surprise.gates.all`。
+- 下面未决问题第 1、2、6、8、9 条写上了处理决定；第 1 条原先只提 psycopg2，不完整，已改正。
+- 决定都记在 DECISIONS.md。
+
 ### 未决问题（S2 及之后需要知道的）
 
 S1 新发现：
-1. `import oracles` 现在要求解释器里有 psycopg2：`oracles/db_runner.py` → `targets/duckdb_runner.py` → `targets/__init__.py` → `postgres_runner` → `psycopg2`。任何要导入 `oracles.*` 的解释器都受影响，包括旧版引擎的 venv。`.venvs/duckdb-1.1.3` 已经装了；`.venvs/datafusion-50.0.0` 没装，S3 如果要在里面跑框架代码，要么装上，要么子进程脚本不经过 `oracles` 包。根治要改 `targets/__init__.py`，那是 S12 才允许的事。
-2. 旧代码把旧版解释器写死成 `<venv>/bin/python`（`oracles/differential.py` 第 37 行、`main.py` 第 142 行），Windows 上 venv 的解释器是 `Scripts/python.exe`。所以旧主循环在这台机器上 Version differential 恒为 disabled，本会话的基线 run 里也没有它。S3 做 Version differential 适配器时要自己定位解释器；要不要修旧代码需要用户决定。
+1. 要导入 `oracles.*` 或 `targets.*`，解释器里必须同时有 duckdb 和 psycopg2。duckdb 是一直都要的（`oracles/__init__.py` 导入 `db_runner`，它在模块顶层 `import duckdb`）；psycopg2 是这次移动带来的（`oracles/db_runner.py` → `targets/duckdb_runner.py` → `targets/__init__.py` → `postgres_runner`）。`.venvs/duckdb-1.1.3` 两样都有，`oracles._remote_exec` 能导入（门槛在查）。`.venvs/datafusion-50.0.0` 两样都没有，实测 `import targets.datafusion_runner` 先缺 psycopg2、再缺 duckdb。**决定**：这个 venv 保持只有 DataFusion，不为了凑导入链往里装别的引擎；S3 给旧版 DataFusion 写的子进程入口只导入 `datafusion` 和标准库，把原始行用 JSON 传回，归一化在主进程里做。S3 开工时觉得不合适可以推翻，装包只是一条命令。根治要改 `targets/__init__.py`，那是 S12 才允许的事。
+2. 旧代码把旧版解释器写死成 `<venv>/bin/python`（`oracles/differential.py` 第 37 行、`main.py` 第 142 行），Windows 上 venv 的解释器是 `Scripts/python.exe`。所以旧主循环在这台机器上 Version differential 恒为 disabled，本会话的基线 run 里也没有它。**决定**：S12 之前不改旧代码，也不在 venv 里造一个 `bin/python` 的替身；S3 的 Version differential 适配器自己按平台定位解释器（`gates/s01.py` 的 `venv_python()` 是现成的写法）。旧主循环缺这一类信号的影响有限：它在旧系统里只记 `version_divergence`，单独命中不计为 bug（PLAN.md 第 3 节逐项表）。S11 跑对照组时如果需要它，再向用户提出，到 S12 允许改旧逻辑时修。
 3. `campaigns/pg_upgrade_mxact.py` 第 55 行在模块顶层抛 TypeError（`str(...) / "results"`），连 `--help` 都跑不了。旧 bug，没修。
 4. `campaigns/pg_repack_mvcc.py` 没有 argparse 也没有 `__main__` 守卫，导入即执行。门槛对这两个脚本只查语法。
 5. 文档里还是旧路径 `scripts/pg_*.py`：`framework/AGENTS.md`、`STATUS_AND_ROADMAP.md`、`NEXT_RESEARCH_PLAN.md`、几份 `PG_*PLAN*.md`、`seeds/pg_transform_probes*.py` 的文档字符串，以及 campaign 脚本自己的用法说明。留给 S12 更新文档时一起改。
-6. `gates/s01.py` 里写死了：41 个脚本、基线通过数 64、三个环境的版本号、`v1-baseline` 的提交号。S12 再移动旧代码或换引擎版本时要同步改这个门槛，改之前问用户。
+6. `gates/s01.py` 里写死了：41 个脚本、基线通过数 64、三个环境的版本号、`v1-baseline` 的提交号。**决定**：保留不改，它们记录的就是冻结下来的基线事实。S12 再移动旧代码或换引擎版本时要同步改这个门槛，改之前问用户。
 7. `.venv` 是 `include-system-site-packages = true` 的 uv venv，底下是 anaconda base（pyarrow 21.0.0、pandas 等都来自 anaconda）。环境不完全可复现；S2 的 run manifest 如果记录依赖版本，要记实际解析到的版本。
-8. CLAUDE.md"命令"一节里门槛那一行还写着 `python -m surprise.gates.all`，没有写明解释器（本会话只获准改两处）。要不要也写成 `../.venv/Scripts/python.exe -m surprise.gates.all`，由用户定。
-9. 两处不影响行为的小出入，没有为它们返工：`oracles/db_runner.py` 里 import 与 `@dataclass` 之间少一个空行；`DuckDBRunner` 的 debug 日志记录器名字从 `oracles.db_runner` 变成了 `targets.duckdb_runner`。
+8. （已关闭）CLAUDE.md 的门槛命令原先没有写明解释器，`s01-done-r2` 里已改成 `../.venv/Scripts/python.exe -m surprise.gates.all`。ORCHESTRATION.md 和任务说明模板里的 `python -m surprise.gates.all` 没有动：前者是泛指，后者是给执行者的，执行者的 `python` 本来就指向项目解释器。
+9. 两处不影响行为的小出入：`oracles/db_runner.py` 里 import 与 `@dataclass` 之间少一个空行；`DuckDBRunner` 的 debug 日志记录器名字从 `oracles.db_runner` 变成了 `targets.duckdb_runner`。**决定**：都不返工。空行等 S12 整理旧代码时顺手补；记录器改名是把类搬走的必然结果，没有测试或配置依赖旧名字。
 10. 执行者写文件用的是放在 `.orch/tmp` 的 Python 脚本，deny 规则管不到这种写法（与 S0 的结论一致）。本包以 diff 为准核对过，没有越界；之后的包照旧靠审查兜底。
 
 沿用自 S0 与规划会话、仍然有效的：
@@ -102,7 +110,8 @@ S1 新发现：
 
 ### 下一会话的起点
 
-- S2 从 tag `s01-done` 建分支 `session/s02`。
+- S2 从 tag `s01-done-r2` 建分支 `session/s02`（`s01-done` 不含验收后的修订，不要从它起）。
 - 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 64 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (1/1 passed)`。
 - S2 按 ORCHESTRATION.md 第 8 节拆：先五个数据契约一包并合并，再两包并行。审查时 `--expect-passed 64`。
 - 派发脚本一律用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；合并时设 `ORCH_COMMIT_TRAILER` 给合并提交加署名尾注。
+- 收尾合并回 main 时注意：`git merge` 不能用 `-F -` 从标准输入读提交信息，要用 `-m`；合并成功并核对过之后再打 tag，两步不要用 `;` 连在一条命令里。S1 收尾时就因为这个把 `s01-done` 打在了旧的 main 上，当场删掉重打了。
