@@ -251,6 +251,7 @@ _BASE_ROWS: tuple[tuple[str, str, str | None, str], ...] = (
     ('data:setop:right_has_dups', 'leaf', 'data:setop', 'The right input returns two identical rows.'),
     ('data:setop:left_has_null', 'leaf', 'data:setop', 'The left input returns a NULL.'),
     ('data:setop:right_has_null', 'leaf', 'data:setop', 'The right input returns a NULL.'),
+    ('ast:window_fn:other', 'leaf', 'ast:window_fn', 'A windowed function that is neither ranking, navigation, nor an aggregate.'),
 )
 
 
