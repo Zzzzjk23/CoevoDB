@@ -28,8 +28,8 @@
 
 | 包号 | 目标 | 允许路径（相对 `framework/`） | 依赖 | 门槛组 | 状态 |
 |---|---|---|---|---|---|
-| s07-store | 四个新常数；`Theory` 的 `next_id` / `remove` / `reserve_id` / `passes`；`common_conjunction`；描述长度；`TheoryStore`（每个假设一个文件、严格读盘、三份只追加的日志、按代快照） | `surprise/theory/{constants,theory,vspace,length,store,__init__}.py`、`tests/test_surprise_s07_*.py`、`tests/test_surprise_s06_constants.py`（定向更新） | s06-done-r2 | `constants length theory_api store generations` | 待派发 |
-| s07-accept | 编辑（`Proposal`、声明与指纹、押注）、接受规则（触发记录、留出记录、惊讶加长度）、`Workbench`（观察、日志、押注兑付、自动回滚与级联、负记忆）、MDL（合并、收紧、拆分）、家族归并 | `surprise/theory/{edits,workbench,__init__}.py`、`tests/test_surprise_s07_*.py` | s07-store 合并之后 | `imports edits accept rollback journal mdl families ciao replay ledger` | 待派发 |
+| s07-store | 四个新常数；`Theory` 的 `next_id` / `remove` / `reserve_id` / `passes`；`common_conjunction`；描述长度；`TheoryStore`（每个假设一个文件、严格读盘、三份只追加的日志、按代快照） | `surprise/theory/{constants,theory,vspace,length,store,__init__}.py`、`tests/test_surprise_s07_*.py`、`tests/test_surprise_s06_constants.py`（定向更新） | s06-done-r2 | `constants length theory_api store generations` | 已合并 60563a1，首轮通过，返工 0 轮；独立复跑 528 passed / 3 skipped；与参考模型逐字节差分 23995 项零出入；约 1.84 美元 |
+| s07-accept | 编辑（`Proposal`、声明与指纹、押注）、接受规则（触发记录、留出记录、惊讶加长度）、`Workbench`（观察、日志、押注兑付、自动回滚与级联、负记忆）、MDL（合并、收紧、拆分）、家族归并 | `surprise/theory/{edits,workbench,__init__}.py`、`tests/test_surprise_s07_*.py` | s07-store 合并之后 | `imports edits accept rollback journal mdl families ciao replay ledger` | 已派发（另为一处性能修正向它开放 `surprise/theory/store.py`：日志序号改为缓存在实例里） |
 
 门槛 `gates/s07.py` 十五组、数据表 `gates/s07_cases.py` 已在派发前写好，并在编排者不入库的参考模型（`.orch/scratch/s7/ref/`，用 `.orch/scratch/s7/run_gate_ref.py` 跑）上全部通过。两个真实引擎组（`replay`、`ledger`）共用一次回放，约 5 分钟。
 
