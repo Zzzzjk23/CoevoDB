@@ -847,6 +847,12 @@ def check_manifest() -> str:
     feature_files = sorted(p.relative_to(FRAMEWORK).as_posix() for p in (FRAMEWORK / "surprise" / "features").rglob("*.py"))
     require(sorted(features.get("code", {}).get("files", {})) == feature_files, "the feature code is hashed too")
     require(T.theory_manifest() == section, "theory_manifest() is stable")
+    for command, expected in (("manifest", section), ("constants", C.CONSTANTS)):
+        run = subprocess.run([sys.executable, "-m", "surprise.theory", command], cwd=FRAMEWORK, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, timeout=120.0, encoding="utf-8", errors="replace")
+        require(run.returncode == 0, f"`python -m surprise.theory {command}` failed: {_ascii(run.stderr.strip()[-300:])}")
+        require(json.loads(run.stdout) == expected and run.stdout.isascii(),
+                f"`python -m surprise.theory {command}` must print the same JSON another process computes")
 
     base = build_manifest("s06-gate")
     snapshot = json.loads(json.dumps(base))
