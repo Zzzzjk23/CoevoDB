@@ -8,7 +8,8 @@ Usage (from ``framework/``)::
 Exit code 0 = pass. Groups, following the S6 section of SESSIONS.md:
 
 ``constants``    0.95, 0.5, the residual and validity priors, the triage
-                 thresholds and the cap on G have the frozen values;
+                 thresholds and the cap on G have the frozen values (later
+                 sessions may add constants beside these nine, not change them);
 ``language``     conjunctions of phi literals with the class hierarchy:
                  reduction, coverage, the least general generalisation and the
                  minimal specialisations;
@@ -164,6 +165,11 @@ def tuples(general: Any) -> tuple[tuple[str, ...], ...]:
     return tuple(tuple(member) for member in general)
 
 
+def pinned(found: Any) -> dict[str, Any]:
+    """The nine constants S6 froze, as found. Later sessions may add constants of their own beside them."""
+    return {name: found.get(name) for name in C.CONSTANTS} if isinstance(found, dict) else {}
+
+
 # ---- constants -----------------------------------------------------------------
 
 def check_constants() -> str:
@@ -171,12 +177,12 @@ def check_constants() -> str:
     from surprise.theory import constants
 
     got = constants.as_dict()
-    require(got == C.CONSTANTS, f"theory constants are {got}, expected {C.CONSTANTS}")
+    require(pinned(got) == C.CONSTANTS, f"the constants frozen in S6 are {pinned(got)}, expected {C.CONSTANTS}")
     for name, value in C.CONSTANTS.items():
         require(getattr(constants, name) == value and type(getattr(constants, name)) is type(value),
                 f"constants.{name} is {getattr(constants, name)!r}, expected {value!r}")
     got["P_CONFIRMED"] = 0.0
-    require(constants.as_dict() == C.CONSTANTS, "as_dict() must return a detached copy")
+    require(pinned(constants.as_dict()) == C.CONSTANTS, "as_dict() must return a detached copy")
     require(not set(C.CONSTANTS) & set(harness_constants.as_dict()),
             "theory constants do not live among the frozen harness constants")
     prior = C.CONSTANTS["RESIDUAL_PRIOR_FAILS"] / C.CONSTANTS["RESIDUAL_PRIOR_TESTS"]
@@ -729,7 +735,7 @@ def check_theory() -> str:
         b = restored.observe(phi(name), label, record)
         require(a.to_dict() == b.to_dict(), f"after a reload the theory answers as before ({name})")
     require(restored.to_dict() == again.to_dict(), "after a reload the theory learns as before")
-    for bad in ({}, {**state, "schema": 2}, {**state, "vocab": "0" * 64}, {**state, "extra": 1}, [state]):
+    for bad in ({}, {**state, "schema": -1}, {**state, "vocab": "0" * 64}, {**state, "no_such_key": 1}, [state]):
         expect_raises((ValueError, KeyError, TypeError), lambda b=bad: T.Theory.from_dict(b), "Theory.from_dict with a bad state")
 
     # an explicit prediction is the one made before the experiment
@@ -828,11 +834,14 @@ def check_manifest() -> str:
     from surprise.harness.ledger import Ledger
     from surprise.harness.manifest import build_manifest, verify_manifest
 
+    from surprise.theory import constants
+
     T = theory_api()
     F = features_api()
     section = T.theory_manifest()
     require(json.loads(json.dumps(section, sort_keys=True)) == section, "theory_manifest() must be JSON-safe")
-    require(section.get("schema") == 1 and section.get("constants") == C.CONSTANTS,
+    require(section.get("schema") == 1 and section.get("constants") == constants.as_dict()
+            and pinned(section.get("constants")) == C.CONSTANTS,
             f"the theory section carries the constants: {section.get('constants')}")
     code = section.get("code", {})
     files = code.get("files", {})
@@ -847,7 +856,7 @@ def check_manifest() -> str:
     feature_files = sorted(p.relative_to(FRAMEWORK).as_posix() for p in (FRAMEWORK / "surprise" / "features").rglob("*.py"))
     require(sorted(features.get("code", {}).get("files", {})) == feature_files, "the feature code is hashed too")
     require(T.theory_manifest() == section, "theory_manifest() is stable")
-    for command, expected in (("manifest", section), ("constants", C.CONSTANTS)):
+    for command, expected in (("manifest", section), ("constants", constants.as_dict())):
         run = subprocess.run([sys.executable, "-m", "surprise.theory", command], cwd=FRAMEWORK, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, timeout=120.0, encoding="utf-8", errors="replace")
         require(run.returncode == 0, f"`python -m surprise.theory {command}` failed: {_ascii(run.stderr.strip()[-300:])}")
@@ -874,7 +883,7 @@ def check_manifest() -> str:
             stored = ledger.run_manifest("s06-gate")
         finally:
             ledger.close()
-    require(stored.get("theory", {}).get("constants") == C.CONSTANTS and stored == extended,
+    require(pinned(stored.get("theory", {}).get("constants")) == C.CONSTANTS and stored == extended,
             "the ledger keeps the theory constants with the run")
     problems = T.verify_theory_manifest(extended)
     require(problems == [], f"verify_theory_manifest on a fresh manifest: {problems}")
@@ -1003,7 +1012,7 @@ def check_walkthrough() -> str:
             versions = [record.theory_version for record in records]
             require(len(set(versions)) == len(versions), "the theory changed between any two experiments, and so did its version")
             stored = ledger.run_manifest(run_id)
-            require(stored["theory"]["constants"] == C.CONSTANTS and verify_manifest(stored) == []
+            require(pinned(stored["theory"]["constants"]) == C.CONSTANTS and verify_manifest(stored) == []
                     and T.verify_theory_manifest(stored) == [], "the run manifest verifies, harness and theory")
         finally:
             ledger.close()
