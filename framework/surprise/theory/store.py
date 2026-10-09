@@ -134,11 +134,17 @@ def _split_pass_name(name: str) -> tuple[str, str] | None:
 
 
 class TheoryStore:
-    """The files under one root. Build one with :meth:`create` or :meth:`open`."""
+    """The files under one root. Build one with :meth:`create` or :meth:`open`.
+
+    One store directory is written by one ``TheoryStore`` instance at a time.
+    The journal sequence lives on that instance: ``append_journal``, ``last_seq``
+    and ``close_generation`` do not read the journal file again.
+    """
 
     def __init__(self, root: Path, registry: Registry) -> None:
         self._root = root
         self._registry = registry
+        self._last_seq = 0
 
     @property
     def root(self) -> Path:
@@ -147,10 +153,7 @@ class TheoryStore:
     @property
     def last_seq(self) -> int:
         """Sequence of the last journal line. An empty journal is 0."""
-        rows = self._journal_rows()
-        if not rows:
-            return 0
-        return rows[-1]["seq"]
+        return self._last_seq
 
     @classmethod
     def create(cls, root: str | Path, registry: Registry | None = None) -> TheoryStore:
@@ -182,7 +185,8 @@ class TheoryStore:
             raise StoreError("head.json does not exist")
         store = cls(directory, active)
         store.head()
-        store._journal_rows()
+        rows = store._journal_rows()
+        store._last_seq = rows[-1]["seq"] if rows else 0
         return store
 
     def head(self) -> dict[str, Any]:
@@ -266,10 +270,11 @@ class TheoryStore:
             raise ValueError(
                 f"journal entry must be an object with a string kind and no seq, got {entry!r}"
             )
-        seq = self.last_seq + 1
+        seq = self._last_seq + 1
         stored = dict(entry)
         stored["seq"] = seq
         _append_line(self._root / "journal.jsonl", stored)
+        self._last_seq = seq
         return seq
 
     def journal(self, after: int = 0) -> list[dict[str, Any]]:
