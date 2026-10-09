@@ -10,7 +10,7 @@
 | S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
-| S6 | Phase 3a 理论 T 核心 | 完成 | s06-done | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
+| S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
 | S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
@@ -22,7 +22,7 @@
 
 ## 最近完成会话：S6（2026-10-09）
 
-Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"继续完成 S6"。会话分支 `session/s06` 从 `s05-done`（8c37d25）建立；起点独立复跑 367 passed, 3 skipped 与 GATES PASS 5/5。两包全部合并，收尾合并回 main，tag `s06-done`；S7 从此 tag 起。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"继续完成 S6"。会话分支 `session/s06` 从 `s05-done`（8c37d25）建立；起点独立复跑 367 passed, 3 skipped 与 GATES PASS 5/5。两包全部合并，收尾合并回 main，tag `s06-done`。用户验收后另打 `s06-done-r2`（只多了验收记录，代码与门槛相同）；S7 从 `s06-done-r2` 起。
 
 ### 交付与门槛
 
@@ -99,7 +99,9 @@ Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"�
 - **惊讶**：对有效结果按 `−log₂ P(y | 有效)` 算，无效不计。`ExperimentRecord.p_t` 记 `P(fail | 有效)`，所以账本里的 `p_t` 加标签就能重算惊讶。
 - **分诊**按惊讶大小：不低于 2.0 比特，失败为新家族、通过为意外通过；0.5 到 2.0 为边界移动；低于 0.5，失败为重复、通过为无信息；无效单列。
 
-### PI 已自行核查并定下的选择（用户可以推翻）
+### PI 已自行核查并定下的选择（用户已验收）
+
+**用户验收（2026-10-09）：下面五条，连同"与计划的偏差"一节的六处，用户看过收尾消息后答复"都没有问题"。** 它们从此是用户确认过的决定，不再是"编排者定、可推翻"；九个常数的取值照旧由门槛钉住，要改先问用户。
 
 用户的指示是"继续完成 S6"；S5 交接里写着要先问用户的两件事（第 1、2 条），编排者没有另行提问，按推荐定下，依据是此前两次"自行判断决定"的约定。每一条都在 DECISIONS 里有理由。
 
@@ -597,9 +599,9 @@ S2、S3 踩到的，仍然有效：
 
 ### 下一会话的起点：S7
 
-**S7 不自行开工。** 用户这次的指示是"继续完成 S6"，没有说到 S7；S7 开工，以及 S7 里新常数的取值、下面列的几件要定的事，等用户发话。
+**S7 不自行开工。** 用户的指示是"继续完成 S6"，验收时的答复是"都没有问题"，都没有说到 S7；S7 开工，以及 S7 里新常数的取值、下面列的几件要定的事，等用户发话。
 
-- 从 main 的 `s06-done` 建分支 `session/s07`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
+- 从 main 的 `s06-done-r2` 建分支 `session/s07`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
 - 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 514 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (6/6 passed)`（约 6 分钟）。
 - S7 做理论存储与接受规则（范围见 SESSIONS.md 的 S7 一节）：每个假设一个结构化文件、按代快照、编辑日志（理由加押注的预测）、预测落空自动回滚并进负记忆、留出验收、MDL 拆分与合并。代码放 `framework/surprise/theory/`（没有冻结），不碰 `harness/`。
 - S6 给 S7 的现成东西：`Theory.to_dict()` / `Theory.from_dict()` 是完整状态的往返格式，`Theory.version` 是状态的摘要；`Theory.put()` 是目前唯一"人手改假设"的入口，编辑日志与回滚可以包在它外面；`TheoryEdit` 契约在 S2 就有了，还没有人用；每个假设带着 E⁺、E⁻、`contradictions`、`truncated`；`new_family(..., negatives=...)` 能把一批通过回放成 G。离线喂入已知复现时照门槛 `walkthrough` 组的顺序调用（`predict` → 执行 → `observe`），或者直接用账本里的 `phi` 与标签调 `observe`。
