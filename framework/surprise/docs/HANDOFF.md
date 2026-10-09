@@ -11,7 +11,7 @@
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
-| S7 | Phase 3b 理论存储与接受规则 | 进行中（见下面"进行中：S7"） | | |
+| S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
@@ -20,29 +20,125 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 进行中：S7（2026-10-09 开工）
+## 最近完成会话：S7（2026-10-09）
 
-用户指示"继续完成 S7"。会话分支 `session/s07` 从 `s06-done-r2`（0361b75）建立；起点独立复跑 pytest 514 passed / 3 skipped，GATES PASS 6/6；PG 参照服务器在运行。接手的会话先看 `gw list` 与 `git log session/s07`，不要重跑已完成的步骤。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"继续完成 S7"。会话分支 `session/s07` 从 `s06-done-r2`（0361b75）建立；起点独立复跑 514 passed, 3 skipped 与 GATES PASS 6/6。两包全部合并，收尾合并回 main，tag `s07-done`；S8 从此 tag 起。
 
-### 拆包清单
+**用户的指示只到 S7。** S8 要不要开、S8 里需要确认的事项怎么定，等用户发话。
 
-| 包号 | 目标 | 允许路径（相对 `framework/`） | 依赖 | 门槛组 | 状态 |
+### 交付与门槛
+
+理论的存储与接受规则，全部在 `framework/surprise/theory/`，不连接引擎、不执行 SQL、不调用模型；`harness/`、`features/`、冻结清单没有动；S6 的规则与 `Theory` 的既有行为没有动。
+
+- 常数四项（`theory/constants.py`，进 run manifest 的 `theory` 一节）：`MDL_HYPOTHESIS_BITS = 8.0`、`MDL_LITERAL_BITS = 7.4`、`ACCEPT_HOLDOUT_MAX = 1000`、`ACCEPT_TOLERANCE_BITS = 1e-9`。`gates/s07.py` 的 `constants` 组钉住取值：**此后改它们先问用户**。
+- 存储（`theory/store.py`，`TheoryStore`）：一个目录，`hypotheses/<编号>.json` 每个假设一个文件，另有 `head.json`、`residual.json`、`validity.json`、`passes/<引擎>__<oracle>.jsonl`，三份只追加的日志 `journal.jsonl`（观察与事件）、`edits.jsonl`（编辑日志）、`negative.jsonl`（负记忆），`generations/g<六位代号>.json` 每个已结束的代一个快照。读盘严格：任何手改都会让版本号对不上，抛 `StoreError`，不"修好了再返回"。
+- 编辑（`theory/edits.py`）：五类 `add / revise / split / merge / retire`；每条带理由与押注；提出者只定身份与 S，其余由证据重算；编辑加进来的假设一律铸新编号。
+- 接受检验：触发记录上惊讶不升、留出记录上惊讶不升、（惊讶变化 + 长度变化）严格为负，三条同时成立才接受。
+- 工作台（`theory/workbench.py`，`Workbench`）：在用的理论加存储。`observe` 记日志、兑付押注、必要时回滚、落盘；`propose` / `assess`；`rollback`（快照加重放，级联）；负记忆按断言的指纹拒收；`checkpoint` 切代；MDL 的 `merge_candidates` / `repair_candidates` / `compress`；`owner_of` / `family_of` / `families` / `partition`；`surprise_under(代号, 记录)`。
+- `Theory` 加了 `next_id`、`remove`、`reserve_id`、`passes`；合取语言加了 `common_conjunction`；`theory/length.py` 给出描述长度。
+
+门槛十五组与 SESSIONS 的对应：`replay` 把已知复现与重新生成的 DCE 探针在真实引擎上离线喂一遍，查五个量级、执行前识别重复、一条故意错误的编辑被回滚并进负记忆；`ledger` 拿同一次回放的家族划分与人工账本比，要求不低于 σ；其余十三组是不碰引擎的逐条规则检查（常数、长度、`Theory` 的补充、存储、快照、导入、编辑、接受、回滚、重开、MDL、家族、按代惊讶）。
+
+最终复跑（两包合并后在 `session/s07` 主检出区独立运行，在 `framework/` 下）：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 550 passed, 3 skipped，退出码 0（起点 514，新增 36，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15；GATES: PASS (7/7 passed)，退出码 0 |
+
+`gates/s07.py` 单独跑约 5 分钟（`replay` 约 4 分钟，`ledger` 约 1 分钟，其余十三组合计几秒）；`surprise.gates.all` 约 11 分钟。
+
+### 实机回放的数字
+
+回放的内容：人工账本明文裁定到某一族的 24 条语句（十族：F1、F2、F7、F9、F11、DF-A、DF-B、DF-D、DF-F、DF-I；清单与出处在 `gates/s07_cases.py`），每族第一条语句的 DCE 探针若干（共 38 条，`evolution/dce.py` 的算子重新生成、等距取样），每族第一条语句再喂一遍，外加一条故意错误的编辑及其押注实验。共 74 次实验，全部经 `evaluate_final` 入账。
+
+| 位置与结果 | 条数 | 惊讶（比特） | 分诊 |
+|---|---|---|---|
+| 未探索区失败 | 4 | 6.64 | new_family |
+| 确认区通过 | 5 | 4.32 | unexpected_pass |
+| 待定区失败 | 13 | 1.00 | boundary_move |
+| 确认区失败 | 48 | 0.07 | duplicate |
+| 未探索区通过 | 1 | 0.01 | no_information |
+| 无效 | 3 | 不计 | invalid |
+
+- 每条记录的惊讶都能由账本里的 `p_t` 与标签重算出来（门槛逐条核对）。
+- 执行前识别重复：十族的第一条语句再喂一遍，十次都在执行前落在确认区，执行后都只做了一次归属测试（第 2 档，没有最小化与画像）。全部 65 条失败里，11 条开出家族（各做一次第 3 档画像），54 条归入已有家族；这 54 条里 47 条执行前就被预测为重复，其余 7 条落在待定区（1 比特的边界移动）。
+- 故意错误的编辑（在 DF-A 之后）：把 DF-A 的假设改写成"左输入有重复行就丢行"，S 从十个字面量变成一个。接受检验通过（惊讶不变，长度少 66.6 比特）。它押注"UNION ALL 且左侧有重复会失败"；真实执行 UNION ALL 通过（落在这条编辑的确认区，4.32 比特），押注落空，编辑回滚，理论回到编辑之前并学到这条通过；负记忆里多一条；原样再提被 `negative_memory` 拒收；同一条 UNION ALL 再喂一遍落在未探索区，0.01 比特。
+- 回放结束时 11 个假设。`compress()` 没有应用任何编辑：两对合并候选（DF-A 与 `DF-D_where` 的假设、DF-D 与 DF-F 的假设）都因为并起来的 S 会盖住一条已知的通过而被留出记录拒掉；没有修复候选。
+
+与人工账本比家族划分（24 条裁定语句，配对计数）：
+
+| 划分 | 家族数 | 精确率 | 召回率 | 配对 F1 | ARI |
 |---|---|---|---|---|---|
-| s07-store | 四个新常数；`Theory` 的 `next_id` / `remove` / `reserve_id` / `passes`；`common_conjunction`；描述长度；`TheoryStore`（每个假设一个文件、严格读盘、三份只追加的日志、按代快照） | `surprise/theory/{constants,theory,vspace,length,store,__init__}.py`、`tests/test_surprise_s07_*.py`、`tests/test_surprise_s06_constants.py`（定向更新） | s06-done-r2 | `constants length theory_api store generations` | 已合并 60563a1，首轮通过，返工 0 轮；独立复跑 528 passed / 3 skipped；与参考模型逐字节差分 23995 项零出入；约 1.84 美元 |
-| s07-accept | 编辑（`Proposal`、声明与指纹、押注）、接受规则（触发记录、留出记录、惊讶加长度）、`Workbench`（观察、日志、押注兑付、自动回滚与级联、负记忆）、MDL（合并、收紧、拆分）、家族归并 | `surprise/theory/{edits,workbench,__init__}.py`、`tests/test_surprise_s07_*.py` | s07-store 合并之后 | `imports edits accept rollback journal mdl families ciao replay ledger` | 已派发（另为一处性能修正向它开放 `surprise/theory/store.py`：日志序号改为缓存在实例里） |
+| 人工账本 | 10 | | | | |
+| 新框架（执行前成员检验 + 版本空间） | 11 | 1.00 | 0.95 | 0.976 | 0.974 |
+| σ（旧系统的家族键，由 CVE 画像按旧规则重算） | 19 | 1.00 | 0.29 | 0.444 | 0.425 |
 
-门槛 `gates/s07.py` 十五组、数据表 `gates/s07_cases.py` 已在派发前写好，并在编排者不入库的参考模型（`.orch/scratch/s7/ref/`，用 `.orch/scratch/s7/run_gate_ref.py` 跑）上全部通过。两个真实引擎组（`replay`、`ledger`）共用一次回放，约 5 分钟。
+新框架与账本唯一的出入：`DF-D_where`（`SELECT a FROM t WHERE b > 0`，只少行）被分到 DF-D（少行多行都有）之外，因为没有开关的身份按行为形状分。σ 没有把不同族并在一起，但把一族拆碎：F9 两个键（就是人工账本里的 AUTO-f50fc0f3 与 AUTO-13f4608a，重算出来逐位相同），DataFusion 上因为没有 fix set、没有计划差异、没有版本梯，键退化成"最小化用例的文本摘要"，每条语句一个键。代价的对比：σ 要给每一条失败做完整画像；新框架里 54 条重复有 47 条只做了一次归属测试。
 
-### 开工时定下的事（细节与理由在 DECISIONS 的 S7 条目）
+合取可表达的比例（PLAN 第 7 节；本机能回放的只有这十族，不是三十一族）：十族里九族的假设没有落在 S 内的通过；F2 有四条（改一个数据值就不再出错的探针，φ 与正例相同），现有词表分不开，属于要靠 S10 发明新特征的情形。
 
-- 编辑不复用编号：编辑加进来的假设一律铸新编号，被替换的假设连同内容留在编辑日志里。
-- 接受规则三条同时成立才接受：触发记录上惊讶不升、留出记录上惊讶不升、（惊讶变化 + 理论长度变化）严格为负。被前两条拒绝的进负记忆，"没有收益"与"没有押注"不进。
-- 押注是"规格 + 期望标签"，一次兑付：第一条命中规格的有效实验决定它兑现还是落空；落空即回滚该编辑，并级联撤掉它之后接受的编辑（后者不进负记忆）。
-- 回滚 = 从该编辑之前封存的快照出发，把之后的观察按原次序重放；编号计数器不回退。
-- 一代 = 两次"接受编辑 / 回滚 / 检查点"之间；快照存的是一代结束时的状态。
-- 家族（用于与人工账本比划分）：有 fix set 的假设按（引擎，fix set）跨 oracle 归并；没有的，一个假设一个家族。
-- 新常数四项：`MDL_HYPOTHESIS_BITS = 8.0`、`MDL_LITERAL_BITS = 7.4`、`ACCEPT_HOLDOUT_MAX = 1000`、`ACCEPT_TOLERANCE_BITS = 1e-9`。
-- `gates/s06.py` 改了一行（新进程里打印整份常数名单，而不是按字母序的第一个），期望不变：否则任何排在 `P_CONFIRMED` 之前的新常数名都会把 S6 的门槛弄红。
+误吸收（S6 留的未决问题，要求量一下）：门槛这次回放的 65 条失败里没有一条被两个假设同时吸收。派发前另一次范围更大的探测（含重建的 F6、每族 12 条探针，约 170 次实验）里出现过两类：F7 的两条探针失败在被归属测试判给 F7 的同时，也被没有 fix set 的 F9 假设按三项画像当成正例；DF-F 的首条失败落在 DF-D 假设的待定区、形状相同，被吸收进去，两族并成一个假设。后者只在该作用域还没有几条通过、G 还很松的时候发生；这次回放的喂入次序下 DF-D 的 G 已经被收紧，DF-F 开出了自己的家族。规则没有改，见未决问题。
+
+### 拆包清单与结论（全部已合并）
+
+| 包 | 内容 | 轮数 | 合并 | 审查 |
+|---|---|---|---|---|
+| s07-store | 四个常数、`Theory` 的四个接口、`common_conjunction`、长度、`TheoryStore` | 首轮通过，返工 0 轮 | 60563a1 | 独立复跑 528 passed / 3 skipped；与参考模型逐字节差分 23995 项零出入（含 360 次损坏注入）；19 条命令已看；约 1.84 美元。发现日志追加随长度线性变慢，写进下一个包顺带修 |
+| s07-accept | 编辑、接受检验、工作台、回滚、负记忆、MDL、家族；日志序号缓存 | 首轮通过，返工 0 轮 | 8061cef | 独立复跑 550 passed / 3 skipped，GATES PASS 7/7；与参考模型在 300 段随机历史上逐步差分 29709 项零出入；真实引擎两组的数字与派发前逐项相同；15 条命令已看；约 1.93 美元 |
+
+说明、报告、审查包归档在 `docs/orch/s07/`。没有返工，没有推翻包。grok 成本合计约 3.77 美元。两个包首轮都过，做法同 S6：派发前规则已经用参考模型在真实引擎上把门槛跑通，说明里把每一步都写了出来；审查的力气花在随机差分上。
+
+### 当前接口
+
+`surprise.theory` 新增导出（S8 直接用）：
+
+- `TheoryStore.create(root)` / `.open(root)`：`root`、`last_seq`、`head()`、`save(theory)`、`load()`、`append_journal(entry)`、`journal(after=0)`、`append_edit(edit)`、`edit_history()`、`edits()`、`append_negative(entry)`、`negatives()`、`close_generation(theory, cause=...)`、`generations()`、`load_generation(n)`、`verify()`；`StoreError`。一个存储目录同一时间只由一个实例写。
+- `Workbench.create(root)` / `.open(root)`：`store`、`theory`（当只读用）、`generation`、`predict(phi, oracle)`、`observe(phi, label, record_id, *, prediction=None) -> Outcome`、`assess(proposal) -> Assessment`、`propose(proposal) -> TheoryEdit`、`rollback(edit_id, *, reason="manual", record_id=None)`、`checkpoint(note)`、`records()`、`seen(record_id)`、`edits()`、`edit(edit_id)`、`negatives()`、`open_bets()`、`merge_candidates()`、`repair_candidates()`、`compress()`、`owner_of(record_id)`、`family_of(hypothesis_id)`、`families()`、`partition()`、`surprise_under(generation, record_ids)`。
+- `Outcome`：`observation`（S6 的 `Observation`）、`seq`、`owner`、`bets`、`rolled_back`。
+- `Proposal(kind, rationale, proposer, removes=(), adds=(), bets=(), trigger=())`；`Seen(record_id, phi, label)`；`Assessment`；`EDIT_KINDS`、`REJECT_REASONS`、`ROLLBACK_REASONS`、`BET_STATES`；`claim`、`fingerprint`、`default_bets`、`bet_matches`、`holdout_sample`。
+- `Theory.next_id`、`.remove(id)`、`.reserve_id()`、`.passes(engine, oracle)`；`common_conjunction(a, b)`；`hypothesis_length(h)`、`theory_length(theory 或一串假设)`。
+
+一次实验在 S8 主循环里的顺序（门槛的 `replay` 组就是这么写的，比 S6 只多了把 `Theory` 换成 `Workbench`）：`phi = extract(case)` → `prediction = wb.predict(phi, oracle)` → `evaluate_final(case, oracle, ..., phi=phi.to_dict(), theory_version=wb.theory.version, p_t=prediction.p_fail_valid, hypothesis=attribution_request(wb.theory.get(prediction.hypothesis_id)))`（未探索区没有假设时改传 `diagnose=True`）→ `outcome = wb.observe(phi, record.label, record.record_id, prediction=prediction)`。`outcome.rolled_back` 非空说明这条记录让某条编辑的押注落空了，理论已经回到那条编辑之前并重放过。
+
+编辑日志里一条记录（`TheoryEdit`）的 `payload`：`reason`、`fingerprint`、`trigger`、`holdout`、`length_delta`、`removes`、`removed`、`adds`、`added`、`generation`、`journal_seq`、`bets_state`、`rollback`。日志条目：`observe`（`record_id`、`phi`、去掉 `detail` 的 `label`）、`edit`、`rollback`（`reason`、`cascade`）、`checkpoint`。
+
+### 规则（实现与门槛都按它；逐条细则在 `docs/orch/s07/` 归档的两份任务说明里）
+
+框架文档的相关原文："理论的每次修改都写明理由和预测；预测落空的编辑自动回滚，并作为负面记忆留下，防止同一个错误猜想反复出现"；"新特征、拆分与合并必须在触发记录上降低惊讶，在留出记录上不增加惊讶"；"理论修改的目标：最小化'累计惊讶 + 理论长度'（MDL），作为假设拆分和合并的判据"；"通过的结果、退役的假设、被拒绝的提议都保留为负记忆"。
+
+- **两种变化**：规则更新（`Theory.observe` 按 S6 的规则动 S、G、开新家族、记 R 与 Kᵛ）不是编辑，不走接受检验，留痕在观察日志；编辑是别人提出的改动，写进编辑日志。
+- **编辑加进来的假设**：身份与 S 取提出者给的模板，编号新铸，G 从空合取起把该作用域记住的通过逐条回放（落在 S 里的成为矛盾），E⁺ 取被替换的假设的正例里仍落在新 S 内的（`add` 取同作用域里身份一致且落在 S 内的失败）。
+- **接受检验**，依次：指纹在负记忆里，拒（`negative_memory`）；没有押注，拒（`no_bets`）；触发记录上惊讶之和升了，拒（`trigger`，进负记忆）；留出记录上升了，拒（`holdout`，进负记忆）；三项之和不是严格为负，拒（`no_gain`）；否则接受。惊讶是用现在的理论看旧记录；留出记录是编辑涉及的作用域里、触发记录之外的全部有效记录，超过 1000 条按记录编号的哈希取 1000 条。
+- **长度**：每个假设 `8.0 + 7.4 × |S|` 比特；G 与证据不计。
+- **押注**：`{"spec": 规格, "expect": "pass" | "fail"}`。第一条命中规格、标签有效的实验兑付它：标签等于期望为兑现，否则落空。只看标签，不看身份。
+- **回滚**：先把当前理论封存成一代；取这条编辑之前封存的快照，编号计数器沿用现在的；把这条编辑之后的全部观察按原次序重放（重新预测）；之后接受的编辑一并撤销（`cascade`，不进负记忆）；这条编辑进负记忆（`bet_broken` 或 `manual`）。
+- **负记忆的指纹**：只看加进来的各假设的（引擎、oracle、fix set、失败类别、错误类别、行为形状、约简后的 S）；退役按被撤回的断言算。编辑类型、提出者、编号、G、证据都不进指纹。
+- **代**：接受编辑、回滚、检查点各结束一代；快照存一代结束时的理论。
+- **MDL 候选**（接受与否都走同一个检验，押注用默认的"落在新 S 里的实验会失败"）：合并——同作用域、身份相同（都有 fix set 时只比 fix set；都没有时比三项画像）的一对，S 取两者的共同部分，为空不提；修复——假设的 `contradictions` 里有通过时，把正例按次序贪心分簇，使每簇的 S 不新盖住任何一条矛盾通过，一簇为收紧、多簇为拆分。`compress()` 反复应用第一条可接受的候选直到没有。
+- **归属与家族**：一条失败属于把它列在 E⁺ 里的假设（多个时取归属测试点名的，否则最早的）；有 fix set 的假设按（引擎，fix set）跨 oracle 成一个家族，没有的一个假设一个家族。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+用户的指示是"继续完成 S7"；S6 交接里写着"S7 开工前要定的几件事"与新常数的取值，编排者没有另行提问，按推荐定下，依据是此前把确认事项交回编排者自行决定的约定。每一条都在 DECISIONS 里有理由。
+
+1. **四个新常数的取值**。文档只说"最小化累计惊讶加理论长度"，没有给长度的单位与数值；8.0 与 7.4 比特是编排者定的（字面量按 167 项词表编码）。后果：一条矛盾通过（4.32 比特）付不起一个假设（15.4 比特）；收紧一个多写 8 个字面量的 S 要十四条以上的矛盾，拆出第二个十字面量的假设要三十五条以上；一条没有画像的失败付不起一个新假设，四条可以。嫌拆分太迟钝，调小 `MDL_LITERAL_BITS` 即可，门槛里相应的条数要跟着改。
+2. **接受检验把文档的"在触发记录上降低惊讶"放宽成"不升"，再要求惊讶加长度严格变小**。否则合并（不降低任何已有记录的惊讶）与手写的 h2（DF-A 已经被规则解释成 0.07 比特）都过不了。
+3. **押注只看标签、一次兑付**；全部兑现之后的编辑不再因为新的矛盾而回滚。
+4. **回滚用"快照加重放"，并级联撤销之后接受的编辑**（后者不进负记忆）。
+5. **家族的定义**：有 fix set 的按 fix set 跨 oracle 归并，没有的一个假设一个家族；与人工账本比划分时用 ARI 与配对 F1，真值只取账本明文裁定的 24 条语句，探针不计分，F6 不进真值表。
+6. **`gates/s06.py` 改了一行**（新进程里打印整份常数名单而不是第一个），期望不变。
+
+### 与计划的偏差
+
+- ORCHESTRATION 第 8 节建议 S7 串行单包，实际拆成两个串行包（存储一包、接受规则一包）。
+- SESSIONS 写"离线喂入已知复现与重新生成的 DCE 探针"：DCE 只用了它的两个探针生成函数（`mutate_query_text`、`mutate_setup`），由门槛调用；旧的 `FamilyExpander` 没有用（它自带判定与去重）。探针每族只取 2–6 条（等距取样），为的是把门槛控制在 5 分钟。
+- PLAN 第 7 节"先测 31 个已确认家族中可用合取表达的比例"：只在本机能回放的十族上量了（九族可以，F2 不行）。其余家族不在首发引擎上，或在冻结的 harness 下不判 fail（见 S4 的召回缺口）。
+- PLAN 总原则第 2 条写"惊讶公式、接受规则进 harness 并记录哈希"。harness 在 S4 已冻结，接受规则放在理论层（`theory/edits.py`、`theory/workbench.py`），它们的代码哈希由 `theory_manifest()` 记进 run manifest 的 `theory` 一节，做法与 S6 相同。
+- 改了上一会话的门槛 `gates/s06.py` 一行（见上面第 6 条）。
+- 没有与 PLAN 冲突的实现选择；没有做 Hunter、主循环、LLM 角色；没有改 S6 的规则。
+
+S7 留下的未决问题在文末"未决问题"一节的"S7 发现"一组里。
 
 ## 最近完成会话：S6（2026-10-09）
 
@@ -490,7 +586,23 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S7 及之后需要知道的）
+### 未决问题（S8 及之后需要知道的）
+
+S7 发现、留后续会话：
+- 误吸收仍在（规则没有改）：没有 fix set 的假设按失败类别、错误类别、行为形状认正例，所以 (a) 一条已经被归属测试判给有 fix set 的假设的失败，只要落在某个无开关假设的确认区或待定区且三项相同，也会被它当成正例，把它的 S 泛化掉；(b) 作用域里通过还少、G 还松的时候，形状相同的另一种缺陷会被吸收进来而不是开新家族（实机例子：DF-F 进了 DF-D 的假设）。数字见 S7 一节"实机回放的数字"。可选的修法是在 `Theory._update_hypotheses` 里加一条"归属测试已经判给别的假设的失败，不再算其他假设的正例"，它改的是 S6 的规则，先问用户。MDL 的拆分只在"簇与簇之间"落了足够多的通过时才会把并错的假设拆开（三十五条以上）。
+- 没有开关的身份太粗的另一面：`DF-D_where`（只少行）与 DF-D（少行多行都有）是同一个缺陷，却因为形状不同分成两个家族。这是与人工账本唯一的出入。要更细或更稳的行为画像得在理论层另算，或解冻 harness。
+- 回滚会给"被回滚的编辑之后才开出的家族"换编号（计数器不回退、重放时重新铸号）。账本里指向旧编号的第 2 档归属结果，对有 fix set 的假设就读不出来了（记为身份未知，不学）；没有 fix set 的假设靠标签自己的三项，不受影响。要保住就得让重放时"同一条记录开出的家族沿用原编号"，需要给 `Theory.observe` 加一个指定编号的入口。
+- 工作台把观察日志全部留在内存里（每条的 φ 与去掉 detail 的标签），`journal.jsonl` 只增不减，一条观察约 1–1.5 KB。S8 的长 run 之前先量；接受检验每次要扫编辑所在作用域的全部记录（上限 1000 条留出记录是对预测次数的上限，不是对扫描的上限）。
+- `Theory.to_dict()` 每次都带上全部记住的通过，所以 `Theory.version`、`store.save`、每次接受检验前后的状态比较都与通过的条数成正比：实测 1 万条通过时 `version` 一次约 47 毫秒，`save` 一次约 157 毫秒。S8 每条实验都要算一次版本号、存一次盘。需要的话把通过改成追加写、版本号改成增量哈希，属于理论层，不涉及冻结区。
+- 存储没有崩溃恢复：`save` 先写各文件、最后写 `head.json`，中途被杀的话下次 `load()` 会因为版本号对不上而拒绝（不会读到半截状态），但要人工处理。可以从最近一代的快照加日志重放恢复，没有做。
+- 押注"落在新 S 里的实验会失败"只兑付一次：兑现之后，这条编辑的 S 里再出现多少条通过都只是矛盾（4.32 比特一条），要等 MDL 的修复候选攒够了才动。确认区的 0.95 对这类假设是偏高的（实机例子：F2 的假设，落在 S 里的 9 次实验有 4 次通过）。校准留给 S11 的 Brier 分数；要不要让确认区的概率随矛盾数下调，属于改 S6 的常数与规则，先问用户。
+- `contradictions` 里既有落在 S 内的通过，也有落在 S 内、身份不一致的失败（S6 的规则如此）。MDL 的修复只看前者。读这个字段做统计时要自己按标签分开。
+- 同作用域、同身份、由规则各自开出的两个家族，几乎不可能被 MDL 合并：第二个是因为落在第一个的 G 之外才开出来的，而"在 G 之外"就意味着把两者的 S 并起来会盖住某条已知的通过。合并实际能发生的场合是：缺某一层 φ 而没被吸收的失败、编辑造出来的假设、G 被截断之后。实机回放里两对候选（DF-A 与 DF-D_where 的假设，DF-D 与 DF-F 的假设）都被留出记录拒掉。
+- `add`（凭空加一个假设）的候选正例取"同作用域里身份一致且落在 S 内的全部失败"，包括已经属于别的假设的；这些记录之后归谁，按"归属测试点名的优先，否则最早的假设"定。S9 的猜想者如果常用 `add` 而不是改写规则开出的家族，会出现同一批失败挂在两个假设下。
+- 预测时"负责的假设"取待定区里最早的那个（S6）。实机回放里有两次因此先对一个不相干的假设做了归属测试、不一致、白做了一次第 3 档画像（约 2.5 秒），之后才被真正的家族吸收。S8 的主循环可以在待定区有多个假设时挑身份更可能一致的那个去问。
+- 门槛的 `replay` 与 `ledger` 两组约 5 分钟，`surprise.gates.all` 现在约 11 分钟。期望值是在 DuckDB 1.5.5 / 1.1.3、DataFusion 54.0.0 / 50.0.0、PostgreSQL 16.15 上测的；`gates/s07_cases.py` 的裁定语句表每条都要求在本机判 fail，换引擎版本要同步改，改之前问用户。
+- `verify_theory_manifest` 对常数的 `added` / `missing` 措辞方向（S6 留的）没有动：本会话没有改 `manifest.py`。
+- PLAN 第 7 节的"31 个家族里能用合取表达的比例"只量了本机能回放的十族。
 
 S6 发现、留后续会话：
 - `evaluate_final`（已冻结）写账本时 `surprise` 字段恒为 `None`，也没有参数可传。现在的约定是 `p_t` 传 `prediction.p_fail_valid`，惊讶由 `surprise_bits(record.p_t, record.label.y)` 从账本重算（门槛的 `walkthrough` 组核对过）。S8 的主循环和 S11 的指标都按这个算；要把惊讶直接存进记录就得解冻 harness，先问用户。
@@ -540,7 +652,7 @@ S5 发现、留后续会话：
 - sqlglot 把它不认识的语句（EXPLAIN、VACUUM、COPY 等）读成不透明的 Command：语句层状态是 `ok`，特征为空，不走兜底。作用域分析失败时（`ast.py` 里两处 `except Exception`）不记相关性、状态仍是 `ok`，没有任何标记；整份种子语料上没有触发过。
 - `ast:fn:<名>` 用的是 sqlglot 归一后的函数名（`substr` → `substring`，`date_trunc` → `timestamp_trunc`），不是原文里写的名字。S6 之后写规格、S7 的 LLM 提假设时要用归一后的名字；sqlglot 升级可能改这些名字，manifest 的 `packages.sqlglot` 记着版本。
 
-已解决（留作索引）：S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。S2 第 6 条（惊讶取到无穷大要先截断）在 S6 不再需要：ρ、Kᵛ 与 0.95 / 0.5 都严格在 0 与 1 之间，惊讶恒为有限值；S5 留的"`features/limits.py` 的三个上限要不要进 manifest"在 S6 定为进（run manifest 的 `theory` 一节里的 `features.limits`）；S4 记的"F9 每次都进第 3 档"：从没有 fix set 的画像建出的假设，确认区里的重复走第 2 档的画像比较（零执行）就能确认，DF-A 上实测如此，F9 本身留给 S8 的实机 run 核对。
+已解决（留作索引）：S6 留给 S7 的几件在 S7 定下并交付——理论状态的落盘、按代快照、编辑日志、回滚与负记忆；跨 oracle 的假设按 fix set 归并成家族；`contradictions` 由 MDL 的修复候选处理（收紧或拆分）；记住的通过随存储落盘（仍在内存里）；来路不明的状态由 `TheoryStore.load()` 严格拒收（`Theory.from_dict` 本身没有改）；误吸收与合取可表达的比例量过了，数字在 S7 一节。S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。S2 第 6 条（惊讶取到无穷大要先截断）在 S6 不再需要：ρ、Kᵛ 与 0.95 / 0.5 都严格在 0 与 1 之间，惊讶恒为有限值；S5 留的"`features/limits.py` 的三个上限要不要进 manifest"在 S6 定为进（run manifest 的 `theory` 一节里的 `features.limits`）；S4 记的"F9 每次都进第 3 档"：从没有 fix set 的画像建出的假设，确认区里的重复走第 2 档的画像比较（零执行）就能确认，DF-A 上实测如此，F9 本身留给 S8 的实机 run 核对。
 
 S2 新发现：
 1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
@@ -579,6 +691,17 @@ S2 新发现：
 - PLAN.md 决策表：第 5 条（φ 用 sqlglot、正则兜底）、第 4 条（单元先粗）、第 2 条（φ 一侧在 S5，版本空间一侧在 S6）已采用；第 8 条里 0.95 / 0.5 与分诊阈值在 S6 定值并由门槛钉住，β 留给 S8；第 7、9、10 条仍是建议，到对应会话开工时再定（第 6 条 S4 已采用）。
 
 ### 给下一个编排者的操作提醒
+
+S7 踩到的：
+
+- **参考模型用 shim 装进进程里的 `surprise.theory`（`.orch/scratch/s7/ref_shim.py`），新进程看不到它。** 跑门槛时把门槛里那几处起新进程的检查替换掉（`run_gate_ref.py`）；真实引擎的子进程只导入冻结的 harness，不受影响。
+- **审查用的随机差分脚本先让参考模型自己跑一遍（`--self`）。** 这一步在派发第二个包之前查出了规格漏洞（分簇得到空的 S 会让 `compress()` 抛异常），来得及写进说明。
+- **差分要放过说明没有规定的东西**（自拟的文本、浮点求和的末位），否则一轮在第一处假出入就中断，后面的路径都没比到；放过之后再看剩下的才是真出入。
+- **性能问题门槛查不出来。** 审查时按下一个会话的规模（几万条）量一下每次调用的耗时：这次量出日志追加随长度线性变慢。
+- **给理论层加常数之前，grep 一遍旧门槛与旧测试里对常数名单做了什么假设**（这次是"按字母序第一个是 `P_CONFIRMED`"）。
+- 超长的 shell heredoc 又解析失败了两次：补丁脚本一律用 Write 工具写成文件再执行。
+- 在 worktree 里跑探测之后，Bash 的工作目录会留在 worktree，环境提示也会改口说"不要 cd 回主检出区"。编排者的家是主检出区：每条命令照旧以 `cd /d/CoevoDB` 开头。
+- worktree 里直接敲 `pytest` 会因为导入路径失败（pytest 把 `tests/` 放到 `sys.path` 最前），说明里写 `python -m pytest`。
 
 S6 踩到的：
 
@@ -621,16 +744,15 @@ S2、S3 踩到的，仍然有效：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S7
+### 下一会话的起点：S8
 
-**S7 不自行开工。** 用户的指示是"继续完成 S6"，验收时的答复是"都没有问题"，都没有说到 S7；S7 开工，以及 S7 里新常数的取值、下面列的几件要定的事，等用户发话。
+**S8 不自行开工。** 用户的指示是"继续完成 S7"，没有说到 S8；S8 开工，以及 β 的预实验、下面列的几件要定的事，等用户发话。
 
-- 从 main 的 `s06-done-r2` 建分支 `session/s07`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
-- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 514 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (6/6 passed)`（约 6 分钟）。
-- S7 做理论存储与接受规则（范围见 SESSIONS.md 的 S7 一节）：每个假设一个结构化文件、按代快照、编辑日志（理由加押注的预测）、预测落空自动回滚并进负记忆、留出验收、MDL 拆分与合并。代码放 `framework/surprise/theory/`（没有冻结），不碰 `harness/`。
-- S6 给 S7 的现成东西：`Theory.to_dict()` / `Theory.from_dict()` 是完整状态的往返格式，`Theory.version` 是状态的摘要；`Theory.put()` 是目前唯一"人手改假设"的入口，编辑日志与回滚可以包在它外面；`TheoryEdit` 契约在 S2 就有了，还没有人用；每个假设带着 E⁺、E⁻、`contradictions`、`truncated`；`new_family(..., negatives=...)` 能把一批通过回放成 G。离线喂入已知复现时照门槛 `walkthrough` 组的顺序调用（`predict` → 执行 → `observe`），或者直接用账本里的 `phi` 与标签调 `observe`。
-- S7 门槛要的五个量级（约 6.6 / 4.3 / 1.0 / 0.07 / 0.01 比特）在 S6 的 `walkthrough` 组里已经在 DataFusion 上走全了；S7 要做的是在已知复现与 DCE 探针上成批复现它们，并在执行前识别重复（`predict` 给出确认区即是"预测为重复"）。
-- **理论常数九项已由 `gates/s06.py` 钉住取值**，改它们先问用户。S7 新增自己的常数（MDL 的权重、留出比例等）照样放进 `theory/constants.py`，会自动进 `theory_manifest()`；`gates/s06.py` 只要求那九项在且取值不变，不拦新增的。新常数的取值属于 PLAN 决策 8 的范围，开工时列给用户，或按届时的授权由编排者定下并记入 DECISIONS。
-- S7 开工前要定的几件事（都在上面"未决问题"的"S6 发现"一组里）：跨 oracle 的假设怎么归并成家族；`contradictions` 触发收紧还是拆分；记住的通过放内存还是放存储；`from_dict` 的校验补到多严；PLAN 第 7 节那个"31 个家族里能用合取表达的比例"在离线回放时一并量。
-- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`。审查测试通过数至少 514，完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
-- S6 两个包都已合并并清理，`gw list` 应全部显示 cleaned。历史 brief / report / review 在 `docs/orch/s06/`；编排者的参考模型与探测脚本在 `.orch/scratch/s6_ref/`、`.orch/scratch/s6_*.py`（不入库）。恢复时看 git log、本文件和 gw list。
+- 从 main 的 `s07-done` 建分支 `session/s08`（用户验收后如果另打了 `s07-done-r2`，从它起）。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
+- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 550 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (7/7 passed)`（约 11 分钟）。
+- S8 做 Hunter 与无 LLM 闭环（范围见 SESSIONS.md 的 S8 一节，里程碑 M2）：四类候选、`value = P_valid × (D + β·U)`、探索保底、降权与新颖性拒绝采样；新主循环 Hunter → 执行与 CVE 标注 → 惊讶 → 分诊 → Diagnoser（无 LLM）→ 接受或回滚 → 更新 T。代码放 `framework/surprise/hunter/`、`diagnoser/` 等新目录，不碰 `harness/`。
+- S7 给 S8 的现成东西：主循环里用 `Workbench` 代替裸的 `Theory`，一次实验的调用顺序见 S7 一节"当前接口"；`wb.compress()` 是无 LLM 版 Diagnoser 的 MDL 一步，隔一段调用一次即可；`wb.checkpoint(note)` 按批切代，`wb.surprise_under(代号, 记录)` 给出 CIAO 的一格；`wb.partition()` 给出每条失败的家族，重复率、家族数都从它算；`P_valid = 1 − prediction.p_invalid`，`D` 取"落在某个假设待定区时为 1 比特"（`prediction.zone == "pending"`），`U` 取 `prediction.p_fail_valid` 在未探索区的值或它的熵。细化与泛化候选从假设的 S 与 G 之差生成：删一个 S 的字面量、换成同类取值（`registry.siblings`），规格用 `Spec`，核对用 `check_spec`；变异算子复用 `evolution/dce.py` 的 `mutate_query_text`、`mutate_setup`（门槛 `gates/s07.py` 的 `dce_probes` 是现成的调用样例）与 `seeds/mutate.py`。
+- S8 开工前要定的几件事（都在"未决问题"里）：β 的预实验怎么做、取值写进 `theory/constants.py`（PLAN 决策 8）；误吸收的规则要不要改（S7 发现第一条，改的是 S6 的规则，先问用户）；长 run 的吞吐——每次原始判定起一个进程（S4）、`Theory.version` 与 `store.save` 随记住的通过线性变慢（S7）、工作台把日志留在内存里（S7）——先实测再定要不要动；同种子重跑结果一致的要求意味着主循环里不能有墙钟、不能有无序集合的遍历次序泄漏。
+- **理论常数十三项已由 `gates/s06.py`、`gates/s07.py` 钉住取值**，改它们先问用户。S8 的 β 照样放进 `theory/constants.py`，会自动进 `theory_manifest()`；两个门槛都只要求自己那几项在且取值不变，不拦新增的。
+- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`，跑测试用 `python -m pytest`（直接敲 `pytest` 在 worktree 里会因为导入路径失败）。审查测试通过数至少 550，完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
+- S7 两个包都已合并并清理，`gw list` 应全部显示 cleaned。历史 brief / report / review 在 `docs/orch/s07/`；编排者的参考模型与探测脚本在 `.orch/scratch/s7/`（不入库：`ref/` 四个文件、`ref_shim.py`、`run_gate_ref.py`、`review_store.py`、`review_accept.py`、`replay_ref.py`、`explore1.py` / `explore2.py`）。恢复时看 git log、本文件和 gw list。
