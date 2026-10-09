@@ -29,8 +29,8 @@ Claude Code 担任编排者。用户指示"继续完成 S6"。会话分支 `sess
 | 步骤 | 状态 |
 |---|---|
 | 门槛 `gates/s06.py`、`gates/s06_cases.py`（十二组） | 已写好并提交；在编排者的参考模型上 12/12，在空树上 0/12 |
-| 包 `s06-vspace` | 待派发 |
-| 包 `s06-theory` | 等 `s06-vspace` 合并后派发 |
+| 包 `s06-vspace` | 已合并（cebb344），首轮通过、没有返工；独立复跑 398 passed / 3 skipped，S01–S05 与 S06 前五组通过；与参考模型差分 115002 项零出入；约 1.35 美元。已清理 |
+| 包 `s06-theory` | 已派发（基线 ec69773；验收基线 398 passed）。审查用 `.orch/scratch/s6_review_theory.py` |
 | 收尾（HANDOFF、DECISIONS、合并回 main、tag `s06-done`） | 未做 |
 
 恢复时先 `gw list` 与 `gw status <包号>`，再看 git log；不要重跑已完成的步骤。
