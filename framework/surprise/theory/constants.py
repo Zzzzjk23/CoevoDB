@@ -32,6 +32,18 @@ TRIAGE_HIGH_BITS = 2.0
 # Maximum number of conjunctions kept in G.
 VS_MAX_GENERAL = 64
 
+# Fixed cost, in bits, of holding one more hypothesis in the theory.
+MDL_HYPOTHESIS_BITS = 8.0
+
+# Cost, in bits, of one literal of S: about log2 of the size of the vocabulary.
+MDL_LITERAL_BITS = 7.4
+
+# Largest number of held-out records one acceptance test reads.
+ACCEPT_HOLDOUT_MAX = 1000
+
+# A change in surprise smaller than this, in bits, counts as no change.
+ACCEPT_TOLERANCE_BITS = 1e-9
+
 
 def as_dict() -> dict[str, Any]:
     """Every public uppercase constant in this module, as a detached JSON object."""

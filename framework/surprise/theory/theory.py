@@ -104,6 +104,31 @@ class Theory:
                 return
         self._hypotheses.append(stored)
 
+    @property
+    def next_id(self) -> int:
+        """The counter the next minted id starts from. Equals ``to_dict()["next_id"]``."""
+        return self._next_id
+
+    def remove(self, hypothesis_id: str) -> Hypothesis:
+        """Drop the hypothesis with this id and return it. Later hypotheses keep their order.
+
+        The id counter does not move, so the number is not handed out again.
+        """
+        for index, hypothesis in enumerate(self._hypotheses):
+            if hypothesis.hypothesis_id == hypothesis_id:
+                return self._hypotheses.pop(index)
+        raise KeyError(hypothesis_id)
+
+    def reserve_id(self) -> str:
+        """Mint the id a new family would get. Creates no hypothesis."""
+        hypothesis_id, following = self._peek_id()
+        self._next_id = following
+        return hypothesis_id
+
+    def passes(self, engine: str, oracle: str) -> tuple[tuple[Phi, str], ...]:
+        """Passes remembered for one scope, oldest first. An unseen scope is empty."""
+        return tuple(self._passes.get(_scope(engine, oracle), ()))
+
     def predict(self, phi: Phi, oracle: str) -> Prediction:
         """Zone and probabilities for ``phi`` under ``oracle``. Does not change state.
 
@@ -329,13 +354,21 @@ class Theory:
                 return
         raise KeyError(hypothesis_id)
 
-    def _open_family(self, phi: Phi, label: Label, record_id: str) -> str:
-        """Mint ``h{n}``, skipping ids already stored. Used numbers are not recycled."""
+    def _peek_id(self) -> tuple[str, int]:
+        """The next ``h{n}`` at or after ``next_id``, and the counter value after it.
+
+        Ids already stored are skipped. Numbers behind the counter are not reused.
+        ``reserve_id`` and ``_open_family`` both mint through this.
+        """
         occupied = {hypothesis.hypothesis_id for hypothesis in self._hypotheses}
         number = self._next_id
         while f"h{number}" in occupied:
             number += 1
-        hypothesis_id = f"h{number}"
+        return f"h{number}", number + 1
+
+    def _open_family(self, phi: Phi, label: Label, record_id: str) -> str:
+        """Mint ``h{n}``, skipping ids already stored. Used numbers are not recycled."""
+        hypothesis_id, following = self._peek_id()
         family = new_family(
             hypothesis_id,
             phi,
@@ -344,7 +377,7 @@ class Theory:
             negatives=tuple(self._passes.get(_scope(phi.engine, label.oracle), ())),
             registry=self._registry,
         )
-        self._next_id = number + 1
+        self._next_id = following
         self._hypotheses.append(family)
         return hypothesis_id
 

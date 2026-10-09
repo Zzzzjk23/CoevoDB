@@ -73,6 +73,21 @@ def generalize(specific: object, phi: Phi, registry: Registry | None = None) -> 
     return reduce_conjunction(shared, active)
 
 
+def common_conjunction(
+    first: object, second: object, registry: Registry | None = None
+) -> tuple[str, ...]:
+    """Most specific conjunction implied by both ``first`` and ``second``.
+
+    The intersection of the two closures, then reduced. Unknown features raise
+    ``ValueError``.
+    """
+    active = _registry(registry)
+    shared = active.closure(_ids(first, active, "first")) & active.closure(
+        _ids(second, active, "second")
+    )
+    return reduce_conjunction(shared, active)
+
+
 def _excluding_literal(feature_id: str, closed: frozenset[str], registry: Registry) -> str | None:
     """Most general literal on the chain from ``feature_id`` that ``closed`` lacks.
 

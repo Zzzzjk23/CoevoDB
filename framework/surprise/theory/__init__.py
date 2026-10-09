@@ -1,4 +1,4 @@
-"""Theory layer: hypotheses, residual and validity models, predictions, and triage."""
+"""Theory layer: hypotheses, residual and validity models, predictions, triage, and storage."""
 
 from . import constants
 from .contracts import EDIT_DECISIONS, Hypothesis, Spec, TheoryEdit
@@ -17,7 +17,9 @@ from .predict import TRIAGE_KINDS, ZONES, Prediction, surprise_bits, triage
 from .residual import Residual
 from .theory import Observation, Theory
 from .validity import Validity, experiment_class
-from .vspace import covers, generalize, reduce_conjunction, specialize
+from .vspace import common_conjunction, covers, generalize, reduce_conjunction, specialize
+from .length import hypothesis_length, theory_length
+from .store import StoreError, TheoryStore
 
 __all__ = [
     "EDIT_DECISIONS",
@@ -26,27 +28,32 @@ __all__ = [
     "Prediction",
     "Residual",
     "Spec",
+    "StoreError",
     "TRIAGE_KINDS",
     "Theory",
     "TheoryEdit",
+    "TheoryStore",
     "Update",
     "Validity",
     "ZONES",
     "apply_negative",
     "apply_positive",
     "attribution_request",
+    "common_conjunction",
     "constants",
     "converged",
     "covers",
     "experiment_class",
     "extend_manifest",
     "generalize",
+    "hypothesis_length",
     "identity_match",
     "new_family",
     "position",
     "reduce_conjunction",
     "specialize",
     "surprise_bits",
+    "theory_length",
     "theory_manifest",
     "triage",
     "verify_theory_manifest",
