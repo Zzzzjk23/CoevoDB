@@ -405,6 +405,50 @@ def test_outer_column_in_a_setop_input_is_skipped() -> None:
     assert "data:setop:right_has_null" not in phi.features
 
 
+def test_tablesample_describes_the_whole_table() -> None:
+    case = _case(
+        "duckdb",
+        ("CREATE TABLE s AS SELECT range AS i, range % 7 AS k FROM range(2000)",),
+        "SELECT i FROM s TABLESAMPLE BERNOULLI (1 PERCENT)",
+    )
+    first = extract(case)
+    assert first.layers["data"] == "ok"
+    assert "data:value:zero" in first.features
+    assert "data:type:integer" in first.features
+    assert extract(case) == first
+    assert extract(case) == first
+
+
+def test_parenthesized_join_uses_the_same_tables() -> None:
+    setup = (
+        "CREATE TABLE a(x INT)",
+        "INSERT INTO a VALUES (1)",
+        "CREATE TABLE b(x INT)",
+        "INSERT INTO b VALUES (1), (1)",
+    )
+    parenthesized = extract(_case("duckdb", setup, "SELECT * FROM (a JOIN b ON a.x = b.x)"))
+    plain = extract(_case("duckdb", setup, "SELECT * FROM a JOIN b ON a.x = b.x"))
+    assert parenthesized.layers["data"] == "ok"
+    assert plain.layers["data"] == "ok"
+    assert _data(parenthesized) == _data(plain)
+    assert {"data:table:dup_rows", "data:table:single_row", "data:type:integer"} <= _data(parenthesized)
+
+
+def test_setop_input_past_the_row_cap_drops_the_data_layer() -> None:
+    setup = (
+        "CREATE TABLE p AS SELECT range % 3 AS i FROM range(150)",
+        "CREATE TABLE q(i INT)",
+        "INSERT INTO q VALUES (1)",
+    )
+    over = extract(_case("duckdb", setup, "SELECT x.i FROM p x, p y EXCEPT ALL SELECT i FROM q"))
+    assert over.layers["data"] == "unavailable"
+    assert over.layers["plan"] == "ok"
+    assert _data(over) == set()
+    fits = extract(_case("duckdb", setup, "SELECT x.i FROM p x EXCEPT ALL SELECT i FROM q"))
+    assert fits.layers["data"] == "ok"
+    assert "data:setop:left_has_dups" in fits.features
+
+
 def test_full_query_predicate_is_part_of_phi() -> None:
     phi = extract(
         _case("duckdb", ("CREATE TABLE t(a INT)", "INSERT INTO t VALUES (1)"), "SELECT a FROM t", predicate="a > 0")
@@ -527,6 +571,25 @@ def test_extract_isolated_matches_extract_and_degrades_when_killed() -> None:
     assert degraded.layers["data"] == "unavailable"
     assert "ast:set_op:except_all" in degraded.features
     assert all(feature.startswith("ast:") for feature in degraded.features)
+
+
+def test_extract_isolated_raises_caller_errors(tmp_path: Path) -> None:
+    case = _case("duckdb", (), "SELECT 1")
+    with pytest.raises(FileNotFoundError):
+        extract_isolated(case, registry_path="no/such/registry.json")
+    bad = tmp_path / "registry.json"
+    bad.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError):
+        extract_isolated(case, registry_path=str(bad))
+    with pytest.raises(ValueError):
+        extract_isolated(SqlCase(engine="postgres", setup=(), query="SELECT 1"))
+    ast_only = extract_isolated(SqlCase(engine="postgres", setup=(), query="SELECT 1"), layers=("ast",))
+    assert dict(ast_only.layers) == {"ast": "ok", "plan": "skipped", "data": "skipped"}
+    timed_out = extract_isolated(case, timeout_s=0.01)
+    assert timed_out.layers["ast"] == "ok"
+    assert timed_out.layers["plan"] == "unavailable"
+    assert timed_out.layers["data"] == "unavailable"
+    assert all(feature.startswith("ast:") for feature in timed_out.features)
 
 
 # ---- commands ----------------------------------------------------------------

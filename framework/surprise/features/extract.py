@@ -1,9 +1,10 @@
 """Compose a phi from the statement, its plan, and the data it reads.
 
 ``extract`` runs in this process. ``extract_isolated`` runs the ``phi`` command
-in a child process whose environment has no ``DEEPSEEK_API_KEY``. A child that
-crashes, times out, or prints nothing usable still yields a phi: the statement
-layer is computed here, and plan and data are unavailable.
+in a child process whose environment has no ``DEEPSEEK_API_KEY``. Caller errors
+are raised here, before the child starts. A child that crashes, times out, or
+prints nothing usable still yields a phi: the statement layer is computed here,
+and plan and data are unavailable.
 """
 from __future__ import annotations
 
@@ -77,10 +78,18 @@ def extract_isolated(
     timeout_s: float | None = None,
     registry_path: str | None = None,
 ) -> Phi:
-    """``extract`` in a child process. On failure, keep only the statement layer."""
+    """``extract`` in a child process.
+
+    An unreadable or invalid ``registry_path``, a missing runner when plan or
+    data is requested, and a child that exits 2 are raised here. A crash, a
+    timeout, or unusable output keeps the statement layer and marks the
+    requested plan and data layers unavailable.
+    """
     selected = _selected_layers(layers)
     timeout = ISOLATION_TIMEOUT_S if timeout_s is None else timeout_s
-    registry = _load_registry(registry_path)
+    registry = Registry.load(registry_path) if registry_path is not None else None
+    if "plan" in selected or "data" in selected:
+        runner_factory_for(case.engine)
     payload: dict = {"case": case.to_dict(), "layers": [name for name in _LAYER_NAMES if name in selected]}
     if registry_path is not None:
         payload["registry"] = registry_path
@@ -95,7 +104,7 @@ def extract_isolated(
         stderr=subprocess.PIPE,
     )
     try:
-        stdout, _stderr = proc.communicate(json.dumps(payload).encode("utf-8"), timeout=timeout)
+        stdout, stderr = proc.communicate(json.dumps(payload).encode("utf-8"), timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill(proc)
         try:
@@ -103,6 +112,9 @@ def extract_isolated(
         except Exception:
             pass
         return _degrade(case, selected, registry)
+    if proc.returncode == 2:
+        reason = (stderr or b"").decode("utf-8", "replace").strip()
+        raise ValueError(reason)
     if proc.returncode != 0:
         return _degrade(case, selected, registry)
     phi = _parse_phi(stdout)
@@ -167,15 +179,6 @@ def _degrade(case: SqlCase, selected: frozenset[str], registry: Registry | None)
         "data": "unavailable" if "data" in selected else "skipped",
     }
     return make_phi(case.engine, ast_features, status, registry)
-
-
-def _load_registry(path: str | None) -> Registry | None:
-    if path is None:
-        return None
-    try:
-        return Registry.load(path)
-    except (OSError, ValueError, json.JSONDecodeError, TypeError):
-        return None
 
 
 def _parse_phi(blob: bytes | None) -> Phi | None:

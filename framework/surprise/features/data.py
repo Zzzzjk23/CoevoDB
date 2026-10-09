@@ -2,9 +2,12 @@
 
 No aggregate SQL. The statement under test is not executed. Referenced base
 tables are read with ``SELECT *`` and ``DESCRIBE``; each input of a set
-operation is run on its own. A table that cannot be read, or that is larger
-than the row cap, makes the layer unavailable. A set-operation input that
-cannot be run on its own contributes nothing and leaves the layer ``ok``.
+operation is run on its own. A reference is only the catalog, schema, and
+table name. A table that cannot be read, a reference that cannot be rendered,
+a table past the row cap, or a set-operation input that runs and passes the
+row cap makes the layer unavailable and contributes no data features. A
+set-operation input that cannot be run on its own contributes nothing and
+leaves the layer ``ok``.
 """
 from __future__ import annotations
 
@@ -20,6 +23,11 @@ from .limits import MAX_TABLE_ROWS, PROBE_TIMEOUT_S
 _EXTREME = 2**31
 _NON_FINITE_TEXT = frozenset({"float:nan", "float:+inf", "float:-inf"})
 _SET_OPS = (exp.Union, exp.Except, exp.Intersect)
+
+
+class _RefError(Exception):
+    """A base-table reference could not be rendered from its name alone."""
+
 
 _INTEGER_TOKENS = frozenset({
     "TINYINT", "SMALLINT", "INTEGER", "INT", "BIGINT", "HUGEINT",
@@ -43,7 +51,11 @@ def extract_data(runner, query: str, engine: str) -> tuple[set[str], str]:
         return set(), "unavailable"
     dialect = _dialect(engine)
     features: set[str] = set()
-    for ref in _base_tables(tree, dialect):
+    try:
+        refs = _base_tables(tree, dialect)
+    except _RefError:
+        return set(), "unavailable"
+    for ref in refs:
         rows = _fetch_table(runner, ref)
         if rows is None:
             return set(), "unavailable"
@@ -53,8 +65,9 @@ def extract_data(runner, query: str, engine: str) -> tuple[set[str], str]:
             return set(), "unavailable"
         features.update(described)
     for node in tree.find_all(*_SET_OPS):
-        _setop_input(runner, node, node.args.get("this"), "left", dialect, features)
-        _setop_input(runner, node, node.args.get("expression"), "right", dialect, features)
+        for which, side in (("left", node.args.get("this")), ("right", node.args.get("expression"))):
+            if _setop_input(runner, node, side, which, dialect, features):
+                return set(), "unavailable"
     return features, "ok"
 
 
@@ -92,7 +105,11 @@ def _type_token(type_name: str) -> str:
 
 
 def _base_tables(tree: exp.Expression, dialect: str | None) -> list[str]:
-    """SQL references of base tables, CTE names and table functions removed."""
+    """SQL references of base tables, CTE names and table functions removed.
+
+    Each reference is catalog, schema, and table name. A name that cannot be
+    rendered raises ``_RefError`` so the layer is not reported as complete.
+    """
     cte_names: set[str] = set()
     for cte in tree.find_all(exp.CTE):
         key = _cte_key(cte)
@@ -109,13 +126,30 @@ def _base_tables(tree: exp.Expression, dialect: str | None) -> list[str]:
         if key in seen:
             continue
         seen.add(key)
-        try:
-            bare = table.copy()
-            bare.set("alias", None)
-            refs.append(bare.sql(dialect=dialect))
-        except Exception:
-            continue
+        refs.append(_table_sql(table, dialect))
     return refs
+
+
+def _table_sql(table: exp.Table, dialect: str | None) -> str:
+    """Render catalog, schema, and name, keeping the quotes those parts had."""
+    this = table.this
+    if not isinstance(this, exp.Identifier):
+        raise _RefError("table name is not an identifier")
+    ref = exp.Table(this=this.copy())
+    for arg in ("db", "catalog"):
+        part = table.args.get(arg)
+        if part is None:
+            continue
+        if not isinstance(part, exp.Identifier):
+            raise _RefError(f"{arg} is not an identifier")
+        ref.set(arg, part.copy())
+    try:
+        rendered = ref.sql(dialect=dialect)
+    except Exception as exc:
+        raise _RefError("table reference did not render") from exc
+    if not isinstance(rendered, str) or not rendered.strip():
+        raise _RefError("table reference did not render")
+    return rendered
 
 
 def _fetch_table(runner, ref: str) -> list | None:
@@ -141,29 +175,31 @@ def _describe(runner, ref: str) -> set[str] | None:
     return found
 
 
-def _setop_input(runner, node, side, which: str, dialect: str | None, features: set[str]) -> None:
+def _setop_input(runner, node, side, which: str, dialect: str | None, features: set[str]) -> bool:
+    """Record one input. Return True when it ran and exceeded the row cap."""
     if side is None:
-        return
+        return False
     try:
         body = side.sql(dialect=dialect)
     except Exception:
-        return
+        return False
     if not isinstance(body, str) or not body.strip():
-        return
+        return False
     limit = MAX_TABLE_ROWS + 1
     wrapped = f"SELECT * FROM ({body}) AS _coevo_setop_input LIMIT {limit}"
     prefix = _with_sql(node, dialect)
     sql = f"{prefix} {wrapped}" if prefix else wrapped
     result = _run(runner, sql)
     if not _succeeded(result):
-        return
+        return False
     rows = list(result.rows or [])
     if len(rows) > MAX_TABLE_ROWS:
-        return
+        return True
     if _has_duplicate(rows):
         features.add(f"data:setop:{which}_has_dups")
     if _has_null(rows):
         features.add(f"data:setop:{which}_has_null")
+    return False
 
 
 def _with_sql(node: exp.Expression, dialect: str | None) -> str | None:
