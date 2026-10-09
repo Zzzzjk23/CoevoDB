@@ -10,7 +10,7 @@
 | S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
-| S6 | Phase 3a 理论 T 核心 | 未开始 | | |
+| S6 | Phase 3a 理论 T 核心 | 进行中（见下节） | | |
 | S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
@@ -19,6 +19,50 @@
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S6（2026-10-09 开工）
+
+Claude Code 担任编排者。用户指示"继续完成 S6"。会话分支 `session/s06` 从 `s05-done`（8c37d25）建立；起点独立复跑 367 passed, 3 skipped 与 GATES PASS 5/5；PG 参照服务器在运行。
+
+### 当前进度（中断后从这里接）
+
+| 步骤 | 状态 |
+|---|---|
+| 门槛 `gates/s06.py`、`gates/s06_cases.py`（十二组） | 已写好并提交；在编排者的参考模型上 12/12，在空树上 0/12 |
+| 包 `s06-vspace` | 待派发 |
+| 包 `s06-theory` | 等 `s06-vspace` 合并后派发 |
+| 收尾（HANDOFF、DECISIONS、合并回 main、tag `s06-done`） | 未做 |
+
+恢复时先 `gw list` 与 `gw status <包号>`，再看 git log；不要重跑已完成的步骤。
+
+### 拆包清单
+
+| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 |
+|---|---|---|---|---|
+| s06-vspace | 理论常数；`Hypothesis` 契约加六个带默认值的字段；合取语言（约简、覆盖、最小泛化、最小特化）；版本空间更新（正例泛化 S、反例特化 G、G 的上限）；位置判定；新家族的确定性初始化；身份判定；第 2 档归属请求 | `framework/surprise/theory/**`、`framework/tests/test_surprise_s06_*.py`、`framework/tests/test_surprise_contracts.py`（只许定向更新） | s05-done | constants language vspace hypothesis identity |
+| s06-theory | R、Kᵛ、P_T 与惊讶、六类分诊、`Theory`（`predict` / `observe` / 状态往返）、run manifest 的 theory 一节、DF-A → DF-B 实机走查 | 同上 | s06-vspace 已合并 | residual validity predict triage theory manifest walkthrough |
+
+两包串行，同一时间只跑一包。
+
+### 规则摘要（门槛与任务说明按它写；细则以 `docs/orch/s06/` 归档的任务说明为准）
+
+框架文档是《惊讶驱动的 CoevoDB：新框架与故事》（2026-10-07），仓库里没有，本机在 `C:\Users\91484\Desktop\` 下的同名 PDF。相关原文：`P_T(fail | x) = (1 − Kᵛ(x)) × [确认区约 0.95；待定区约 0.5；否则取 ρ_c]`；六类分诊表（未探索区失败约 6.6 比特、确认区通过约 4.3、待定区约 1.0、确认区失败约 0.07、未探索区通过约 0.01、无效不计）；"失败必须和假设的身份一致才算正例"。
+
+- **语言**：合取是一组特征 id（叶子或类）；φ 满足它，当且仅当每个 id 都在 `registry.closure(φ.features)` 里。约简形式：排序、去重、去掉层根（`ast`、`plan`、`data`）、去掉被同组里更具体的 id 蕴含的祖先。
+- **S** 是一个合取，初值为第一条失败的 φ 的全部叶子；**G** 是一组合取，初值只有空合取（范围内处处可能）。
+- **正例**（落在待定区）：S 换成"S 的闭包与正例闭包的交"的约简（缺的特征删掉，同类不同值升到类）；G 里不覆盖该正例的成员删掉。
+- **反例**（落在待定区）：G 里覆盖它的每个成员，换成"加上一个 S 里它没有的字面量"的各种最小特化，字面量取该 S 字面量的祖先链上仍不在反例闭包里的最一般的那个；然后去掉被别的成员蕴含的成员，按（长度，字典序）排序，超过 `VS_MAX_GENERAL` 截断并标记。
+- **位置**：假设的作用域是（引擎，oracle）。φ 缺 S 提到的某一层时为 `undetermined`（既不算正例也不算反例）；满足 S 为 `confirmed`；否则满足某个 G 成员为 `pending`；否则 `outside`。
+- **身份**：依次看 harness 第 2 档对这个假设的归属测试结果；有 fix set 的假设与第 3 档画像的 fix set 比较（没有画像则未知）；没有 fix set 的假设比较失败类别、错误类别、行为画像形状。身份不一致的失败对该假设是反例；未知则不更新。
+- **新家族**：没有被任何假设吸收为正例的失败，带第 3 档画像时建立新假设：I 取 fix set，ΔP 取 plan diff，V 取版本梯，另记失败类别、错误类别、行为形状；G 用此前同范围的通过回放一遍。没有画像的记为未解释失败进 R。
+- **R**：`ρ_c = (未解释失败 + 1) / (测过 + 100)`，按单元；只记落在未探索区的通过，与任何没有得到解释的失败。**Kᵛ**：`(无效 + 1) / (做过 + 10)`，按（`引擎|主构造`，oracle）。
+- **惊讶**：对有效结果按 `−log₂ P(y | 有效)` 算，无效不计。`ExperimentRecord.p_t` 记 `P(fail | 有效)`，所以账本里的 `p_t` 加标签就能重算惊讶（`evaluate_final` 写不了 `surprise` 字段，见未决问题）。
+- **分诊**按惊讶大小：不低于 2.0 比特，失败为新家族、通过为意外通过；0.5 到 2.0 为边界移动；低于 0.5，失败为重复、通过为无信息；无效单列。
+
+### 本会话需要确认的事项（编排者按推荐定下，用户可以推翻）
+
+1. PLAN 决策 2 的版本空间一侧：采用（单调合取加类层级，析取靠拆假设）。
+2. 理论常数九项：`P_CONFIRMED = 0.95`、`P_PENDING = 0.5`、`RESIDUAL_PRIOR_FAILS = 1.0`、`RESIDUAL_PRIOR_TESTS = 100.0`、`VALIDITY_PRIOR_INVALID = 1.0`、`VALIDITY_PRIOR_TESTS = 10.0`、`TRIAGE_LOW_BITS = 0.5`、`TRIAGE_HIGH_BITS = 2.0`、`VS_MAX_GENERAL = 64`。放在 `theory/constants.py`，经 `extend_manifest` 写进 run manifest 的 `theory` 一节；`harness/` 与 `gates/s04_frozen.json` 不动，八个已冻结的 harness 常数不变。`gates/s06.py` 的 `constants` 组钉住这九个值，之后改它们要先问用户。
 
 ## 最近完成会话：S5（2026-10-09）
 
