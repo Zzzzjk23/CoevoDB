@@ -6,7 +6,9 @@ Process isolation resolves ``runner_factory`` from that module name.
 
 from __future__ import annotations
 
+import ctypes
 import os
+import signal
 import time
 from typing import Any
 
@@ -17,6 +19,18 @@ EXIT_MARK = "770077"
 SLEEP_MARK = "880088"
 ZERO_EXIT_MARK = "660066"
 EXIT_CODE = 77
+
+
+def die(code: int) -> None:
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code)
+    else:
+        os.kill(os.getpid(), signal.SIGKILL)
+    os._exit(code)
 
 
 class OkTarget:
@@ -55,7 +69,7 @@ class ExitingRunner(DuckDBRunner):
 
     def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
         if EXIT_MARK in sql:
-            os._exit(EXIT_CODE)
+            die(EXIT_CODE)
         return super().run(sql, timeout_s=timeout_s)
 
 
@@ -76,7 +90,7 @@ class ZeroExitRunner:
 
     def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
         if ZERO_EXIT_MARK in sql:
-            os._exit(0)
+            die(0)
         return QueryResult(rows=[[1]])
 
     def close(self) -> None:
@@ -92,7 +106,7 @@ class ExitingReference:
         return [(statement, None) for statement in statements]
 
     def run(self, sql: str, timeout_s: float = 10.0) -> QueryResult:
-        os._exit(78)
+        die(78)
 
     def close(self) -> None:
         pass
