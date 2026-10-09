@@ -1,8 +1,7 @@
 """Contracts the theory layer owns: specs, hypotheses, and theory edits.
 
-These types are still only shape and serialisation. Later sessions fill in the
-version-space rules. Importing the harness contracts is allowed; the harness
-does not import this module.
+Importing the harness contracts is allowed; the harness does not import this
+module. Version-space updates live beside these types and return new values.
 """
 
 from __future__ import annotations
@@ -25,6 +24,13 @@ from ..harness.contracts import (
 
 # pending: not yet decided; accepted: written into the theory; rolled_back: rejected and kept as negative memory.
 EDIT_DECISIONS = ("pending", "accepted", "rolled_back")
+
+
+def _optional_oracle(value: Any) -> str | None:
+    if value is None:
+        return None
+    _require_choice(value, ORACLE_IDS, "oracle")
+    return value
 
 
 @dataclass(frozen=True)
@@ -52,7 +58,10 @@ class Hypothesis(_Serializable):
     """h = (I, delta-P, V, S, G, E+, E-) plus where it came from and its status.
 
     ``general`` is a tuple of conjunctions. ``positives`` and ``negatives`` are
-    experiment-record ids.
+    experiment-record ids. ``oracle`` scopes the hypothesis with ``engine``.
+    ``fail_kind``, ``error_class`` and ``behavior_shape`` identify a hypothesis
+    that names no intervention. ``contradictions`` lists passes that landed
+    inside S. ``truncated`` is set once G was cut at the cap.
     """
 
     hypothesis_id: str
@@ -66,6 +75,12 @@ class Hypothesis(_Serializable):
     negatives: tuple[str, ...]
     source: str
     status: str
+    oracle: str | None = None
+    fail_kind: str | None = None
+    error_class: str | None = None
+    behavior_shape: str | None = None
+    contradictions: tuple[str, ...] = ()
+    truncated: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -83,6 +98,17 @@ class Hypothesis(_Serializable):
         object.__setattr__(self, "negatives", _freeze_strings(self.negatives, "negatives"))
         object.__setattr__(self, "source", _require_str(self.source, "source"))
         object.__setattr__(self, "status", _require_str(self.status, "status"))
+        object.__setattr__(self, "oracle", _optional_oracle(self.oracle))
+        object.__setattr__(self, "fail_kind", _optional_str(self.fail_kind, "fail_kind"))
+        object.__setattr__(self, "error_class", _optional_str(self.error_class, "error_class"))
+        object.__setattr__(
+            self, "behavior_shape", _optional_str(self.behavior_shape, "behavior_shape")
+        )
+        object.__setattr__(
+            self, "contradictions", _freeze_strings(self.contradictions, "contradictions")
+        )
+        if not isinstance(self.truncated, bool):
+            raise ValueError(f"truncated: must be a bool, got {self.truncated!r}")
 
 
 @dataclass(frozen=True)
