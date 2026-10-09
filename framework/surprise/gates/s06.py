@@ -203,7 +203,7 @@ def check_constants() -> str:
                   "import surprise.theory.contracts, surprise.features.spec, surprise.theory",
                   "import surprise.harness.evaluate, surprise.theory"):
         run = subprocess.run([sys.executable, "-c",
-                              order + "; from surprise.theory import constants; print(sorted(constants.as_dict())[0])"],
+                              order + "; from surprise.theory import constants; print(sorted(constants.as_dict()))"],
                              cwd=FRAMEWORK, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120.0,
                              encoding="utf-8", errors="replace")
         require(run.returncode == 0 and "P_CONFIRMED" in run.stdout,

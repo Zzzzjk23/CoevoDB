@@ -22,6 +22,10 @@ EXPECTED = {
     "TRIAGE_LOW_BITS": 0.5,
     "TRIAGE_HIGH_BITS": 2.0,
     "VS_MAX_GENERAL": 64,
+    "MDL_HYPOTHESIS_BITS": 8.0,
+    "MDL_LITERAL_BITS": 7.4,
+    "ACCEPT_HOLDOUT_MAX": 1000,
+    "ACCEPT_TOLERANCE_BITS": 1e-9,
 }
 
 
@@ -48,7 +52,7 @@ def test_features_and_theory_import_in_either_order() -> None:
             [
                 sys.executable,
                 "-c",
-                order + "; from surprise.theory import constants; print(sorted(constants.as_dict())[0])",
+                order + "; from surprise.theory import constants; print(sorted(constants.as_dict()))",
             ],
             cwd=FRAMEWORK,
             capture_output=True,
