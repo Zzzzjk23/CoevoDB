@@ -9,7 +9,7 @@
 | S2 | Phase 1a 契约、账本、三类健全 oracle | 完成 | s02-done；s02-done-r2（验收后的修订，S3 从这里起） | `gates/s02.py` 5/5；pytest 149 passed, 3 skipped |
 | S3 | Phase 1b 其余三类 oracle 与 Index presence 移植 | 完成 | s03-done | S03 5/5；pytest 242 passed, 3 skipped；GATES PASS 3/3 |
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
-| S5 | Phase 2 φ | 进行中（见下节） | | |
+| S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
 | S6 | Phase 3a 理论 T 核心 | 未开始 | | |
 | S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
@@ -20,36 +20,65 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 当前会话：S5（进行中，2026-10-09 起）
+## 最近完成会话：S5（2026-10-09）
 
-Claude Code 担任编排者，实现全部来自 grok 工作包。会话分支 `session/s05` 从 `s04-done`（9d88ff7）建立。用户指示 S4 完成后直接开 S5、需要确认的事项按编排者的推荐确认；已定的事项在 DECISIONS 的 S5 条目里。`.venv` 里装了 `sqlglot==30.21.0`，装完起点检查为 275 passed, 3 skipped 与 GATES PASS 4/4。
+Claude Code 担任编排者，全部实现来自 grok 工作包。会话分支 `session/s05` 从 `s04-done`（9d88ff7）建立；用户此前指示 S4 完成后直接开 S5、需要确认的事项按编排者的推荐确认（逐项在 DECISIONS 的 S5 条目里）。开工时往 `.venv` 装了 `sqlglot==30.21.0`，装完起点检查为 275 passed, 3 skipped 与 GATES PASS 4/4。会话中途因用量上限中断过一次，靠 WIP 提交与本文件接上。三包全部合并，收尾合并回 main，tag `s05-done`；S6 从此 tag 起。
 
-会话在 2026-10-09 因用量上限中断过一次，同日接着做。后两个包的说明在 `.orch/briefs/s05-ast.md`、`.orch/briefs/s05-dynamic.md`（`s05-dynamic` 里的 `{基线通过数}` 要在 `s05-ast` 合并后填上）；审查探测脚本 `.orch/scratch/s5_review_ast.py`、`.orch/scratch/s5_review_dynamic.py` 已备好，`s5_review_vocab.py` 与 `s5_review_vocab_r1.py` 在每个包审查时都重跑一遍（都在 `<检出区>/framework` 下运行，末行 `BAD COUNT 0` 为通过）。
+**用户的自主指示只到 S5 为止。** S6 要不要开、S6 里需要确认的事项怎么定，等用户发话。
 
-断线恢复只看三样：本节、`git log session/s05`、仓库根 `.venv/Scripts/python.exe tools/orch/grok_worker.py list`。包状态与本节不一致时以 gw list 为准，先 `gw status <包号>`。
+### 交付与门槛
 
-### 拆包清单（串行，同一时间只跑一包）
+- 词表与类层级（`features/vocabulary.py`、`registry.py`）：167 项（门槛契约 `CORE_VOCAB` 的 166 项，加执行者追加的叶子 `ast:window_fn:other`），三层 `ast`、`plan`、`data`；种类为 class、leaf、family（开放族 `plan:<算子名>`、`ast:fn:<函数名>`）。注册表给出祖先、同类（"换同类取值"）、闭包，发明特征（正则类）的登记、验收记录、存取。词表摘要 `1e001c14a030…`，词表一变摘要就变，φ 里带着它。
+- φ 容器（`phi.py`）：`Phi(engine, features, layers, vocab)`；`features` 是排好序的叶子 id，`layers` 记三层状态（ast：ok / fallback；plan、data：ok / unavailable / skipped）。没有任何随运行变化的内容；`to_dict` / `from_dict` 做结构校验，可以原样进账本的 `ExperimentRecord.phi`。
+- 规格核对（`spec.py`）：`check_spec(phi, spec)` 判 φ ⊨ spec，必须项与数据性质要在 φ 的闭包里（所以规格可以写类一级的 id），禁止项不能在；某一层没算出来时相关项记为不确定，结论为不满足。
+- 单元投影（`units.py`）：`引擎|oracle|主构造|计划算子类|数据性质类`，主构造十二种、计划算子类八种加 `none`、数据性质类五种加 `unknown`，各维按固定优先级取一个。
+- 语句层（`ast.py`）：sqlglot 解析，特征只来自语法结构；解析不了（或一段文本不止一条语句）走正则兜底并带 `ast:parse:fallback`。已验收的发明特征按正则命中输出。
+- 计划层（`plan.py`）：DuckDB 复用旧工具 `diagnosis.bisect.plan_op_names`（`EXPLAIN (FORMAT JSON)`），DataFusion 取 `EXPLAIN` 的 physical_plan 文本；算子名原样作特征。
+- 数据层（`data.py`）：一律在库上算，而且不发聚合 SQL：把被引用的基表取回来在 Python 里数（空表、单行、重复行、NULL、零、负数、极端数、空串、非有限值、列类型）；集合运算的两个输入各自作为查询执行，判重复行与 NULL。被测语句本身从不执行。
+- 组合入口（`extract.py`）：`extract`（调用方进程内）与 `extract_isolated`（子进程；崩溃、超时时语句层照算，`plan`、`data` 记 `unavailable`）。命令行 `python -m surprise.features {vocab|phi|corpus}`。
+- 门槛九组：`vocab spec units`（s05-vocab）、`ast`（s05-ast）、`dynamic stable distinguish specs corpus`（s05-dynamic）。φ 跨进程稳定（25 个用例，两个子进程与本进程三方一致）；DF-A、DF-B 与 DuckDB F1–F11 的最小复现两两可区分（66 对），DF-A → DF-B 恰好是一次同类替换；17 组手写 spec / SQL 对全对；语料分布报告两次运行相同。
+- 语料分布（`seeds/corpus.json`，门槛实测）：1092 条种子落在 76 个单元、10 种主构造；语句层兜底 34 条，计划层可用 480 条，数据层可用 483 条；最大的三个单元是 `postgres|plain|none|unknown`（134）、`duckdb|plain|none|unknown`（83）、`duckdb|window|none|unknown`（56）。
 
-| 包号 | 目标 | 允许路径 | 依赖 | 门槛组 | 状态 |
-|---|---|---|---|---|---|
-| s05-vocab | 词表与类层级、注册表（祖先、同类、闭包、开放族、发明特征的登记与验收记录、存取）、φ 容器、规格核对、单元投影 | features/**（不含 ast.py、plan.py、data.py、extract.py、__main__.py）；tests/test_surprise_s05_*.py | s04-done | vocab spec units | **已合并**（4b55eb1，返工 1 轮）。合并后 pytest 297 passed / 3 skipped，S01–S04 通过，S05 的 `vocab spec units` 通过。返工修了 `Phi.from_dict` 与 `Registry.load` 不校验，并把 S4 测试夹具的进程退出改成立即终止。留下一处小问题交给 `s05-ast` 顺带改：`_require_layers` 对不可哈希的层状态取值抛 `TypeError` 而不是 `ValueError` |
-| s05-ast | 语句层：sqlglot 提取与正则兜底，发明特征（正则类）的求值 | features/ast.py；tests/test_surprise_s05_*.py | s05-vocab 已合并 | ast | **已合并**（dd472f9，返工 1 轮）。合并后 pytest 323 passed / 3 skipped，S05 的 `vocab spec units ast` 通过（`ast` 组按新表：74 条探测、5 条兜底）。返工修了七处判错：把括号当子查询、命名窗口、IGNORE NULLS、写语句里的相关子查询、赋值记成比较、同名遮蔽、兜底的两处误报；顺带把 `_require_layers` 改成抛 `ValueError`。词表追加了一个叶子 `ast:window_fn:other`（词表摘要因此变为 1e001c14a030） |
-| s05-dynamic | 计划层、数据层、组合入口 `extract`、`extract_isolated`、命令行（phi / corpus / vocab）与语料分布报告 | features/plan.py、data.py、extract.py、__main__.py 及其辅助文件；tests/test_surprise_s05_*.py | s05-ast 已合并 | dynamic stable distinguish specs corpus | 第一轮完成（f1284a6）：独立复跑 363 passed / 3 skipped，GATES PASS 5/5，S05 九组全过。审查另发现三处，**第 1 轮返工已派发**（意见在 `.orch/feedback/s05-dynamic-r1.md`）：`extract_isolated` 吞掉调用方错误、基表引用带上了采样或连接子句、超上限的集合运算输入被当成没有特征。审查脚本 `.orch/scratch/s5_review_dynamic.py`、`s5_review_dynamic2.py` |
+最终复跑（三包合并后在 `session/s05` 主检出区独立运行）：pytest 367 passed, 3 skipped（起点 275，skip 未增加）；S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9，`GATES: PASS (5/5 passed)`。冻结清单未动（S04 的 freeze 组照常通过）。
 
-表内路径相对 `framework/surprise/`、`framework/`。门槛 `python -m surprise.gates.s05 --only <组>`，九组全过才是 S05 通过。`harness/` 已冻结，三个包都不许碰。
+### 拆包清单与结论（全部已合并）
 
-### 契约（派发前定）
+| 包 | 内容 | 轮数 | 合并 | 审查发现 |
+|---|---|---|---|---|
+| s05-vocab | 词表、注册表、φ 容器、规格核对、单元投影 | 首轮 + 返工 1 轮 | 4b55eb1 | `Phi.from_dict` 与 `Registry.load` 不做校验；顺带改了 S4 测试夹具的进程退出方式 |
+| s05-ast | 语句层与正则兜底 | 首轮 + 返工 1 轮 | dd472f9 | 七处判错：把括号当子查询、命名窗口、IGNORE NULLS、写语句里的相关子查询、赋值记成比较、同名遮蔽、兜底的两处误报 |
+| s05-dynamic | 计划层、数据层、组合入口、命令行、语料报告 | 首轮 + 返工 1 轮 | 42e1856 | `extract_isolated` 吞掉调用方错误；基表引用带上了采样或连接子句；超上限的集合运算输入被当成没有特征 |
 
-- 词表：`gates/s05_cases.py` 的 `CORE_VOCAB`，166 项。特征 id 是 `层:名[:值]`，层为 `ast`、`plan`、`data`；种类为 class（层级内部节点，不出现在 φ 里）、leaf、family（开放族：`plan:<算子名>`、`ast:fn:<函数名>`）。
-- φ：`Phi(engine, features, layers, vocab)`，`features` 是排好序的叶子 id，`layers` 记三层各自的状态（ast：ok / fallback；plan、data：ok / unavailable / skipped），`vocab` 是词表摘要。里面没有任何随运行变化的内容。
-- 规格核对：必须项与数据性质要在 φ 的闭包里，禁止项不能在；层没算出来的项记为不确定，结论为不满足。
-- 单元：`引擎|oracle|主构造|计划算子类|数据性质类`，各维的优先级写在说明和 `UNIT_PROBES` 里。
+三个包首轮都通过了自己的全部门槛，问题都是编排者读代码加探测找出来的。没有推翻包，没有第 2 轮返工。grok 成本合计约 5.9 美元（vocab 1.16、ast 2.43、dynamic 2.34）。说明、报告、审查包、返工意见归档在 `docs/orch/s05/`。
 
-### 派发前实测（脚本在 `.orch/scratch/s5_*.py`，不入库）
+### 当前接口
 
-- sqlglot 30.21.0 解析：已知复现全部成功；种子语料 DuckDB 784 条里 767 条、PostgreSQL 308 条里 291 条成功。
-- 种子语料在 DuckDB 1.5.5 上：setup 全部成功的 532 条，其余 252 条有语句被拒；`EXPLAIN (FORMAT JSON)` 能取到计划的 676 条。DataFusion 的计划来自 `EXPLAIN` 的 physical_plan 文本。
-- 各族默认计划里的算子：F1、F6 有 LEFT_DELIM_JOIN；F2 是 HASH_JOIN（窗口被 window_self_join 改写掉了）；F3 是 STREAMING_WINDOW 加 NESTED_LOOP_JOIN，没有名为 ASOF 的算子；F8 有 UNION；F9、F10 有 WINDOW；DF-A、DF-B 是 HashJoinExec。门槛里各族的单元照这些写。
+`surprise.features` 导出（S6 起直接用）：
+
+- `default_registry()`、`Registry`（`known`、`get`、`ids`、`layer`、`parent`、`ancestors`、`children`、`siblings`、`closure`、`register`、`accept`、`digest`、`save`、`Registry.load`）、`FeatureDef`。
+- `Phi`、`make_phi(engine, features, layers, registry=None)`。
+- `check_spec(phi, spec, registry=None) -> SpecCheck(ok, engine_ok, missing, forbidden, undetermined)`；`spec` 是 `surprise.theory.contracts.Spec`。
+- `unit_parts(phi) -> (主构造, 计划算子类, 数据性质类)`、`unit_of(phi, oracle)`。
+- `extract_ast(sql, engine, registry=None) -> (frozenset, "ok" | "fallback")`。
+- `extract(case, *, layers=("ast", "plan", "data"), runner_factory=None, registry=None) -> Phi`：φ 描述的语句是 `full_query(case)`。
+- `extract_isolated(case, *, layers=..., timeout_s=None, registry_path=None) -> Phi`：调用方的错误（读不了的词表文件、没有 runner 的引擎要算 `plan` 或 `data`）照样抛出。
+- 常数在 `features/limits.py`：`MAX_TABLE_ROWS = 10000`、`PROBE_TIMEOUT_S = 10.0`、`ISOLATION_TIMEOUT_S = 60.0`。它们不在 manifest 的冻结常数里；S6 把理论常数写进 manifest 时决定要不要一并记。
+
+成本（主检出区实测）：进程内 `extract` 三层约 15 毫秒一次；`extract_isolated` 约 0.3 秒一次；整份语料 1092 条的报告约 11 秒。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+1. **数据性质不用聚合 SQL 算，取回行在 Python 里数**，每张表上限 10000 行，超过就整层 `unavailable`。理由：被测引擎的缺陷可能把用来验证的聚合也算错。代价：大表上的语句没有数据层。
+2. **看不全就不描述**：集合运算的某个输入超过上限、某张表的引用生成不了，数据层整层 `unavailable`，而不是少报几个特征。唯一的例外是输入单独跑不起来（引用了外层的列）：不输出它的特征，层仍是 `ok`。这时 φ 里没有 `data:setop:*` 不等于"没有重复行"。
+3. **φ 默认在调用方进程里提取**（只跑 EXPLAIN、取表、集合运算的输入，不执行被测语句），`extract_isolated` 留给不放心的场合。已知会杀进程的 F10 语句取计划是安全的。
+4. **语句层的反例进门槛**：`gates/s05_cases.py` 在派发后追加了 14 条 `AST_PROBES`、3 条 `FALLBACK_LACK`（52e6030）。这是在本会话自己的门槛上加严，不是改旧门槛。
+5. **单元的三维取值表与优先级**（主构造 dml > set_op_all > set_op > window > …；计划算子类按算子名子串；数据性质类 dups > nulls > empty > extreme > plain）是编排者定的粗粒度，对应 PLAN 决策 4"先粗"。语料上 1092 条落在 76 个单元。S8 发现太粗或太细时改 `units.py` 一个文件。
+
+### 与计划的偏差
+
+- SESSIONS 写的是"先契约一包，再两包并行"，实际三包串行：`s05-ast` 与 `s05-dynamic` 都要改 `features/__init__.py`，后者还依赖前者的 `extract_ast`。
+- 没有改 `theory/contracts.py`：S2 定的 `Spec` 已经够用，规格核对器直接用它。
+- `coverage/features.py` 只作参考，没有 import（旧代码不动）。
 
 ## 最近完成会话：S4（2026-10-09）
 
@@ -336,7 +365,7 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S5 及之后需要知道的）
+### 未决问题（S6 及之后需要知道的）
 
 S4 发现、留后续会话：
 - 召回缺口：F10、F5、DF-E、DF-H、DF-J、DF-G 在新框架里不是 fail，原因见上面"已知的召回缺口"一节。评估（S11）报告召回时要把它们单列；要补上任何一个都得改旧判定代码或解冻 harness，先问用户。
@@ -348,7 +377,7 @@ S4 发现、留后续会话：
 - F9 的画像每次用满 120 次二分（约 3.8 秒）才得出"没有稳定 fix set"。S8 的探索会反复撞上这一族（见下面 S2 第 12 条），确认它是 F9 的便宜办法是第 2 档：给一个 `interventions` 为空、`behavior_shape` 为 `both` 的假设不够区分，建议 S6 用见证开关 `window_combine` 加错误类别建立假设，避免每次进第 3 档。
 - 被哈希的旧模块有二十个，含 `agents/bug_fixer.py`（第 3 档以普通函数方式调用它的 `_minimize`，不构造 agent；`import agents.bug_fixer` 会连带导入 `httpx` 与 `llm.ledger`，只在第 3 档的子进程里发生）。S12 移动旧代码时这些路径会变：harness 的 import 与 `HASHED_PATHS` 都要改，属于解冻，先问用户，改完重新生成 `gates/s04_frozen.json`。
 - `gates/s04_cases.py` 的期望值是在 DuckDB 1.5.5 / 1.1.3、DataFusion 54.0.0 / 50.0.0、PostgreSQL 16.15 上测的；`gates/s04.py` 的 isolation 组断言 F10 两条语句让子进程崩溃（Windows 上退出码 0xC0000094）。换引擎版本或换平台要同步改门槛，改之前问用户。
-- `.venv` 里没有 sqlglot。S5 开工时由编排者安装（用户已预先同意按推荐确认），装完 manifest 的 `packages.sqlglot` 自动有值；不需要改 harness。
+- 已解决：`.venv` 里装了 `sqlglot==30.21.0`（S5 开工时），manifest 的 `packages.sqlglot` 有值。换机器重建环境时要装同一版本：`ast:fn:<名>` 用的是 sqlglot 归一后的函数名，版本一变名字可能变。
 - manifest 的 `packages` 是固定名单（duckdb、datafusion、pyarrow、psycopg2-binary、sqlglot）。后续层要记别的版本，在传给 `Ledger.start_run` 的 dict 上自己加键。
 - `harness/manifest.py` 里的 PostgreSQL 默认 DSN 是从 `harness/oracles/pg_reference.py` 抄了一份的字符串；两处都已冻结，改端口要一起改（解冻）。
 - `datafusion/` 的 DF-B SQL 注释漏了正确 bag 中的 NULL，旧文件不改，留 S12；门槛按实测包含 NULL。
@@ -356,6 +385,10 @@ S4 发现、留后续会话：
 S5 发现、留后续会话：
 - harness 把重跑时退出码不同算作没有复现。Windows 上以 `exit()` 正常路径结束、而 DuckDB 工作线程还在跑的进程，约 0.5% 会以 0xC0000005 而不是原来的退出码结束（实测 400 次里 2 次；立即终止进程则 600 次全部一致）。所以一个靠正常退出路径死掉的真实引擎崩溃，有小概率被判成 `invalid / unstable_rerun`。方向是少判；harness 已冻结，没有改。S8 的长 run 里如果看到成批的 `unstable_rerun` 崩溃，先想到这一条。
 - `Registry.load` 接受顶层是裸列表的文件（`save` 写的是 `{"invented": [...]}`），忽略条目里多余的键，空正则 `""`（对任何语句都命中）能登记。未验收的特征不会进 φ，所以现在无害；S10 定验收规则时把空正则和恒真正则挡掉。
+- `framework/targets/datafusion_runner.py` 的 `_norm` 遇到浮点 NaN 或 Inf 会抛 `ValueError`，整次查询被记成出错。所以 DataFusion 上含这些值的表数据层是 `unavailable`，`data:value:non_finite` 在 DataFusion 上实际观察不到；同一个问题也会让 oracle 在这类数据上拿到执行错误。旧代码，S12 之前不改。
+- 语料分布里最大的几个单元是 `…|none|unknown`：PostgreSQL 的 308 条种子这里没有 runner（只有语句层），DuckDB 的 784 条里有 252 条 setup 被 1.5.5 拒绝。S8 用种子做探索起点时，这些种子的 φ 只有语句层，单元的后两维是占位值。
+- 单元的"计划算子类"按算子名子串归类，是照 DuckDB 的算子名写的；DataFusion 的 `HashJoinExec` 归到 `join`、`AggregateExec` 归到 `aggregate` 是碰巧子串对得上，`SortExec`、`WindowAggExec` 等要到 S8 接 DataFusion 探索时核对一遍。
+- 发明特征的正则在每次提取时对整条语句 `re.search`，没有超时。S10 接 LLM 词汇发明者时要防灾难性回溯的正则（验收前先在语料上跑一遍并计时）。
 - 语句层（`features/ast.py`）已知的小偏差，都不在被测语句的常见形态上，S8 生成探索语句时如果用到再修：`CREATE VIEW ... AS SELECT` 与 `COPY (SELECT ...) TO` 的查询被记成 `ast:subquery:scalar`；引用另一个命名窗口的命名窗口（`w2 AS (w1 ORDER BY a)`）不继承 `w1` 的规格；`INSERT ... ON CONFLICT DO UPDATE SET v = 3` 的赋值仍记成 `ast:cmp:eq`；兜底认 CTE 要求 `AS` 与括号之间有空白。
 - sqlglot 把它不认识的语句（EXPLAIN、VACUUM、COPY 等）读成不透明的 Command：语句层状态是 `ok`，特征为空，不走兜底。作用域分析失败时（`ast.py` 里两处 `except Exception`）不记相关性、状态仍是 `ok`，没有任何标记；整份种子语料上没有触发过。
 - `ast:fn:<名>` 用的是 sqlglot 归一后的函数名（`substr` → `substring`，`date_trunc` → `timestamp_trunc`），不是原文里写的名字。S6 之后写规格、S7 的 LLM 提假设时要用归一后的名字；sqlglot 升级可能改这些名字，manifest 的 `packages.sqlglot` 记着版本。
@@ -396,9 +429,19 @@ S2 新发现：
 - `framework/test_api.py` 在设置了 `DEEPSEEK_API_KEY` 时会真的调用 API；日常测试命令只跑 `testing/` 和 `tests/`。
 - `coevo/` 被 `tests/test_verified_loop.py` 依赖；它的新进程执行在 S4 被吸收，S12 再归档。
 - `framework/config.yml` 里 `database.version` 写的是 1.5.2，实际是 1.5.5；`database.old_venv` 是旧机器上的路径。
-- PLAN.md 决策表第 2、4、5、7–10 条仍是建议，到对应会话开工时再定（第 6 条本会话已采用）。
+- PLAN.md 决策表：第 5 条（φ 用 sqlglot、正则兜底）、第 4 条（单元先粗）与第 2 条里 φ 的一侧（布尔字面量加类层级）已在 S5 采用；第 2 条的版本空间一侧留给 S6；第 7–10 条仍是建议，到对应会话开工时再定（第 6 条 S4 已采用）。
 
 ### 给下一个编排者的操作提醒
+
+S5 踩到的：
+
+- **派发之后往门槛表里加的反例，执行者的 worktree 里没有。** 返工那一轮它跑的是旧表。审查时用一个从主检出区按路径加载门槛表、对着 worktree 的代码跑的脚本核对（`.orch/scratch/s5_gate_probe_check.py`），并在返工意见里把每条反例连同"必须有 / 不许有"原样列出来，要求逐条有测试。
+- **三个包首轮都过了全部门槛，每个包的问题都是读完整实现再写探测找到的。** 探测要对着"定义"写而不是对着门槛里已有的例子写：换一种写法（带括号、命名窗口、写语句、被包装的函数）往往就错了。
+- **探测脚本会过期。** 给上一个包写的静态检查（"特征包不许 import sqlglot"）到下一个包就是误报；每个包审查前先把旧脚本过一遍。
+- **编排者的 Bash 工作目录会随 `cd` 漂进 worktree**，之后环境提示会把 worktree 当成主目录。每条命令都从 `cd /d/CoevoDB` 或 `Set-Location D:\CoevoDB` 开始。
+- **用量上限会在会话中途打断。** 每次合并、每次派发之后都更新本文件并提交，中断时只多做一次 WIP 提交就能接上；恢复后先 `gw list` 与 `gw status <包号>`，不要重跑已完成的步骤。
+- 后台的 `gw review` 约 5 分钟（S5 最后一包含语料报告，约 6 分钟）；等它的时候读 diff、跑探测，结论等复跑结果出来再下。
+- `gw review` 的退出码 3 表示有红旗，不是失败；"门槛未通过"在一个会话的前几个包里是预期的（后面的组还没有实现）。
 
 S4 踩到的：
 
@@ -422,12 +465,14 @@ S2、S3 踩到的，仍然有效：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S5
+### 下一会话的起点：S6
 
-- 从 main 的 `s04-done` 建分支 `session/s05`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
-- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 275 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (4/4 passed)`（约 6 分钟）。
-- S5 做共同语言 φ（范围见 SESSIONS.md 的 S5 一节）：代码放 `framework/surprise/features/` 与 `theory/contracts.py`，不碰 `harness/`（已冻结，派发脚本会把它列入禁区）。按 ORCHESTRATION 第 8 节，先契约一包，再两包并行。
-- 开工前要定的事，用户已指示按编排者的推荐确认并记入 DECISIONS：往 `.venv` 装 sqlglot（PLAN 决策 5）；PLAN 决策 2（版本空间用 φ 字面量合取加特征类层级）与决策 4（单元粒度先粗）是否在 S5 采用。
-- harness 给 S5 的现成东西：`SqlCase`；`registry.runner_factory_for(engine)`；`execute_isolated` 可在隔离进程里跑 EXPLAIN 与数据性质查询；`ExperimentRecord.phi` 与 `spec` 是 dict，`evaluate_final` 原样入账；第 3 档的 `cve.minimize.case` 是最小化后的用例。S5 门槛要的"最小复现"可以直接用 `gates/s04_cases.py` 的用例表。
-- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`。审查测试通过数至少 275，完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
-- S4 两个包都已合并并清理，`gw list` 应全部显示 cleaned。历史 brief / report / review / 返工意见在 `docs/orch/s04/`；编排者的探测与审查脚本在 `.orch/scratch/`（不入库）。恢复时看 git log、本文件和 gw list。
+**先问用户。** 用户的自主指示只覆盖到 S5；S6 开工、S6 里要确认的事项（PLAN 决策 2 的版本空间一侧、常数 0.95 / 0.5 / 分诊阈值写进 manifest 意味着动已冻结的 manifest 常数）都要用户点头。
+
+- 从 main 的 `s05-done` 建分支 `session/s06`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
+- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 367 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (5/5 passed)`（约 5 分钟）。
+- S6 做理论 T 核心（范围见 SESSIONS.md 的 S6 一节）：假设 h、版本空间更新、R / Kᵛ / P_T、惊讶、六类分诊。代码放 `framework/surprise/theory/`，不碰 `harness/`（已冻结）。门槛要把框架文档 DF-A → DF-B 案例的确定性部分走一遍。
+- S5 给 S6 的现成东西：`extract(case)` 给出 φ；`Registry.siblings` 与 `closure` 支撑"换同类取值"和类一级的规格；`check_spec` 判实验是否落在假设的规格里；`unit_of(phi, oracle)` 是 R 的索引。DF-A 与 DF-B 的 φ 只差 `ast:set_op:except_all` / `ast:set_op:intersect_all` 一个叶子，`data:setop:left_has_dups` 是数据层的叶子（S6 门槛里"left_has_dups 进 G"用的就是它）。`ExperimentRecord.phi` 与 `spec` 是 dict，`evaluate_final` 原样入账；S2 第 6 条提醒过惊讶取到无穷大时要先截断再入账。
+- **manifest 常数已冻结**（S4）：S6 往 manifest 写理论常数属于"要改先问用户"的范围，开工前把要加的常数名与取值列给用户。`features/limits.py` 的三个常数目前不在 manifest 里。
+- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`。审查测试通过数至少 367，完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
+- S5 三个包都已合并并清理，`gw list` 应全部显示 cleaned。历史 brief / report / review / 返工意见在 `docs/orch/s05/`；编排者的探测与审查脚本在 `.orch/scratch/s5_*.py`（不入库）。恢复时看 git log、本文件和 gw list。
