@@ -11,7 +11,7 @@
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
-| S7 | Phase 3b 理论存储与接受规则 | 未开始 | | |
+| S7 | Phase 3b 理论存储与接受规则 | 进行中（见下面"进行中：S7"） | | |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
@@ -19,6 +19,30 @@
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S7（2026-10-09 开工）
+
+用户指示"继续完成 S7"。会话分支 `session/s07` 从 `s06-done-r2`（0361b75）建立；起点独立复跑 pytest 514 passed / 3 skipped，GATES PASS 6/6；PG 参照服务器在运行。接手的会话先看 `gw list` 与 `git log session/s07`，不要重跑已完成的步骤。
+
+### 拆包清单
+
+| 包号 | 目标 | 允许路径（相对 `framework/`） | 依赖 | 门槛组 | 状态 |
+|---|---|---|---|---|---|
+| s07-store | 四个新常数；`Theory` 的 `next_id` / `remove` / `reserve_id` / `passes`；`common_conjunction`；描述长度；`TheoryStore`（每个假设一个文件、严格读盘、三份只追加的日志、按代快照） | `surprise/theory/{constants,theory,vspace,length,store,__init__}.py`、`tests/test_surprise_s07_*.py`、`tests/test_surprise_s06_constants.py`（定向更新） | s06-done-r2 | `constants length theory_api store generations` | 待派发 |
+| s07-accept | 编辑（`Proposal`、声明与指纹、押注）、接受规则（触发记录、留出记录、惊讶加长度）、`Workbench`（观察、日志、押注兑付、自动回滚与级联、负记忆）、MDL（合并、收紧、拆分）、家族归并 | `surprise/theory/{edits,workbench,__init__}.py`、`tests/test_surprise_s07_*.py` | s07-store 合并之后 | `imports edits accept rollback journal mdl families ciao replay ledger` | 待派发 |
+
+门槛 `gates/s07.py` 十五组、数据表 `gates/s07_cases.py` 已在派发前写好，并在编排者不入库的参考模型（`.orch/scratch/s7/ref/`，用 `.orch/scratch/s7/run_gate_ref.py` 跑）上全部通过。两个真实引擎组（`replay`、`ledger`）共用一次回放，约 5 分钟。
+
+### 开工时定下的事（细节与理由在 DECISIONS 的 S7 条目）
+
+- 编辑不复用编号：编辑加进来的假设一律铸新编号，被替换的假设连同内容留在编辑日志里。
+- 接受规则三条同时成立才接受：触发记录上惊讶不升、留出记录上惊讶不升、（惊讶变化 + 理论长度变化）严格为负。被前两条拒绝的进负记忆，"没有收益"与"没有押注"不进。
+- 押注是"规格 + 期望标签"，一次兑付：第一条命中规格的有效实验决定它兑现还是落空；落空即回滚该编辑，并级联撤掉它之后接受的编辑（后者不进负记忆）。
+- 回滚 = 从该编辑之前封存的快照出发，把之后的观察按原次序重放；编号计数器不回退。
+- 一代 = 两次"接受编辑 / 回滚 / 检查点"之间；快照存的是一代结束时的状态。
+- 家族（用于与人工账本比划分）：有 fix set 的假设按（引擎，fix set）跨 oracle 归并；没有的，一个假设一个家族。
+- 新常数四项：`MDL_HYPOTHESIS_BITS = 8.0`、`MDL_LITERAL_BITS = 7.4`、`ACCEPT_HOLDOUT_MAX = 1000`、`ACCEPT_TOLERANCE_BITS = 1e-9`。
+- `gates/s06.py` 改了一行（新进程里打印整份常数名单，而不是按字母序的第一个），期望不变：否则任何排在 `P_CONFIRMED` 之前的新常数名都会把 S6 的门槛弄红。
 
 ## 最近完成会话：S6（2026-10-09）
 
