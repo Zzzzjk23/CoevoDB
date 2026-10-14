@@ -290,7 +290,11 @@ def test_candidates_offer_all_four_lanes_on_a_hand_bench(tmp_path) -> None:
                 target = Spec.from_dict(cand.target)
                 closure = registry.closure(phi.features)
                 missing = [lit for lit in h.specific if lit not in closure]
-                swapped = [lit for lit in missing if any(s in closure for s in registry.siblings(lit))]
+                swapped = [
+                    lit
+                    for lit in missing
+                    if any(s in closure and s not in h.specific for s in registry.siblings(lit))
+                ]
                 assert F.check_spec(phi, target, registry).ok
                 assert sorted(target.forbidden) == sorted(missing) and missing
                 assert (cand.lane == "generalize") == bool(swapped)
@@ -309,5 +313,69 @@ def test_candidates_offer_all_four_lanes_on_a_hand_bench(tmp_path) -> None:
         assert choice is not None and choice.index == 1 and choice.slot == "any"
         assert choice.scored in choice.scored_pool
         assert choice.pool["scored"] == len(choice.scored_pool)
+    finally:
+        hunt.close()
+
+
+def test_dropping_one_of_two_comparisons_is_refine_swapping_to_a_new_one_is_generalize(tmp_path) -> None:
+    """Parent has two comparisons in S. Dropping one leaves the sibling still in S (refine);
+    swapping a comparison for a value S does not hold is generalize."""
+    corpus = _tiny_corpus(tmp_path / "corpus.json")
+    parent = SqlCase(
+        engine="duckdb",
+        setup=("CREATE TABLE t(a INT)", "INSERT INTO t VALUES (1), (1), (2)"),
+        query="SELECT a FROM t WHERE a > 0 AND a <> 2",
+    )
+    hunt = Hunter(
+        engines=("duckdb",),
+        oracles=("plan_variant",),
+        seed=11,
+        corpus_path=corpus,
+    )
+    try:
+        wb = Workbench.create(tmp_path / "theory")
+        example = hunt.phi(parent)
+        out = wb.observe(example, _profiled("plan_variant"), "r1")
+        assert out.observation.opened
+        hunt.record(
+            _record(parent, "plan_variant", record_id="r1", phi=example, y="fail"),
+            rule=None,
+            prediction=out.observation.prediction,
+        )
+        pool = hunt.candidates(wb)
+        drops = [c for c in pool if c.op == "q:conj:drop"]
+        new_swaps = [c for c in pool if c.op in ("q:cmp:>->=", "q:cmp:<>->=")]
+        assert drops, {c.op: c.lane for c in pool if c.lane in ("refine", "generalize")}
+        assert new_swaps, {c.op: c.lane for c in pool if c.lane in ("refine", "generalize")}
+        assert all(c.lane == "refine" for c in drops)
+        assert all(c.lane == "generalize" for c in new_swaps)
+        hypothesis = wb.theory.get(drops[0].hypothesis_id)
+        registry = default_registry()
+        specific = set(hypothesis.specific)
+        for cand in drops:
+            phi = hunt.phi(cand.case)
+            closure = registry.closure(phi.features)
+            missing = [lit for lit in hypothesis.specific if lit not in closure]
+            swapped = [
+                (lit, sib)
+                for lit in missing
+                for sib in registry.siblings(lit)
+                if sib in closure and sib not in specific
+            ]
+            assert not swapped
+            remaining_cmp = [lit for lit in ("ast:cmp:gt", "ast:cmp:neq") if lit in specific and lit in closure]
+            assert remaining_cmp
+        for cand in new_swaps:
+            phi = hunt.phi(cand.case)
+            closure = registry.closure(phi.features)
+            missing = [lit for lit in hypothesis.specific if lit not in closure]
+            swapped = [
+                (lit, sib)
+                for lit in missing
+                for sib in registry.siblings(lit)
+                if sib in closure and sib not in specific
+            ]
+            assert swapped
+            assert "ast:cmp:eq" in closure and "ast:cmp:eq" not in specific
     finally:
         hunt.close()

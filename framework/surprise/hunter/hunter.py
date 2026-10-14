@@ -289,7 +289,7 @@ class Hunter:
                     (lit, sib)
                     for lit in missing
                     for sib in self._registry.siblings(lit)
-                    if sib in closure
+                    if sib in closure and sib not in hypothesis.specific
                 ]
                 lane = "generalize" if swapped else "refine"
                 required = reduce_conjunction(
