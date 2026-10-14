@@ -34,8 +34,8 @@
 
 | 包 | 内容 | 允许路径（相对 `framework/`） | 依赖 | 状态 |
 |---|---|---|---|---|
-| s08-hunter | Hunter：四条车道的候选、打分 `value = P_valid × (D + β·U)`、探索保底、降权、新颖性拒绝、常驻 φ 提取子进程；`theory/constants.py` 加 `BETA`（暂定 1.0） | `surprise/hunter/**`、`surprise/theory/constants.py`、`tests/test_surprise_s08_hunter*.py` | s07-done-r2 | 已派发（2026-10-15 05:08） |
-| s08-eval | 指标与基线：惊讶曲线与锯齿、家族重复率（统一的身份键）、已知 bug 召回、旧系统 no_llm 按墙钟预算跑 | `surprise/metrics/**`、`surprise/baselines/**`、`tests/test_surprise_s08_eval*.py` | s07-done-r2 | 已派发（2026-10-15 05:09，与 s08-hunter 并行） |
+| s08-hunter | Hunter：四条车道的候选、打分 `value = P_valid × (D + β·U)`、探索保底、降权、新颖性拒绝、常驻 φ 提取子进程；`theory/constants.py` 加 `BETA`（暂定 1.0） | `surprise/hunter/**`、`surprise/theory/constants.py`、`tests/test_surprise_s08_hunter*.py` | s07-done-r2 | 返工第 1 轮进行中（三处都是编排者的错：漏放钉住常数名单的旧测试、门槛里重复行的期望、泛化判定太宽；门槛已在 e2d9a5b 改好并合进该分支） |
+| s08-eval | 指标与基线：惊讶曲线与锯齿、家族重复率（统一的身份键）、已知 bug 召回、旧系统 no_llm 按墙钟预算跑 | `surprise/metrics/**`、`surprise/baselines/**`、`tests/test_surprise_s08_eval*.py` | s07-done-r2 | 已合并（8a60a37，首轮通过，返工 0 轮；572 passed / 3 skipped） |
 | s08-loop | 无 LLM 的 Diagnoser 与主循环命令行（账本、存储、进度、报告） | `surprise/diagnoser/**`、`surprise/experiments/**`、`tests/test_surprise_s08_loop*.py` | 前两包 | 说明已写好（`.orch/briefs/s08-loop.md`），待前两包合并 |
 
 前两包合并、第三包合并之后，编排者自己跑：β 预实验（独立种子）→ 定 `BETA`（与暂定值不同时另派一个只改常数的小包）→ DuckDB 1.5.5 上 3 小时长跑与同墙钟的旧系统基线（并行）→ DuckDB 1.1.3 上的召回 run → 把产物的哈希钉进 `gates/s08_runs.json` → 收尾。门槛 `gates/s08.py` 的定义与理由见 DECISIONS 的 S8 条目。
