@@ -285,8 +285,9 @@ def check_operators() -> str:
     expected_s = {"s:" + op for _s, op in mutate_setup(list(case.setup))}
     require(expected_q <= set(ops) and expected_p <= set(ops) and expected_s <= set(ops), "the old DCE operators are all reused")
     drops = {op: m for m, op in found if op.startswith("s:drop_")}
-    require(set(drops) == {"s:drop_row[1][0]", "s:drop_row[1][1]", "s:drop_row[1][2]", "s:drop_insert[1]", "s:drop_insert[2]"},
-            f"one deletion per VALUES row of a multi-row INSERT, and one per INSERT statement: {sorted(drops)}")
+    # rows 1 and 2 are the same (3, NULL): deleting either gives one case, kept once under the first label
+    require(set(drops) == {"s:drop_row[1][0]", "s:drop_row[1][1]", "s:drop_insert[1]", "s:drop_insert[2]"},
+            f"one deletion per VALUES row of a multi-row INSERT, and one per INSERT statement, duplicates once: {sorted(drops)}")
     require(drops["s:drop_row[1][1]"].setup[1] == "INSERT INTO t VALUES (1, 2), (3, NULL)"
             and drops["s:drop_row[1][0]"].setup[1] == "INSERT INTO t VALUES (3, NULL), (3, NULL)"
             and drops["s:drop_insert[2]"].setup == case.setup[:2], "deleting a row keeps the statement well formed")
@@ -369,7 +370,8 @@ def check_candidates() -> str:
                 target = Spec.from_dict(cand.target)
                 closure = registry.closure(example.features)
                 missing = sorted(lit for lit in h.specific if lit not in closure)
-                swapped = [lit for lit in missing if any(s in closure for s in registry.siblings(lit))]
+                # a swap brings in another value of the same class that S does not already hold
+                swapped = [lit for lit in missing if any(s in closure and s not in h.specific for s in registry.siblings(lit))]
                 require(F.check_spec(example, target, registry).ok and sorted(target.forbidden) == missing and missing
                         and (cand.lane == "generalize") == bool(swapped),
                         f"{cand.lane}: target {cand.target} vs missing {missing}, swapped {swapped}")
