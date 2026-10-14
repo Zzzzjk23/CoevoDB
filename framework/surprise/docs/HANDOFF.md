@@ -11,7 +11,7 @@
 | S4 | Phase 1c CVE 流水线（M1） | 完成 | s04-done | S04 9/9；pytest 275 passed, 3 skipped；GATES PASS 4/4 |
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
-| S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
+| S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
@@ -22,9 +22,9 @@
 
 ## 最近完成会话：S7（2026-10-09）
 
-Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"继续完成 S7"。会话分支 `session/s07` 从 `s06-done-r2`（0361b75）建立；起点独立复跑 514 passed, 3 skipped 与 GATES PASS 6/6。两包全部合并，收尾合并回 main，tag `s07-done`；S8 从此 tag 起。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"继续完成 S7"。会话分支 `session/s07` 从 `s06-done-r2`（0361b75）建立；起点独立复跑 514 passed, 3 skipped 与 GATES PASS 6/6。两包全部合并，收尾合并回 main，tag `s07-done`。用户验收后另打 `s07-done-r2`（只多了验收记录，代码与门槛相同）；S8 从 `s07-done-r2` 起。
 
-**用户的指示只到 S7。** S8 要不要开、S8 里需要确认的事项怎么定，等用户发话。
+**用户验收（2026-10-15）：** 用户的答复是"确认S7中的新常数和编排规则，然后开始S8"。
 
 ### 交付与门槛
 
@@ -118,7 +118,9 @@ Claude Code 担任编排者，全部实现来自 grok 工作包。用户指示"�
 - **MDL 候选**（接受与否都走同一个检验，押注用默认的"落在新 S 里的实验会失败"）：合并——同作用域、身份相同（都有 fix set 时只比 fix set；都没有时比三项画像）的一对，S 取两者的共同部分，为空不提；修复——假设的 `contradictions` 里有通过时，把正例按次序贪心分簇，使每簇的 S 不新盖住任何一条矛盾通过，一簇为收紧、多簇为拆分。`compress()` 反复应用第一条可接受的候选直到没有。
 - **归属与家族**：一条失败属于把它列在 E⁺ 里的假设（多个时取归属测试点名的，否则最早的）；有 fix set 的假设按（引擎，fix set）跨 oracle 成一个家族，没有的一个假设一个家族。
 
-### PI 已自行核查并定下的选择（用户可以推翻）
+### PI 已自行核查并定下的选择（用户已验收）
+
+**用户验收（2026-10-15）：下面六条，用户答复"确认S7中的新常数和编排规则"。** 它们从此是用户确认过的决定，不再是"编排者定、可推翻"；四个新常数的取值照旧由门槛钉住，要改先问用户。
 
 用户的指示是"继续完成 S7"；S6 交接里写着"S7 开工前要定的几件事"与新常数的取值，编排者没有另行提问，按推荐定下，依据是此前把确认事项交回编排者自行决定的约定。每一条都在 DECISIONS 里有理由。
 
@@ -746,9 +748,9 @@ S2、S3 踩到的，仍然有效：
 
 ### 下一会话的起点：S8
 
-**S8 不自行开工。** 用户的指示是"继续完成 S7"，没有说到 S8；S8 开工，以及 β 的预实验、下面列的几件要定的事，等用户发话。
+**用户验收 S7 时指示开始 S8（2026-10-15）。** β 的预实验与下面列的几件要定的事由编排者按推荐定下、记进 DECISIONS；改 S6 的规则、改冻结区仍要先问用户。
 
-- 从 main 的 `s07-done` 建分支 `session/s08`（用户验收后如果另打了 `s07-done-r2`，从它起）。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
+- 从 main 的 `s07-done-r2` 建分支 `session/s08`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
 - 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 550 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (7/7 passed)`（约 11 分钟）。
 - S8 做 Hunter 与无 LLM 闭环（范围见 SESSIONS.md 的 S8 一节，里程碑 M2）：四类候选、`value = P_valid × (D + β·U)`、探索保底、降权与新颖性拒绝采样；新主循环 Hunter → 执行与 CVE 标注 → 惊讶 → 分诊 → Diagnoser（无 LLM）→ 接受或回滚 → 更新 T。代码放 `framework/surprise/hunter/`、`diagnoser/` 等新目录，不碰 `harness/`。
 - S7 给 S8 的现成东西：主循环里用 `Workbench` 代替裸的 `Theory`，一次实验的调用顺序见 S7 一节"当前接口"；`wb.compress()` 是无 LLM 版 Diagnoser 的 MDL 一步，隔一段调用一次即可；`wb.checkpoint(note)` 按批切代，`wb.surprise_under(代号, 记录)` 给出 CIAO 的一格；`wb.partition()` 给出每条失败的家族，重复率、家族数都从它算；`P_valid = 1 − prediction.p_invalid`，`D` 取"落在某个假设待定区时为 1 比特"（`prediction.zone == "pending"`），`U` 取 `prediction.p_fail_valid` 在未探索区的值或它的熵。细化与泛化候选从假设的 S 与 G 之差生成：删一个 S 的字面量、换成同类取值（`registry.siblings`），规格用 `Spec`，核对用 `check_spec`；变异算子复用 `evolution/dce.py` 的 `mutate_query_text`、`mutate_setup`（门槛 `gates/s07.py` 的 `dce_probes` 是现成的调用样例）与 `seeds/mutate.py`。
