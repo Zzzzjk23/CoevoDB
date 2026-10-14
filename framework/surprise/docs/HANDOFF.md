@@ -12,13 +12,33 @@
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
-| S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 未开始 | | |
+| S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 进行中 | | |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中会话：S8（2026-10-15 开工）
+
+用户验收 S7 时指示"然后开始S8"。会话分支 `session/s08` 从 `s07-done-r2`（f762a66）建立；PG 服务器原先停着，按 S3 一节的命令启动（没有重新 initdb）。起点独立复跑：pytest 550 passed, 3 skipped；GATES PASS 7/7。
+
+派发前的探测（不入库，`.orch/scratch/s8/`）：
+- 旧系统 no_llm 跑 10 分钟（`main.py --mode no_llm --seed 0`，到点强杀）：39 轮，其中两段各卡了约 3.5 分钟；报了 5 条 bug，按 fix set 只有两个机制（F1 的 `deliminator, filter_pushdown` 三条、`join_order` 两条），另有 122 条被 DCE 判为已有家族的成员。σ 把 plan diff 算进键里，同一个 fix set 被报成几条。
+- 原型主循环（`proto.py`，只作可行性探测，不是规格）80 步约 3.3 分钟：每步约 2.5 秒（取 φ 约 0.7 秒、`evaluate_final` 约 1.7 秒）；第 11 步开出一个家族（plan variant，fix set `join_order`，`error_mismatch`），之后 6 条失败都落在它的待定区并被归属测试吸收；冷启动的无效率高（TLP / NoREC 拿到没有谓词的种子判 `not_applicable`，种子 setup 在 1.5.5 上报错）；DCE 的算子几乎改不动只剩三个字面量的 S，细化 / 泛化车道没有产出候选。
+- 旧系统会在某些种子上长时间占满 CPU（`DuckDBRunner.setup` 没有超时）；新框架的 φ 提取同样会执行 setup，所以候选的 φ 由常驻子进程提取并加超时。
+- 建了 `.venvs/duckdb-1.1.3-full`（uv，继承 anaconda base；duckdb 1.1.3、datafusion 54.0.0、psycopg2-binary 2.9.13、sqlglot 30.21.0、pyarrow 21.0.0、pyyaml、pytest），在 DuckDB 1.1.3 上跑整个新框架用；harness 在它下面导入正常，manifest 里引擎版本记为 1.1.3。
+
+拆包（进行中，合并一个更新一次）：
+
+| 包 | 内容 | 允许路径（相对 `framework/`） | 依赖 | 状态 |
+|---|---|---|---|---|
+| s08-hunter | Hunter：四条车道的候选、打分 `value = P_valid × (D + β·U)`、探索保底、降权、新颖性拒绝、常驻 φ 提取子进程；`theory/constants.py` 加 `BETA`（暂定 1.0） | `surprise/hunter/**`、`surprise/theory/constants.py`、`tests/test_surprise_s08_hunter*.py` | s07-done-r2 | 待派发 |
+| s08-eval | 指标与基线：惊讶曲线与锯齿、家族重复率（统一的身份键）、已知 bug 召回、旧系统 no_llm 按墙钟预算跑 | `surprise/metrics/**`、`surprise/baselines/**`、`tests/test_surprise_s08_eval*.py` | s07-done-r2 | 待派发（与 s08-hunter 并行） |
+| s08-loop | 无 LLM 的 Diagnoser 与主循环命令行（账本、存储、进度、报告） | `surprise/diagnoser/**`、`surprise/experiments/**`、`tests/test_surprise_s08_loop*.py` | 前两包 | 待派发 |
+
+前两包合并、第三包合并之后，编排者自己跑：β 预实验（独立种子）→ 定 `BETA`（与暂定值不同时另派一个只改常数的小包）→ DuckDB 1.5.5 上 3 小时长跑与同墙钟的旧系统基线（并行）→ DuckDB 1.1.3 上的召回 run → 把产物的哈希钉进 `gates/s08_runs.json` → 收尾。门槛 `gates/s08.py` 的定义与理由见 DECISIONS 的 S8 条目。
 
 ## 最近完成会话：S7（2026-10-09）
 
