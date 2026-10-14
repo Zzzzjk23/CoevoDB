@@ -38,7 +38,11 @@
 | s08-eval | 指标与基线：惊讶曲线与锯齿、家族重复率（统一的身份键）、已知 bug 召回、旧系统 no_llm 按墙钟预算跑 | `surprise/metrics/**`、`surprise/baselines/**`、`tests/test_surprise_s08_eval*.py` | s07-done-r2 | 已合并（8a60a37，首轮通过，返工 0 轮；572 passed / 3 skipped） |
 | s08-loop | 无 LLM 的 Diagnoser 与主循环命令行（账本、存储、进度、报告） | `surprise/diagnoser/**`、`surprise/experiments/**`、`tests/test_surprise_s08_loop*.py` | 前两包 | 已合并（fc17952，首轮通过，返工 0 轮；610 passed / 3 skipped） |
 
-三包都已合并（2026-10-15）。编排者自己跑（进行中，产物在 `framework/results/s08/`，不入库）：β 预实验（独立种子）→ 定 `BETA`（与暂定值不同时另派一个只改常数的小包）→ DuckDB 1.5.5 上 3 小时长跑与同墙钟的旧系统基线（并行）→ DuckDB 1.1.3 上的召回 run → 把产物的哈希钉进 `gates/s08_runs.json` → 收尾。门槛 `gates/s08.py` 的定义与理由见 DECISIONS 的 S8 条目。
+三包都已合并（2026-10-15）。编排者自己跑（进行中，产物在 `framework/results/s08/`，不入库）：
+
+- β 预实验已做完：每组 300 条、约 3–7 分钟；不同身份的家族数 β=0.5 → 1,3,3；1 → 3,3,3；2 → 3,3,3；4 → 3,5,1，按规则取 1.0（就是暂定值，不用另派包），已钉进 `gates/s08_runs.json`（121adc9）。
+- 2026-10-15 07:37 同时启动三个运行（编排者的后台任务）：`results/s08/longrun`（DuckDB 1.5.5，种子 0，180 分钟）、`results/s08/old_no_llm`（旧系统 no_llm，种子 0，180 分钟到点强杀）、`results/s08/recall113/run`（`.venvs/duckdb-1.1.3-full`，种子 0，60 分钟，不用 Version differential）。`results/s08/recall113/known.json` 已在 1.1.3 上算好（F1、F7、F7_file、F9、F6、F6_predicate 判 fail，三个身份；F2 pass、F11 invalid）。
+- 中断了的话：三个目录要整个删掉重跑（`loop` 不支持续跑，要求输出目录为空）；跑完之后用 `.orch/scratch/s8/pin.py longrun old recall` 写哈希，`recall score` 先写出 `recall.json`。β 预实验（独立种子）→ 定 `BETA`（与暂定值不同时另派一个只改常数的小包）→ DuckDB 1.5.5 上 3 小时长跑与同墙钟的旧系统基线（并行）→ DuckDB 1.1.3 上的召回 run → 把产物的哈希钉进 `gates/s08_runs.json` → 收尾。门槛 `gates/s08.py` 的定义与理由见 DECISIONS 的 S8 条目。
 
 ## 最近完成会话：S7（2026-10-09）
 
