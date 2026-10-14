@@ -44,6 +44,10 @@ ACCEPT_HOLDOUT_MAX = 1000
 # A change in surprise smaller than this, in bits, counts as no change.
 ACCEPT_TOLERANCE_BITS = 1e-9
 
+# Weight of the residual uncertainty U against the version-space disagreement D in the Hunter's value.
+# Provisional; S8 fixes it once with a pre-experiment on independent seeds (PLAN decision 8).
+BETA = 1.0
+
 
 def as_dict() -> dict[str, Any]:
     """Every public uppercase constant in this module, as a detached JSON object."""
