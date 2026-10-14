@@ -14,6 +14,7 @@ from surprise.features.registry import default_registry
 from surprise.harness.contracts import ExperimentRecord, SqlCase
 from . import constants
 from .constants import (
+    EMPTY_ROUNDS,
     EXPLORE_SEEDS_PER_STEP,
     MIGRATE_PER_STEP,
     MUTANTS_PER_STEP,
@@ -176,58 +177,65 @@ class Hunter:
     def choose(self, wb) -> Choice | None:
         self._index += 1
         slot = "explore" if is_explore_slot(self._index) else "any"
-        raw = self.candidates(wb)
         pool = {lane: 0 for lane in LANES}
         pool["rejected_known"] = 0
         pool["rejected_bad_setup"] = 0
         pool["rejected_novelty"] = 0
-        pool["scored"] = 0
-        for cand in raw:
-            pool[cand.lane] += 1
-        units = hypothesis_units(wb, self._registry)
-        scored: list[Scored] = []
-        seen_keys: set[tuple[str, str, str]] = set()
-        for cand in raw:
-            key = cand.key()
-            if key in self._done or key in seen_keys:
-                pool["rejected_known"] += 1
-                continue
-            seen_keys.add(key)
-            if tuple(cand.case.setup) in self._bad_setups:
-                pool["rejected_bad_setup"] += 1
-                continue
-            example = self.phi(cand.case)
-            phi_key = (cand.oracle, cand.rule or "", frozenset(example.features))
-            if phi_key in self._done_phi:
-                pool["rejected_novelty"] += 1
-                continue
-            recent = self._windows.get((cand.case.engine, cand.oracle), ())
-            nov = novelty(frozenset(example.features), recent)
-            if self.rng.random() >= accept_probability(nov):
-                pool["rejected_novelty"] += 1
-                continue
-            scored.append(
-                Scored(
-                    candidate=cand,
-                    phi=example,
-                    score=score(
-                        wb,
-                        example,
-                        cand.oracle,
-                        beta=self.beta,
-                        probes=self._probes,
-                        units=units,
-                    ),
+        kept: list[Scored] = []
+        scope: tuple[Scored, ...] = ()
+        for rounds in range(1, EMPTY_ROUNDS + 1):
+            raw = self.candidates(wb)
+            for cand in raw:
+                pool[cand.lane] += 1
+            units = hypothesis_units(wb, self._registry)
+            scored: list[Scored] = []
+            seen_keys: set[tuple[str, str, str]] = set()
+            for cand in raw:
+                key = cand.key()
+                if key in self._done or key in seen_keys:
+                    pool["rejected_known"] += 1
+                    continue
+                seen_keys.add(key)
+                if tuple(cand.case.setup) in self._bad_setups:
+                    pool["rejected_bad_setup"] += 1
+                    continue
+                example = self.phi(cand.case)
+                phi_key = (cand.oracle, cand.rule or "", frozenset(example.features))
+                if phi_key in self._done_phi:
+                    pool["rejected_novelty"] += 1
+                    continue
+                recent = self._windows.get((cand.case.engine, cand.oracle), ())
+                nov = novelty(frozenset(example.features), recent)
+                if self.rng.random() >= accept_probability(nov):
+                    pool["rejected_novelty"] += 1
+                    continue
+                scored.append(
+                    Scored(
+                        candidate=cand,
+                        phi=example,
+                        score=score(
+                            wb,
+                            example,
+                            cand.oracle,
+                            beta=self.beta,
+                            probes=self._probes,
+                            units=units,
+                        ),
+                    )
                 )
-            )
-        pool["scored"] = len(scored)
-        explore_scored = tuple(item for item in scored if item.candidate.lane == "explore")
-        if slot == "explore" and explore_scored:
-            scope: tuple[Scored, ...] = explore_scored
+            explore_scored = tuple(item for item in scored if item.candidate.lane == "explore")
+            if slot == "explore" and explore_scored:
+                round_scope = explore_scored
+            else:
+                round_scope = tuple(scored)
+            if round_scope:
+                kept = scored
+                scope = round_scope
+                break
         else:
-            scope = tuple(scored)
-        if not scope:
             return None
+        pool["scored"] = len(kept)
+        pool["rounds"] = rounds
         best = max(item.value for item in scope)
         ties = [item for item in scope if item.value >= best - 1e-12]
         chosen = ties[0] if len(ties) == 1 else self.rng.choice(ties)
@@ -235,7 +243,7 @@ class Hunter:
             index=self._index,
             slot=slot,
             scored=chosen,
-            scored_pool=tuple(scored),
+            scored_pool=tuple(kept),
             pool=pool,
         )
 
@@ -362,7 +370,11 @@ class Hunter:
     def _explore(self) -> list[Candidate]:
         found: list[Candidate] = []
         for engine in self.engines:
-            seeds = list(self.corpus.for_engine(engine).seeds)
+            seeds = [
+                seed
+                for seed in self.corpus.for_engine(engine).seeds
+                if tuple(seed.setup_sqls) not in self._bad_setups
+            ]
             if not seeds:
                 continue
             chosen = self.rng.sample(seeds, min(EXPLORE_SEEDS_PER_STEP, len(seeds)))

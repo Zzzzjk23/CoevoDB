@@ -129,11 +129,20 @@ def test_choose_explore_slot_ties_and_filter_counts(tmp_path) -> None:
         for _ in range(5):
             last = hunt.choose(wb)
             assert last is not None
+            assert last.pool["rounds"] == 1
             slots.append(last.slot)
         assert slots == ["any", "any", "any", "any", "explore"]
         assert last.index == 5 and last.slot == "explore"
         assert last.scored.candidate.lane == "explore"
-        assert set(last.pool) == {*LANES, "rejected_known", "rejected_bad_setup", "rejected_novelty", "scored"}
+        assert set(last.pool) == {
+            *LANES,
+            "rejected_known",
+            "rejected_bad_setup",
+            "rejected_novelty",
+            "scored",
+            "rounds",
+        }
+        assert last.pool["rounds"] == 1
         assert last.pool["scored"] == len(last.scored_pool)
         assert last.scored in last.scored_pool
         values = [item.value for item in last.scored_pool]
@@ -149,6 +158,7 @@ def test_choose_explore_slot_ties_and_filter_counts(tmp_path) -> None:
         )
         after = hunt.choose(wb)
         assert after is not None
+        assert after.pool["rounds"] == 1
         assert after.pool["rejected_known"] >= 1
 
         hunt.record(
@@ -164,8 +174,24 @@ def test_choose_explore_slot_ties_and_filter_counts(tmp_path) -> None:
                 reason="setup_error",
             )
         )
+        # Explore no longer draws a seed whose setup has failed. The choice-time
+        # filter still counts a mutant of a parent that uses that setup.
+        parent = SqlCase(
+            engine="duckdb",
+            setup=("CREATE TABLE t(a INT)", "INSERT INTO t VALUES (1), (2)"),
+            query="SELECT a FROM t WHERE a > 0 AND a <> 2",
+        )
+        example = hunt.phi(parent)
+        opened = wb.observe(example, _profiled("equivalent_query"), "r3")
+        assert opened.observation.opened
+        hunt.record(
+            _record(parent, "equivalent_query", record_id="r3", phi=example, y="fail"),
+            rule=None,
+            prediction=opened.observation.prediction,
+        )
         blocked = hunt.choose(wb)
         assert blocked is not None
+        assert blocked.pool["rounds"] == 1
         assert blocked.pool["rejected_bad_setup"] >= 1
     finally:
         hunt.close()
@@ -313,6 +339,7 @@ def test_candidates_offer_all_four_lanes_on_a_hand_bench(tmp_path) -> None:
         assert choice is not None and choice.index == 1 and choice.slot == "any"
         assert choice.scored in choice.scored_pool
         assert choice.pool["scored"] == len(choice.scored_pool)
+        assert choice.pool["rounds"] == 1
     finally:
         hunt.close()
 
@@ -377,5 +404,183 @@ def test_dropping_one_of_two_comparisons_is_refine_swapping_to_a_new_one_is_gene
             ]
             assert swapped
             assert "ast:cmp:eq" in closure and "ast:cmp:eq" not in specific
+    finally:
+        hunt.close()
+
+
+def _candidate(case: SqlCase, *, lane: str, oracle: str = "plan_variant") -> Candidate:
+    return Candidate(
+        case=case,
+        oracle=oracle,
+        rule=None,
+        lane=lane,
+        hypothesis_id=None,
+        parent=None,
+        op="seed",
+        target=None,
+    )
+
+
+def test_explore_skips_seeds_that_share_a_failed_setup(tmp_path, monkeypatch) -> None:
+    bad = ["CREATE TABLE t(a INT)", "INSERT INTO t VALUES (1), (2)"]
+    good = ["CREATE TABLE u(b INT)", "INSERT INTO u VALUES (9)"]
+    other = ["CREATE TABLE v(c INT)", "INSERT INTO v VALUES (4)"]
+    seeds = [
+        {
+            "setup_sqls": bad,
+            "query": "SELECT a FROM t WHERE a > 0",
+            "source": "test:bad-1",
+            "engine": "duckdb",
+            "tags": [],
+        },
+        {
+            "setup_sqls": good,
+            "query": "SELECT b FROM u",
+            "source": "test:good",
+            "engine": "duckdb",
+            "tags": [],
+        },
+        {
+            "setup_sqls": bad,
+            "query": "SELECT a FROM t WHERE a < 3",
+            "source": "test:bad-2",
+            "engine": "duckdb",
+            "tags": [],
+        },
+        {
+            "setup_sqls": other,
+            "query": "SELECT c FROM v",
+            "source": "test:other",
+            "engine": "duckdb",
+            "tags": [],
+        },
+        {
+            "setup_sqls": bad,
+            "query": "SELECT COUNT(*) FROM t",
+            "source": "test:bad-3",
+            "engine": "duckdb",
+            "tags": [],
+        },
+    ]
+    assert sum(seed["setup_sqls"] == bad for seed in seeds) > len(seeds) / 2
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(json.dumps(seeds), encoding="utf-8")
+    wb = Workbench.create(tmp_path / "theory")
+    hunt = Hunter(engines=("duckdb",), oracles=("plan_variant",), seed=5, corpus_path=corpus)
+    bad_setup = tuple(bad)
+    good_setup = tuple(good)
+    other_setup = tuple(other)
+    try:
+        before = hunt.candidates(wb)
+        assert any(tuple(cand.case.setup) == bad_setup for cand in before)
+        hunt.record(
+            _record(
+                SqlCase(engine="duckdb", setup=bad_setup, query="SELECT a FROM t WHERE a > 0"),
+                "plan_variant",
+                record_id="r1",
+                y="invalid",
+                reason="setup_error",
+            )
+        )
+        captured: list[list[tuple[tuple[str, ...], str]]] = []
+        real_sample = hunt.rng.sample
+
+        def capture(population, k):
+            captured.append([(tuple(seed.setup_sqls), seed.query) for seed in population])
+            return real_sample(population, k)
+
+        monkeypatch.setattr(hunt.rng, "sample", capture)
+        after = hunt.candidates(wb)
+        assert captured == [
+            [(good_setup, "SELECT b FROM u"), (other_setup, "SELECT c FROM v")]
+        ]
+        assert all(tuple(cand.case.setup) != bad_setup for cand in after)
+        assert any(tuple(cand.case.setup) == good_setup for cand in after)
+        assert any(tuple(cand.case.setup) == other_setup for cand in after)
+    finally:
+        hunt.close()
+
+
+def test_choose_uses_the_second_round_when_the_first_is_filtered_out(tmp_path, monkeypatch) -> None:
+    corpus = _tiny_corpus(tmp_path / "corpus.json")
+    wb = Workbench.create(tmp_path / "theory")
+    hunt = Hunter(engines=("duckdb",), oracles=("plan_variant",), seed=5, corpus_path=corpus)
+    case = SqlCase(
+        engine="duckdb",
+        setup=("CREATE TABLE u(b INT)", "INSERT INTO u VALUES (9)"),
+        query="SELECT b FROM u",
+    )
+    offered = _candidate(case, lane="explore")
+    calls = {"n": 0}
+
+    def same(_wb):
+        calls["n"] += 1
+        return [offered]
+
+    draws = iter((1.0, 0.0))
+    try:
+        monkeypatch.setattr(hunt, "candidates", same)
+        monkeypatch.setattr(hunt.rng, "random", lambda: next(draws))
+        choice = hunt.choose(wb)
+        assert choice is not None
+        assert calls["n"] == 2
+        assert choice.index == 1 and choice.slot == "any"
+        assert choice.scored.candidate is offered
+        assert choice.scored_pool == (choice.scored,)
+        assert choice.pool == {
+            "refine": 0,
+            "generalize": 0,
+            "migrate": 0,
+            "explore": 2,
+            "rejected_known": 0,
+            "rejected_bad_setup": 0,
+            "rejected_novelty": 1,
+            "scored": 1,
+            "rounds": 2,
+        }
+    finally:
+        hunt.close()
+
+
+def test_choose_returns_none_after_every_round_is_empty(tmp_path, monkeypatch) -> None:
+    bad = ["CREATE TABLE t(a INT)", "INSERT INTO t VALUES (1), (2)"]
+    seeds = [
+        {
+            "setup_sqls": list(bad),
+            "query": query,
+            "source": f"test:bad-{index}",
+            "engine": "duckdb",
+            "tags": [],
+        }
+        for index, query in enumerate(
+            ("SELECT a FROM t", "SELECT a FROM t WHERE a > 0", "SELECT COUNT(*) FROM t")
+        )
+    ]
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(json.dumps(seeds), encoding="utf-8")
+    wb = Workbench.create(tmp_path / "theory")
+    hunt = Hunter(engines=("duckdb",), oracles=("plan_variant",), seed=5, corpus_path=corpus)
+    calls = {"n": 0}
+    try:
+        hunt.record(
+            _record(
+                SqlCase(engine="duckdb", setup=tuple(bad), query="SELECT a FROM t"),
+                "plan_variant",
+                record_id="r1",
+                y="invalid",
+                reason="setup_error",
+            )
+        )
+        assert hunt.candidates(wb) == []
+        real = hunt.candidates
+
+        def counting(workbench):
+            calls["n"] += 1
+            return real(workbench)
+
+        monkeypatch.setattr(hunt, "candidates", counting)
+        assert hunt.choose(wb) is None
+        assert calls["n"] == constants.EMPTY_ROUNDS
+        assert hunt._index == 1
     finally:
         hunt.close()

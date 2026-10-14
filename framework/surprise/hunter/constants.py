@@ -38,6 +38,9 @@ ADJACENT_FACTOR = 2.0
 # wall-clock limit of one phi extraction in the worker process
 PHI_TIMEOUT_S = 30.0
 
+# candidate rounds one choice may draw before the Hunter gives up
+EMPTY_ROUNDS = 20
+
 
 def as_dict() -> dict[str, Any]:
     """Every public uppercase constant in this module, as a detached JSON object."""
