@@ -390,8 +390,8 @@ def check_candidates() -> str:
         values = [s.value for s in choice.scored_pool]
         require(choice.scored in choice.scored_pool and close(choice.scored.value, max(values)),
                 "the chosen candidate has the highest value among those that passed the novelty draw")
-        require(set(choice.pool) == {*C.LANES, "rejected_known", "rejected_bad_setup", "rejected_novelty", "scored"}
-                and choice.pool["scored"] == len(choice.scored_pool), f"pool counts: {choice.pool}")
+        require(set(choice.pool) == {*C.LANES, "rejected_known", "rejected_bad_setup", "rejected_novelty", "scored", "rounds"}
+                and choice.pool["scored"] == len(choice.scored_pool) and choice.pool["rounds"] == 1, f"pool counts: {choice.pool}")
     finally:
         hunt.close()
         shutil.rmtree(tmp, ignore_errors=True)
