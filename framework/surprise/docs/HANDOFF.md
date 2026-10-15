@@ -32,10 +32,11 @@
 |---|---|---|---|---|
 | 1 | s10-frame | `roles/base.py` 插件协议、`runtime.py` 六个角色懒加载、S10 常数、Hunter 的 `prior` / `extra_rules` / `registry`、主循环的开关 / 事件 / 库变量 / `--vocabulary` | `roles/{base,runtime,constants,__init__}.py`、`hunter/` 五个文件、`experiments/loop.py` | 已合并 243af6e（首轮通过） |
 | 1 | s10-harness | 第二层改写规则库：模板、库文件、参照引擎前提 | `harness/oracles/{rewrites,equivalent_query}.py` | 已合并 3502033（首轮通过）；重新冻结 477d6eb |
-| 2 | s10-prior | 探索先验与 Brier 校准 | `roles/prior.py` | 运行中 |
-| 2 | s10-oracle | oracle 发明者：模板提议、多引擎验收、写库 | `roles/oracle_inventor.py` | 运行中 |
-| 3 | s10-translator | 迁移翻译者 | `roles/translator.py` | 未开始 |
-| 3 | s10-vocab | 词汇发明者与留出验收 | `roles/vocab_inventor.py`、`features/registry.py` | 未开始 |
+| 2 | s10-prior | 探索先验与 Brier 校准 | `roles/prior.py` | 已合并 78c7ffe（返工 1 轮） |
+| 2 | s10-oracle | oracle 发明者：模板提议、多引擎验收、写库 | `roles/oracle_inventor.py` | 已合并 d9f77cf（首轮通过） |
+| 3 | s10-translator | 迁移翻译者 | `roles/translator.py` | 运行中 |
+| 3 | s10-vocab | 词汇发明者与留出验收 | `roles/vocab_inventor.py`、`features/registry.py` | 运行中 |
+| 计划外 | s10-testfix | frame 的一条测试不再依赖角色模块是否存在、执行次序 | `tests/test_surprise_s10_frame.py` | 已合并 fe31e6a（首轮通过） |
 
 之后编排者做：~~合并 harness 包后重新生成 `gates/s04_frozen.json`~~（已做）；S8 的 3 小时长跑已在重跑（角色全关，`results/s08/longrun`，旧的挪到 `longrun-s9code`），跑完用 `.orch/scratch/s8/pin.py longrun` 重钉；录 `gates/s10_llm/translator`（F2 从 DuckDB 翻到 DataFusion）与 `gates/s10_llm/m3`（六个角色全开的 DataFusion 短跑）。
 
