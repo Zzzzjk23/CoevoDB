@@ -39,7 +39,7 @@ IMPLEMENTER_TIER = "fast"
 IMPLEMENTER_TEMPERATURE = 0.2
 
 # Maximum tokens the implementer asks the model for.
-IMPLEMENTER_MAX_TOKENS = 2000
+IMPLEMENTER_MAX_TOKENS = 8000
 
 # Times the implementer may call the gateway for one spec.
 IMPLEMENTER_ATTEMPTS = 2
@@ -54,7 +54,7 @@ CONJECTURER_TIER = "fast"
 CONJECTURER_TEMPERATURE = 0.6
 
 # Maximum tokens the conjecturer asks the model for.
-CONJECTURER_MAX_TOKENS = 8000
+CONJECTURER_MAX_TOKENS = 16000
 
 # Predictions the conjecturer may keep from one reply.
 CONJECTURER_MAX_PREDICTIONS = 5

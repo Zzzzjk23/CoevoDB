@@ -53,22 +53,24 @@ class ImplementerSource:
         self._on_attempt = on_attempt
         self._done: set[str] = set()
         self._served: set[int] = set()
+        self._ok: list[Any] = []
 
     def candidates(self, wb: Any, *, index: int, round: int) -> list:
-        """At most ``per_choice`` new specs on the first round of this index.
+        """Every ok attempt so far, in attempt order, on every call.
 
-        A later round does not mark the index. An index already served returns
-        nothing. Specs already implemented are skipped and do not count.
+        A new spec is implemented only on round 1 of an index that has not been
+        served, and at most ``per_choice`` of them. A later round does not mark
+        the index. The Hunter drops cases it has already run; this source does not.
         """
-        if round > 1:
-            return []
-        if index in self._served:
-            return []
-        self._served.add(index)
+        if round <= 1 and index not in self._served:
+            self._served.add(index)
+            self._implement_new(wb, index)
+        return list(self._ok)
+
+    def _implement_new(self, wb: Any, index: int) -> None:
         from surprise.hunter.hunter import Candidate
         from surprise.hunter.operators import oracle_options
 
-        produced: list[Any] = []
         made = 0
         for item in self._queue(wb):
             if made >= self._per_choice:
@@ -91,7 +93,7 @@ class ImplementerSource:
                 if not options:
                     continue
                 rule = options[0][1]
-            produced.append(
+            self._ok.append(
                 Candidate(
                     case=attempt.case,
                     oracle=oracle,
@@ -103,7 +105,6 @@ class ImplementerSource:
                     target=attempt.spec,
                 )
             )
-        return produced
 
     def _queue(self, wb: Any) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []

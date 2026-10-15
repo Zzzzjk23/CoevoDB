@@ -209,9 +209,11 @@ def test_candidates_serve_bets_then_boundaries_once(tmp_path: Path) -> None:
     assert found[0].case.query == "SELECT 1"
     assert found[0].rule is None and found[0].oracle == "plan_variant"
     assert found[0].target["forbidden"] == ["ast:clause:where"]
-    assert source.candidates(opened["wb"], index=0, round=1) == []
-    assert source.candidates(opened["wb"], index=7, round=2) == []
-    assert source.candidates(opened["wb"], index=7, round=1) == []
+    assert source.candidates(opened["wb"], index=0, round=1) == found
+    assert 7 not in source._served
+    assert source.candidates(opened["wb"], index=7, round=2) == found
+    assert 7 not in source._served
+    assert source.candidates(opened["wb"], index=7, round=1) == found
     lines = (tmp_path / "run" / "llm" / "implementer.jsonl").read_text(encoding="utf-8").splitlines()
     logged = [json.loads(line) for line in lines]
     assert [(row["lane"], row["index"], row["status"]) for row in logged] == [
@@ -233,6 +235,53 @@ def test_candidates_serve_bets_then_boundaries_once(tmp_path: Path) -> None:
     assert quiet.sources[0].candidates(single["wb"], index=0, round=1) == []
     assert quiet.sources[0]._served == {0}
     assert Script(select_sql).calls == []
+
+
+def test_an_unselected_candidate_stays_until_the_hunter_has_run_it(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from surprise.harness.contracts import ExperimentRecord
+    from surprise.hunter.hunter import Hunter
+
+    opened = open_family(tmp_path / "fam", ("ast:stmt:select", "ast:clause:where"))
+    hypothesis_id = opened["outcome"].observation.opened
+    bet = Spec(
+        engine="duckdb", oracle="plan_variant", required=("ast:stmt:select",), forbidden=("ast:clause:where",)
+    ).to_dict()
+    script = Script(select_sql)
+    made = roles(tmp_path, script)
+    source = made.sources[0]
+    source.book.add(
+        Conjecture(
+            conjecture_id="c1", record_id="rec-1", hypothesis_id=hypothesis_id, engine="duckdb", oracle="plan_variant",
+            status="registered", reason=None, mechanism="m", trigger=("ast:stmt:select",),
+            predictions=({"spec": bet, "expect": "fail", "why": "bet"},),
+            dropped=(), edit_id=None, accepted=None, edit_reason=None, key=None, sources=(),
+        )
+    )
+    first = source.candidates(opened["wb"], index=0, round=1)
+    assert len(first) == 1 and first[0].case.query == "SELECT 1"
+    sent = len(script.calls)
+    later = source.candidates(opened["wb"], index=3, round=2)
+    assert later == first and len(script.calls) == sent
+    record = ExperimentRecord(
+        record_id="r1",
+        run_id="s09-roles",
+        seq=1,
+        case=first[0].case,
+        label=Label(y="pass", oracle=first[0].oracle),
+        purpose="test",
+        created_at="2020-01-01T00:00:00+00:00",
+    )
+    hunt = Hunter(engines=("duckdb",), oracles=("plan_variant",), seed=1)
+    try:
+        hunt.record(record, rule=first[0].rule)
+        offered = replace(first[0], lane="explore")
+        hunt.candidates = lambda wb: [offered]
+        assert hunt.choose(opened["wb"]) is None
+        assert source.candidates(opened["wb"], index=3, round=2) == first
+    finally:
+        hunt.close()
 
 
 def test_equivalent_query_uses_the_first_rule_and_drops_a_case_with_none(tmp_path: Path) -> None:

@@ -346,7 +346,9 @@ def test_package_exports_and_does_not_load_transport() -> None:
     assert R.Reply is Reply
     assert R.TransportError is TransportError
     assert "transport" not in R.__all__
-    assert not hasattr(R, "Implementer")
+    from surprise.roles.implementer import Implementer as ImplementerClass
+
+    assert R.Implementer is ImplementerClass
     probe = (
         "import json, sys\n"
         "import surprise.roles, surprise.roles.gateway, surprise.roles.cache, "

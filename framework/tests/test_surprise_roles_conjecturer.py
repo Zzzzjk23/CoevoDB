@@ -258,6 +258,19 @@ def test_source_selection_merges_caps_and_skips_unreadable() -> None:
     assert len(duck) == 4
     assert [item.path for item in duck] == [DUCKDB_OPTIMIZER_FILES[name] for name in names[:4]]
     assert sum(item.end - item.start + 1 for item in duck) == 400
+    assert [item.end for item in duck] == [100, 100, 100, 100]
+    one_path = DUCKDB_OPTIMIZER_FILES["filter_pushdown"]
+    one = select_sources(
+        "duckdb",
+        SimpleNamespace(interventions=("filter_pushdown",)),
+        None,
+        {"duckdb": FakeReader({one_path: [f"row {i}" for i in range(1, 501)]})},
+    )
+    assert len(one) == 1 and one[0].path == one_path and one[0].start == 1 and one[0].end == 400
+    two_names = ("expression_rewriter", "filter_pullup")
+    two_files = {DUCKDB_OPTIMIZER_FILES[name]: [f"row {i}" for i in range(1, 501)] for name in two_names}
+    pair = select_sources("duckdb", SimpleNamespace(interventions=two_names), None, {"duckdb": FakeReader(two_files)})
+    assert [item.end for item in pair] == [200, 200]
     assert select_sources("missing", hypothesis, phi, {}) == ()
     assert select_sources("duckdb", SimpleNamespace(interventions=("extension",)), None, {"duckdb": FakeReader({})}) == ()
 

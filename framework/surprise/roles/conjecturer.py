@@ -33,8 +33,6 @@ from .gateway import Gateway
 from .source import Snippet, SourceError
 from .sources_map import DATAFUSION_SOURCE_RULES, DUCKDB_OPTIMIZER_FILES
 
-# Lines of a DuckDB optimizer file taken from the top. Four of these fill the line budget.
-_DUCKDB_HEAD = 100
 # Lines of context on each side of a DataFusion hit. Window and aggregate overlap; a
 # set-operation hit a hundred lines later stays its own span unless the gap is one line.
 _FEATURE_RADIUS = 45
@@ -310,9 +308,10 @@ def _pack(reader: Any, spans: list[tuple[str, int, int]]) -> tuple[Snippet, ...]
 def select_sources(engine: str, hypothesis: Any, phi: Any, readers: Any) -> tuple[Snippet, ...]:
     """Read-only snippets for one failure. A missing checkout yields an empty tuple.
 
-    DuckDB with a fix set walks the optimizer map in enum order and reads each
-    file from the top. DataFusion, and a DuckDB hypothesis with an empty fix
-    set, walk the feature-prefix table. Unreadable paths are skipped.
+    DuckDB with a fix set walks the optimizer map in enum order. The first
+    ``SOURCE_MAX_FILES`` hits each contribute their share of the line budget,
+    from line 1. DataFusion, and a DuckDB hypothesis with an empty fix set,
+    walk the feature-prefix table. Unreadable paths are skipped.
     """
     if not readers or engine not in readers:
         return ()
@@ -320,7 +319,7 @@ def select_sources(engine: str, hypothesis: Any, phi: Any, readers: Any) -> tupl
     interventions = tuple(getattr(hypothesis, "interventions", ()) or ())
     if engine == "duckdb" and interventions:
         wanted = set(interventions)
-        spans: list[tuple[str, int, int]] = []
+        paths: list[str] = []
         for name, path in DUCKDB_OPTIMIZER_FILES.items():
             if name not in wanted:
                 continue
@@ -329,8 +328,12 @@ def select_sources(engine: str, hypothesis: Any, phi: Any, readers: Any) -> tupl
                     continue
             except SourceError:
                 continue
-            spans.append((path, 1, _DUCKDB_HEAD))
-        return _pack(reader, spans)
+            paths.append(path)
+        paths = paths[:SOURCE_MAX_FILES]
+        if not paths:
+            return ()
+        head = SOURCE_MAX_LINES // len(paths)
+        return _pack(reader, [(path, 1, head) for path in paths])
     features = _feature_ids(phi)
     cache: dict[tuple[str, str], tuple] = {}
     raw: list[tuple[str, int, int]] = []
@@ -491,7 +494,7 @@ def conjecturer_prompt(
             '"prediction": [{"required": ["feature_id"], "forbidden": [], "data_properties": [], '
             '"expect": "fail", "why": "what this experiment shows"}]}',
             "mechanism is one sentence. Name the operator or function in the snippets when you have them.",
-            "Write the JSON object first. Use at most two predictions. Do not analyse at length before the JSON.",
+            "Write the JSON object first. Do not analyse at length before the JSON.",
             "trigger is the conjunction of feature ids required to hit the bug. Every id must be one of the failure features above. Use at least one.",
             "prediction is a non-empty list of experiments that have not been run. Each one is a spec plus the label you expect.",
             "Put feature ids in required and forbidden. Leave data_properties as an empty list.",
