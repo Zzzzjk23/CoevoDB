@@ -15,10 +15,26 @@
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
-| S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
+| S11 | Phase 6 评估管线（M4 冒烟） | 进行中 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中会话：S11（2026-10-16 开工）
+
+用户的指示是"继续完成S11"。会话分支 `session/s11` 从 `s10-done-r2`（c0a9737）建立；起点独立复跑 774 passed / 3 skipped，GATES PASS 10/10。门槛 `gates/s11.py`（17 组）在派发前提交。设计决定见 DECISIONS 的 S11 各条（RQ 定义的来源、跨臂家族口径、指标常数、CIAO、冻结与配对、纯 LLM、去重对比、覆盖度量、SQLancer 转录、RQ6 真值、统计、时限）。
+
+| 包 | 内容 | 波 | 允许路径（摘要） | 状态 |
+|---|---|---|---|---|
+| s11-fixes | 存储写盘重试、主循环保留原始异常、请求总时限、metrics 认扩展词表 | 1 | `theory/store.py`、`experiments/loop.py`、`roles/transport.py`、`roles/constants.py`、`metrics/dups.py`、`metrics/recall.py` | 已派发 |
+| s11-runmetrics | 单次运行的 RQ1–RQ6 指标、CIAO、边界吻合、划分一致性 | 1 | `metrics/constants.py`、`rundata.py`、`rq.py`、`boundary.py`、`partition.py`、`data/fix_conditions.json` | 已派发 |
+| s11-purellm | 纯 LLM 对照组 | 1 | `baselines/pure_llm.py` | 已派发 |
+| s11-arms | 冻结理论 / Diagnoser、随机 Hunter、`--theory-from`、`--select-from` | 2 | `experiments/loop.py`、`hunter/hunter.py`、`diagnoser/diagnoser.py`、`theory/workbench.py`、`theory/store.py` | 待第一波合并 |
+| s11-grid | 实验网格、原 CoevoDB 的 mode、SQLancer 转录 | 2 | `experiments/grid.py`、`baselines/old_no_llm.py`、`baselines/sqlancer.py`、`baselines/data/` | 待第一波合并 |
+| s11-dedup | 离线去重对比、上游回归测试重放 | 2 | `metrics/dedup.py`、`metrics/coverage.py` | 待第一波合并 |
+| s11-report | 统计检验、`python -m surprise.metrics.report` 与 7 张图 | 3 | `metrics/stats.py`、`metrics/report.py` | 待第二波合并 |
+
+全部合并之后：编排者用真实调用录 `gates/s11_llm/pure_llm`（门槛 `pure_llm` 组）；单独重跑 3 小时长跑并按 S8 验收的办法重钉（本会话改了 `experiments/`、`hunter/`、`diagnoser/`、`theory/`）。
 
 ## 最近完成会话：S10（2026-10-16）
 
