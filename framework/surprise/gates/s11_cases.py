@@ -21,7 +21,7 @@ PURE_LLM_CONSTANTS = {
     "PURE_LLM_TIER": "fast",
     "PURE_LLM_TEMPERATURE": 0.8,
     "PURE_LLM_MAX_TOKENS": 16000,
-    "PURE_LLM_CASES_PER_CALL": 8,
+    "PURE_LLM_CASES_PER_CALL": 4,   # 8 cases left no room in 16000 tokens: 3 of 4 recorded replies were cut (S11)
 }
 PURE_LLM_MIN_TOPICS = 8
 
@@ -91,7 +91,7 @@ LLM_RUN = {"seed": 0, "experiments": 14, "engines": ("datafusion",),
            "roles": ("implementer", "conjecturer", "prior", "translator", "vocab_inventor", "oracle_inventor"),
            "bootstrap": (("DF-A", "cross_dbms"),)}
 # The recorded pure-LLM run (gates/s11_llm/pure_llm), replayed offline.
-PURE_RUN = {"seed": 0, "engine": "duckdb", "experiments": 16, "max_calls": 4}
+PURE_RUN = {"seed": 0, "engine": "duckdb", "experiments": 16, "max_calls": 6}
 # Rows of progress.jsonl that the replay must reproduce exactly (elapsed_s is dropped).
 
 # ---- coverage ----------------------------------------------------------------------------------
