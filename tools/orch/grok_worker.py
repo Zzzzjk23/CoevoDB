@@ -58,7 +58,11 @@ DEFAULT_MAX_REWORK = 2
 DEFAULT_TEST_TIMEOUT_MIN = 30
 
 # Never visible to the executor or to the code it wrote (review re-runs).
+# The one exception (user's decision, S9, 2026-10-15): a package spawned with
+# `--llm-key N` gets the key in its grok process, plus LLM_CAP_ENV = N, the
+# ceiling on real calls that the S9 gateway honours. Review re-runs never get it.
 STRIP_ENV = ("DEEPSEEK_API_KEY",)
+LLM_CAP_ENV = "SURPRISE_LLM_MAX_CALLS"
 
 ROLE_LINE = "角色：执行者"
 SPAWN_PROMPT = "读 .orch/brief.md，按其中说明完成工作包"
@@ -489,6 +493,12 @@ def supervise(pkg: str, n: int) -> int:
     worktree = Path(state["worktree"])
     env, _ = child_env(worktree)
     env["GROK_DISABLE_AUTOUPDATER"] = "1"
+    cap = state.get("llm_max_calls")
+    if cap is not None:
+        key = llm_key()
+        if key:
+            env["DEEPSEEK_API_KEY"] = key
+        env[LLM_CAP_ENV] = str(cap)
     record = {
         "pkg": pkg, "run": n, "kind": run["kind"],
         "supervisor_pid": os.getpid(), "supervisor_token": proc_token(os.getpid()),
@@ -505,6 +515,7 @@ def supervise(pkg: str, n: int) -> int:
             "envStripped": list(STRIP_ENV),
             "wasSetInParent": bool(run.get("key_was_set")),
             "childEnvHas": {k: any(e.upper() == k for e in env) for k in STRIP_ENV},
+            "llmMaxCalls": cap,
         })
         try:
             proc = subprocess.Popen(
@@ -809,11 +820,15 @@ def cmd_spawn(args) -> int:
         "log": str(logs / f"{pkg}.jsonl"),
         "stderr_log": str(logs / f"{pkg}.stderr.log"),
         "refs_at_spawn": snapshot, "runs": [],
+        "llm_max_calls": args.llm_key,
     }
     print(f"package   {pkg}")
     print(f"worktree  {rel(worktree)} on {branch} from {args.base} ({base_sha[:12]})")
     print(f"session   {state['session_id']}")
     print(f"log       {rel(state['log'])}")
+    if args.llm_key is not None:
+        found = "found" if llm_key() else "NOT FOUND, the package runs without it"
+        print(f"llm key   given to grok ({found}); {LLM_CAP_ENV}={args.llm_key}")
     if not state["allow_paths"]:
         print("note      brief has no ```allow-paths block; review will only "
               "check the protected paths")
@@ -1005,10 +1020,33 @@ def mask(token: str) -> str:
     return f"{token[:3]}…({len(token)} chars)"
 
 
+def llm_key() -> str | None:
+    """The DeepSeek key: this process's environment, else (Windows) the user's
+    persistent environment, so the user can set it without restarting the
+    orchestrator. Never printed or logged."""
+    value = os.environ.get("DEEPSEEK_API_KEY", "")
+    if value:
+        return value
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as handle:
+                value, _ = winreg.QueryValueEx(handle, "DEEPSEEK_API_KEY")
+        except OSError:
+            return None
+        return value or None
+    return None
+
+
 def scan_secrets(lines) -> list[tuple[str, str]]:
     """(where, description) for each suspicious line; values are never echoed."""
     hits = []
+    key = llm_key()
+    exact = key if key and len(key) >= 8 else None
     for where, text in lines:
+        if exact and exact in text:
+            hits.append((where, "the DeepSeek key itself"))
+            continue
         for label, pattern in SECRET_RES:
             match = pattern.search(text)
             if match:
@@ -1519,6 +1557,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="refuse when this many packages are running (default %(default)s)")
     p.add_argument("--no-trust", action="store_true",
                    help="do not pass --trust (grok then skips CLAUDE.md in the worktree)")
+    p.add_argument("--llm-key", type=int, metavar="N",
+                   help="give this package's grok DEEPSEEK_API_KEY and "
+                        f"{LLM_CAP_ENV}=N (all its runs; review re-runs never get it)")
     run_options(p)
     p.set_defaults(func=cmd_spawn)
 

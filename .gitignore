@@ -19,3 +19,6 @@ framework/artifacts/
 .env
 secrets.env
 api-keys.yml
+
+# Engine source checkouts for the S9 conjecturer (read-only, shallow clones)
+.src/

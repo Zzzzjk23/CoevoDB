@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -33,6 +34,21 @@ _FRAMEWORK = Path(__file__).resolve().parents[2]
 _DEFAULT_CORPUS = _FRAMEWORK / "seeds" / "corpus.json"
 
 LANES = ("refine", "generalize", "migrate", "explore")
+
+
+def _accepts_round(method: object) -> bool:
+    """Whether ``method(wb, round=n)`` is a legal call.
+
+    ``Hunter.candidates`` takes ``round``. A replacement of ``wb`` only, which
+    the S8 tests install, does not.
+    """
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+    if "round" in parameters:
+        return True
+    return any(item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values())
 
 
 def _names(value: object, name: str) -> tuple[str, ...]:
@@ -120,6 +136,7 @@ class Hunter:
         beta: float | None = None,
         corpus_path=None,
         extractor: PhiExtractor | None = None,
+        sources=(),
     ) -> None:
         self.engines = _names(engines, "engines")
         self.oracles = _names(oracles, "oracles")
@@ -138,6 +155,7 @@ class Hunter:
         self._windows: dict[tuple[str, str], list[frozenset[str]]] = {}
         self._bad_setups: set[tuple[str, ...]] = set()
         self._probes: dict[str, int] = {}
+        self.sources = tuple(sources)
 
     def phi(self, case: SqlCase) -> Phi:
         return self._extractor.extract(case)
@@ -167,11 +185,13 @@ class Hunter:
             hid = prediction.hypothesis_id
             self._probes[hid] = self._probes.get(hid, 0) + 1
 
-    def candidates(self, wb) -> list[Candidate]:
+    def candidates(self, wb, *, round: int = 1) -> list[Candidate]:
         found: list[Candidate] = []
         found.extend(self._refine_generalize(wb))
         found.extend(self._migrate(wb))
         found.extend(self._explore())
+        for source in self.sources:
+            found.extend(source.candidates(wb, index=self._index, round=round))
         return found
 
     def choose(self, wb) -> Choice | None:
@@ -184,9 +204,14 @@ class Hunter:
         kept: list[Scored] = []
         scope: tuple[Scored, ...] = ()
         for rounds in range(1, EMPTY_ROUNDS + 1):
-            raw = self.candidates(wb)
+            # Pass round when the callable accepts it. A one-argument replacement still runs.
+            method = self.candidates
+            if _accepts_round(method):
+                raw = method(wb, round=rounds)
+            else:
+                raw = method(wb)
             for cand in raw:
-                pool[cand.lane] += 1
+                pool[cand.lane] = pool.get(cand.lane, 0) + 1
             units = hypothesis_units(wb, self._registry)
             scored: list[Scored] = []
             seen_keys: set[tuple[str, str, str]] = set()

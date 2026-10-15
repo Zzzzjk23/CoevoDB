@@ -1,0 +1,368 @@
+{
+ "specs": 30,
+ "first_ok": 29,
+ "final_ok": 30,
+ "first_rate": 0.9666666666666667,
+ "final_rate": 1.0,
+ "by_kind": {
+  "whole": {
+   "specs": 10,
+   "first_ok": 9,
+   "final_ok": 10
+  },
+  "core": {
+   "specs": 10,
+   "first_ok": 10,
+   "final_ok": 10
+  },
+  "boundary": {
+   "specs": 10,
+   "first_ok": 10,
+   "final_ok": 10
+  }
+ },
+ "rows": [
+  {
+   "id": "F1/whole",
+   "status": "ok",
+   "tries": 2,
+   "first_ok": false,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F1/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F1/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F2/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F2/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F2/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F7/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F7/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F7/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F9/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F9/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F9/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F11/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F11/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "F11/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-A/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-A/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-A/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-B/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-B/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-B/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-D/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-D/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-D/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-F/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-F/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-F/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-I/whole",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-I/core",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  },
+  {
+   "id": "DF-I/boundary",
+   "status": "ok",
+   "tries": 1,
+   "first_ok": true,
+   "ok": true,
+   "missing": [],
+   "forbidden": [],
+   "undetermined": [],
+   "expect": "pass"
+  }
+ ],
+ "calls": {
+  "calls": 31,
+  "network": 31,
+  "cache": 0,
+  "ok": 30,
+  "rejected": 1,
+  "blocked": 0,
+  "miss": 0,
+  "error": 0,
+  "input_tokens": 19599,
+  "output_tokens": 52933
+ }
+}

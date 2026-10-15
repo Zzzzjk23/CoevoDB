@@ -1,0 +1,109 @@
+{
+ "conjecture_id": "c1",
+ "record_id": "s09-dfa:1",
+ "hypothesis_id": "h1",
+ "engine": "datafusion",
+ "oracle": "cross_dbms",
+ "status": "registered",
+ "reason": null,
+ "mechanism": "LogicalPlanBuilder::intersect_or_except implements EXCEPT ALL as a LeftAnti hash join with NullEqualsNull, so it removes every left row having any match instead of subtracting one right occurrence per duplicate.",
+ "trigger": [
+  "ast:set_op:except_all",
+  "ast:stmt:select",
+  "data:setop:left_has_dups"
+ ],
+ "predictions": [
+  {
+   "spec": {
+    "engine": "datafusion",
+    "oracle": "cross_dbms",
+    "required": [
+     "ast:set_op:except_all",
+     "ast:stmt:select",
+     "data:setop:left_has_dups",
+     "data:table:dup_rows",
+     "data:type:integer"
+    ],
+    "forbidden": [
+     "data:setop:left_has_null",
+     "data:setop:right_has_null",
+     "data:table:has_null"
+    ],
+    "data_properties": []
+   },
+   "expect": "fail",
+   "why": "With t=(1,1) and u=(1), EXCEPT ALL should keep one 1, but the LeftAnti join removes both occurrences."
+  },
+  {
+   "spec": {
+    "engine": "datafusion",
+    "oracle": "cross_dbms",
+    "required": [
+     "ast:set_op:except_all",
+     "ast:stmt:select",
+     "data:setop:left_has_null",
+     "data:setop:right_has_null",
+     "data:table:has_null",
+     "data:type:integer"
+    ],
+    "forbidden": [
+     "data:setop:left_has_dups",
+     "data:table:dup_rows"
+    ],
+    "data_properties": []
+   },
+   "expect": "pass",
+   "why": "With t=(1,2,NULL) and u=(1,2,NULL), no left duplicates means anti-join removal matches EXCEPT ALL."
+  },
+  {
+   "spec": {
+    "engine": "datafusion",
+    "oracle": "cross_dbms",
+    "required": [
+     "ast:set_op:except_all",
+     "ast:stmt:select",
+     "data:setop:left_has_dups",
+     "data:setop:left_has_null",
+     "data:setop:right_has_null",
+     "data:table:dup_rows",
+     "data:table:has_null",
+     "data:type:integer"
+    ],
+    "forbidden": [],
+    "data_properties": []
+   },
+   "expect": "fail",
+   "why": "With t=(NULL,NULL) and u=(NULL), EXCEPT ALL should return one NULL, but NullEqualsNull anti join removes both."
+  },
+  {
+   "spec": {
+    "engine": "datafusion",
+    "oracle": "cross_dbms",
+    "required": [
+     "ast:set_op:except_all",
+     "ast:stmt:select",
+     "data:setop:left_has_dups",
+     "data:table:dup_rows",
+     "data:table:empty",
+     "data:type:integer"
+    ],
+    "forbidden": [
+     "data:setop:left_has_null",
+     "data:setop:right_has_null",
+     "data:table:has_null"
+    ],
+    "data_properties": []
+   },
+   "expect": "pass",
+   "why": "With t=(1,1) and u empty, no right match exists, so anti join keeps duplicates and matches EXCEPT ALL."
+  }
+ ],
+ "dropped": [],
+ "edit_id": "e1",
+ "accepted": true,
+ "edit_reason": null,
+ "key": "a756ef7620d063d6bee1fc6d4ffd66863f9103c18f9b188fbca6bf0fce46a098",
+ "sources": [
+  "datafusion:datafusion/expr/src/logical_plan/builder.rs:1332-1422"
+ ]
+}
