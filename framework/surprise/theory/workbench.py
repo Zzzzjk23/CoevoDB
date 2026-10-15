@@ -27,7 +27,7 @@ from .edits import (
     default_bets,
 )
 from .predict import Prediction, surprise_bits
-from .store import TheoryStore
+from .store import StoreError, TheoryStore
 from .theory import Observation, Theory
 from .vspace import common_conjunction, covers, generalize, reduce_conjunction
 
@@ -124,10 +124,24 @@ class Workbench:
         self._edit_ids: list[str] = []
 
     @classmethod
-    def create(cls, root: str | Path, registry: Registry | None = None) -> Workbench:
-        """A new store and an empty theory."""
+    def create(
+        cls,
+        root: str | Path,
+        registry: Registry | None = None,
+        theory: Theory | None = None,
+    ) -> Workbench:
+        """A new store and an empty theory, or ``theory`` when one is given.
+
+        A given theory is the live state. The new store's journal and edit log
+        stay empty, and the open generation stays 0.
+        """
         active = default_registry() if registry is None else registry
         store = TheoryStore.create(root, active)
+        if theory is None:
+            return cls(store, store.load(), active)
+        if not isinstance(theory, Theory):
+            raise StoreError(f"theory: expected a Theory, got {type(theory).__name__}")
+        store.save(theory)
         return cls(store, store.load(), active)
 
     @classmethod
