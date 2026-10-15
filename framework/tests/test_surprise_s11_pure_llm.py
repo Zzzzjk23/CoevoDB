@@ -73,7 +73,7 @@ def _records(out: Path):
 def test_constants_match_the_planned_values() -> None:
     assert PURE_LLM_TIER == "fast" and type(PURE_LLM_TIER) is str
     assert PURE_LLM_TEMPERATURE == 0.8 and type(PURE_LLM_TEMPERATURE) is float
-    assert PURE_LLM_MAX_TOKENS == 16000 and type(PURE_LLM_MAX_TOKENS) is int
+    assert PURE_LLM_MAX_TOKENS == 32000 and type(PURE_LLM_MAX_TOKENS) is int
     assert PURE_LLM_CASES_PER_CALL == 4 and type(PURE_LLM_CASES_PER_CALL) is int
     assert isinstance(PURE_LLM_TOPICS, tuple)
     assert len(PURE_LLM_TOPICS) >= 8 and len(set(PURE_LLM_TOPICS)) == len(PURE_LLM_TOPICS)
@@ -82,34 +82,68 @@ def test_constants_match_the_planned_values() -> None:
 
 
 def test_prompt_states_the_predicate_splice(tmp_path: Path) -> None:
+    oracles = (
+        "tlp",
+        "norec",
+        "plan_variant",
+        "index_presence",
+        "equivalent_query",
+        "version_differential",
+        "cross_dbms",
+    )
     script = Script([{"prediction": "pass", "cases": [_good("tlp")]}])
     pure_llm.run(
         tmp_path / "splice",
         seed=0,
         engine="duckdb",
-        oracles=(
-            "tlp",
-            "norec",
-            "plan_variant",
-            "index_presence",
-            "equivalent_query",
-            "version_differential",
-            "cross_dbms",
-        ),
+        oracles=oracles,
         max_experiments=1,
         transport=script,
     )
     assert len(script.prompts) == 1
     prompt = script.prompts[0]
+    version = importlib.metadata.version("duckdb")
+    topic = random.Random(0).choice(PURE_LLM_TOPICS)
+    expected = (
+        f"Write {PURE_LLM_CASES_PER_CALL} SQL test cases that might expose logic bugs in duckdb {version}.\n"
+        f"Topic: {topic}. Batch 0. Seed 0.\n"
+        "\n"
+        "Reply with one JSON object and nothing else. Work quickly: do not analyse the engine's source or\n"
+        "internals, and do not try to work out whether a case fails. A harness runs every case and decides.\n"
+        "\n"
+        "Format:\n"
+        '{"prediction": "<one sentence: what you expect to find>",\n'
+        ' "cases": [{"setup": ["CREATE TABLE ...", "INSERT INTO ..."], "query": "SELECT ...", "predicate": null,\n'
+        '            "oracle": "<one of the oracles below>", "expect": "pass"}]}\n'
+        "\n"
+        "Rules:\n"
+        "- setup is a list of CREATE TABLE / INSERT statements; query is one SELECT. No statement ends with a semicolon.\n"
+        f"- oracle is one of: {', '.join(oracles)}.\n"
+        "- tlp and norec need a predicate: a boolean expression without the WHERE keyword, and query must be exactly\n"
+        "  SELECT <columns> FROM <table or join>, with no WHERE, GROUP BY, HAVING, ORDER BY, LIMIT or set operation.\n"
+        "- For any other oracle, either put every filter inside query and set predicate to null (any SELECT shape),\n"
+        "  or give a predicate with a plain SELECT <columns> FROM <table or join>; the harness then runs\n"
+        "  <query> WHERE (<predicate>).\n"
+        '- expect is your guess, "pass" or "fail".\n'
+    )
+    assert prompt == expected
     assert "WHERE (" in prompt
     assert "semicolon" in prompt
+    assert "Reply with one JSON object" in prompt
     assert "set predicate to null" in prompt
-    assert "TLP and NoREC require a predicate" in prompt
-    assert PURE_LLM_CASES_PER_CALL == 4
-    assert f"exactly {PURE_LLM_CASES_PER_CALL} cases" in prompt
-    assert str(PURE_LLM_MAX_TOKENS) in prompt
+    assert all(name in prompt for name in oracles)
     assert "GROUP BY / DISTINCT when the WHERE form does not apply" not in prompt
     assert "an optional predicate is inserted as the top-level WHERE" not in prompt
+    again = Script([{"prediction": "pass", "cases": [_good("tlp")]}])
+    pure_llm.run(
+        tmp_path / "splice-again",
+        seed=0,
+        engine="duckdb",
+        oracles=oracles,
+        max_experiments=1,
+        transport=again,
+    )
+    assert again.prompts == script.prompts
 
 
 def test_scripted_replies_follow_the_gate(tmp_path: Path) -> None:
@@ -137,7 +171,7 @@ def test_scripted_replies_follow_the_gate(tmp_path: Path) -> None:
         transport=script,
     )
     assert len(script.prompts) == 3
-    assert script.seen[0] == (TIERS["fast"], 0.8, 16000, "pure_llm")
+    assert script.seen[0] == (TIERS["fast"], 0.8, 32000, "pure_llm")
     assert report["status"] == "llm_exhausted" and report["experiments"] == 4 and report["calls"] == 4
     assert report["run_id"] == "pure-s3" and report["seed"] == 3 and report["engine"] == "duckdb"
     assert report["labels"].get("pass", 0) + report["labels"].get("fail", 0) + report["labels"].get("invalid", 0) == 4
@@ -176,10 +210,9 @@ def test_scripted_replies_follow_the_gate(tmp_path: Path) -> None:
     assert "duckdb" in script.prompts[0].lower()
     assert version in script.prompts[0]
     assert "tlp" in script.prompts[0] and "norec" in script.prompts[0]
-    assert "Batch: 0" in script.prompts[0] and "Batch: 1" in script.prompts[1]
-    assert "Seed: 3" in script.prompts[0]
-    assert f"Topic for this batch: {first_topic}." in script.prompts[0]
-    assert f"Topic for this batch: {second_topic}." in script.prompts[1]
+    assert f"Topic: {first_topic}. Batch 0. Seed 3." in script.prompts[0]
+    assert f"Topic: {second_topic}. Batch 1. Seed 3." in script.prompts[1]
+    assert "Reply with one JSON object" in script.prompts[0]
     config = json.loads((out / "config.json").read_text(encoding="utf-8"))
     assert config["seed"] == 3 and config["engine"] == "duckdb"
     assert config["oracles"] == ["tlp", "norec"]

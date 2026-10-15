@@ -31,7 +31,11 @@ from surprise.roles.gateway import Gateway
 # 8000 truncated real replies in S9/S10.
 PURE_LLM_TIER = "fast"
 PURE_LLM_TEMPERATURE = 0.8
-PURE_LLM_MAX_TOKENS = 16000
+# Six real calls with the previous prompt stopped at 16000 tokens with an empty
+# answer. The same prompt still filled the cap at 32000, and at temperature 0.2.
+# This answer-first prompt returned 4 cases after about 14981 tokens, so 32000
+# leaves room. deepseek-flash counts reasoning toward max_tokens.
+PURE_LLM_MAX_TOKENS = 32000
 # 8 cases left no room in that 16000-token cap: deepseek-flash counts reasoning
 # toward max_tokens, and 3 of 4 recorded replies were cut at exactly 16000.
 PURE_LLM_CASES_PER_CALL = 4
@@ -48,55 +52,30 @@ PURE_LLM_TOPICS = (
     "DATE and TIMESTAMP arithmetic",
 )
 
-# One sentence each: what the oracle decides, and what a case must look like.
-# A predicate is spliced as "<query> WHERE (<predicate>)", so a case that sets one
-# must use a plain SELECT-FROM. Other shapes put the filter in query and leave
-# predicate null. TLP and NoREC always need a predicate.
-_ORACLE_TEXT = {
-    "tlp": (
-        "Ternary logic partitioning checks that predicate p, NOT p, and p IS NULL "
-        "together rebuild the unfiltered rows, so TLP requires p in predicate and a plain "
-        "SELECT <columns> FROM <table or join> with no WHERE."
-    ),
-    "norec": (
-        "NoREC checks that COUNT(*) WHERE p equals SUM(CASE WHEN p THEN 1 ELSE 0 END), "
-        "so NoREC requires p in predicate and a plain SELECT <columns> FROM <table or join> "
-        "with no WHERE, GROUP BY, HAVING, ORDER BY, LIMIT, OFFSET, set operation, or window clause."
-    ),
-    "plan_variant": (
-        "Plan variant checks that one deterministic read-only statement returns the same "
-        "rows under different planner settings; when predicate is not null the harness runs "
-        "<query> WHERE (<predicate>) on a plain SELECT-FROM, and other shapes put the filter "
-        "in query and set predicate to null."
-    ),
-    "index_presence": (
-        "Index presence (DuckDB only) checks that a read-only SELECT over a base table "
-        "created in setup returns the same rows with and without a secondary ART index; "
-        "when predicate is not null the harness runs <query> WHERE (<predicate>) on a plain "
-        "SELECT-FROM, and other shapes put the filter in query and set predicate to null."
-    ),
-    "equivalent_query": (
-        "Equivalent query rewrites the statement with the frozen double-negation rule, "
-        "wrapping the whole top-level WHERE predicate p as NOT (NOT (p)), so either write "
-        "that WHERE inside query and set predicate to null, or put p only in predicate on a "
-        "plain SELECT-FROM that has no WHERE."
-    ),
-    "version_differential": (
-        "Version differential runs the same statement on the current engine and an older "
-        "build (DuckDB 1.1.3 or DataFusion 50.0.0) and needs SQL both versions accept; "
-        "when predicate is not null the harness runs <query> WHERE (<predicate>) on a plain "
-        "SELECT-FROM, and other shapes put the filter in query and set predicate to null."
-    ),
-    "cross_dbms": (
-        "Cross-DBMS runs one statement as the same SQL on DuckDB, DataFusion, SQLite, and "
-        "PostgreSQL and treats the target as a bug only when it is the only engine that "
-        "disagrees; when predicate is not null the harness runs <query> WHERE (<predicate>) "
-        "on a plain SELECT-FROM, and other shapes put the filter in query and set predicate to null."
-    ),
-}
+# Literal JSON braces are doubled so str.format fills only the named fields.
+# The tlp/norec rule stays in every prompt, even when this run does not open them.
+_PROMPT = """\
+Write {n} SQL test cases that might expose logic bugs in {engine} {version}.
+Topic: {topic}. Batch {batch}. Seed {seed}.
 
-if set(_ORACLE_TEXT) != set(ORACLE_IDS):
-    raise RuntimeError("pure_llm oracle text does not match ORACLE_IDS")
+Reply with one JSON object and nothing else. Work quickly: do not analyse the engine's source or
+internals, and do not try to work out whether a case fails. A harness runs every case and decides.
+
+Format:
+{{"prediction": "<one sentence: what you expect to find>",
+ "cases": [{{"setup": ["CREATE TABLE ...", "INSERT INTO ..."], "query": "SELECT ...", "predicate": null,
+            "oracle": "<one of the oracles below>", "expect": "pass"}}]}}
+
+Rules:
+- setup is a list of CREATE TABLE / INSERT statements; query is one SELECT. No statement ends with a semicolon.
+- oracle is one of: {oracles}.
+- tlp and norec need a predicate: a boolean expression without the WHERE keyword, and query must be exactly
+  SELECT <columns> FROM <table or join>, with no WHERE, GROUP BY, HAVING, ORDER BY, LIMIT or set operation.
+- For any other oracle, either put every filter inside query and set predicate to null (any SELECT shape),
+  or give a predicate with a plain SELECT <columns> FROM <table or join>; the harness then runs
+  <query> WHERE (<predicate>).
+- expect is your guess, "pass" or "fail".
+"""
 
 
 class UsageError(ValueError):
@@ -172,35 +151,14 @@ def _engine_version(engine: str) -> str:
 
 def _prompt(state: _Run, *, topic: str, batch: int) -> str:
     """One batch's prompt. It depends only on the seed, the batch, the engine, and the oracle list."""
-    oracles = "\n".join(f"- {name}: {_ORACLE_TEXT[name]}" for name in state.oracles)
-    return (
-        "Find logical bugs in a SQL database engine. You write SQL cases; a fixed harness\n"
-        "runs them and assigns every label. Do not claim a result the harness did not report.\n"
-        f"Target engine: {state.engine} {state.engine_version}.\n"
-        "Oracles available in this run:\n"
-        f"{oracles}\n"
-        f"Topic for this batch: {topic}.\n"
-        f"Batch: {batch}.\n"
-        f"Seed: {state.seed}.\n"
-        f"Return JSON with exactly {PURE_LLM_CASES_PER_CALL} cases on this topic.\n"
-        "The JSON object has two fields. prediction is one non-empty sentence saying what you\n"
-        "expect to find. cases is an array of objects:\n"
-        '{"prediction": "<one sentence>", "cases": [{"setup": ["CREATE ...", "INSERT ..."], '
-        '"query": "SELECT ...", "predicate": null, "oracle": "<oracle name>", "expect": "pass"}]}\n'
-        "setup is an array of SQL strings. query is one non-empty SQL string. predicate is null\n"
-        "or a boolean expression and does not include the WHERE keyword. oracle is one of the\n"
-        'names above. expect is "pass" or "fail" and is only your prediction.\n'
-        "When predicate is not null, the harness executes <query> WHERE (<predicate>). TLP and NoREC\n"
-        "splice the predicate in their own way, and they also require that query contain no WHERE.\n"
-        "A case that sets predicate must therefore use a plain query, SELECT <columns> FROM <table or join>:\n"
-        "no WHERE, no GROUP BY, no HAVING, no ORDER BY, no LIMIT, no OFFSET, no set operation, no window\n"
-        "clause, and the query must not end with a semicolon.\n"
-        "To test GROUP BY, HAVING, ORDER BY, a set operation, or a window, write the filter inside query,\n"
-        "set predicate to null, and choose an oracle that does not need a predicate (plan_variant,\n"
-        "equivalent_query, version_differential, cross_dbms, or index_presence) when that oracle is listed above.\n"
-        "TLP and NoREC require a predicate, so pair them only with a plain SELECT ... FROM ....\n"
-        "Do not end query, predicate, or any setup statement with a semicolon.\n"
-        f"Keep the reasoning short. The whole reply, including reasoning, must fit in {PURE_LLM_MAX_TOKENS} tokens.\n"
+    return _PROMPT.format(
+        n=PURE_LLM_CASES_PER_CALL,
+        engine=state.engine,
+        version=state.engine_version,
+        topic=topic,
+        batch=batch,
+        seed=state.seed,
+        oracles=", ".join(state.oracles),
     )
 
 
