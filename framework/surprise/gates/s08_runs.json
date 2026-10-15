@@ -40,9 +40,9 @@
  "longrun": {
   "dir": "results/s08/longrun",
   "sha256": {
-   "ledger.sqlite": "5b9aadda8281325e6b45f82646b9f5bf9159f150c3c49e41bd80783065d16740",
-   "progress.jsonl": "da7b864705768d05fadad5fcc5d41c135b04279bb1d93d3580ae4f145501200a",
-   "report.json": "bdd5b56e8594c3c179e7526765eea3445f24fd2ae8abf03172b69f73979ba564"
+   "ledger.sqlite": "c8bda99ce03701315bd773e0d17fbae704f882330205e942cd6a357d3b0a3642",
+   "progress.jsonl": "6632dd5dd4c3be19adb6832c7fbdd8dd1e84fbc96cca9a1d0e36603ee17e8fc4",
+   "report.json": "0456655dc336c517ce60f6add2173cc7c30944911f18a0d669acb3fce54ad97b"
   }
  },
  "old": {
