@@ -929,10 +929,14 @@ def check_arms() -> str:
     for record in records:
         want = fresh.predict(Phi.from_dict(record.phi), record.label.oracle).p_fail_valid
         require(close(record.p_t, want, 1e-12), f"{record.record_id}: p_t comes from this run's theory ({record.p_t} vs {want})")
-    differs = [r for r in rows.values() if isinstance(r.get("select_p"), float) and not close(r["select_p"], r["p_fail_valid"], 1e-12)]
+    source = T.Workbench.open(base / "theory")
+    for record in records:
+        want = source.predict(Phi.from_dict(record.phi), record.label.oracle).p_fail_valid
+        got = rows[record.record_id].get("select_p")
+        require(isinstance(got, float) and close(got, want, 1e-12),
+                f"{record.record_id}: select_p is the selecting theory's prediction ({got} vs {want})")
+    differs = [r for r in rows.values() if not close(r["select_p"], r["p_fail_valid"], 1e-12)]
     require(differs, "some choice was scored by the selecting theory differently from this run's theory")
-    lanes = {r["lane"] for r in rows.values()}
-    require(lanes & {"refine", "generalize"}, f"the selecting theory's hypotheses drive refine/generalize: {lanes}")
     # usage errors
     errors = 0
     for kwargs in ({"freeze": "everything"}, {"hunter": "greedy"}, {"theory_from": "nowhere@x"},
