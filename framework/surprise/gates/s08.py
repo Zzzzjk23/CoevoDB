@@ -439,7 +439,13 @@ def check_rows(run: dict[str, Any], out: Path) -> dict[str, int]:
         example = Phi.from_dict(record.phi)
         if lane in ("refine", "generalize"):
             parent = by_id[spec["parent"]]
-            require(row["zone"] == "pending" and F.check_spec(example, Spec.from_dict(spec["target"]), registry).ok
+            target = Spec.from_dict(spec["target"])
+            # The lane rule is the generating hypothesis's own position (see check_candidates). The theory's
+            # prediction may instead name another hypothesis whose confirmed zone covers the mutant; the
+            # target's forbidden literals still keep it out of the generating hypothesis's confirmed zone.
+            zone_ok = row["zone"] == "pending" or (
+                row["zone"] == "confirmed" and row["predicted"] not in (None, spec["hypothesis"]) and bool(target.forbidden))
+            require(zone_ok and F.check_spec(example, target, registry).ok
                     and any(H.operators.case_digest(m) == key[0] and op == spec["op"] for m, op in H.operators.mutants(parent.case)),
                     f"{record.record_id}: {lane} is a mutation of {spec['parent']} that meets its target in the pending zone")
         elif lane == "migrate":
@@ -452,7 +458,11 @@ def check_rows(run: dict[str, Any], out: Path) -> dict[str, int]:
         else:
             require(lane == "bootstrap" and row["index"] == 0, f"{record.record_id}: unknown lane {lane}")
         if row["index"] and row["index"] % C.HUNTER_CONSTANTS["EXPLORE_EVERY"] == 0:
-            require(lane == "explore" and row["slot"] == "explore", f"{record.record_id}: choice {row['index']} is an exploration slot")
+            # Another lane only when no exploration candidate survived the filters (the s08-hunter rule); the
+            # pool counts cannot show which lanes were filtered, so this is the necessary condition they allow.
+            others = sum(row["pool"][name] for name in ("refine", "generalize", "migrate"))
+            require(row["slot"] == "explore" and (lane == "explore" or row["pool"]["scored"] <= others),
+                    f"{record.record_id}: choice {row['index']} is an exploration slot")
     return lanes
 
 

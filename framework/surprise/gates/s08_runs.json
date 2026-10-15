@@ -37,6 +37,21 @@
   ],
   "value": 1.0
  },
+ "longrun": {
+  "dir": "results/s08/longrun",
+  "sha256": {
+   "ledger.sqlite": "5141cf5e7de95189d76b0ffc2b40153bc0aa9c53afa4d93b5155d0a9852b0f44",
+   "progress.jsonl": "2f5114150763275ed594d8b334216b8003f3e180d368a389b1a9588365301dfc",
+   "report.json": "591cf90d7ac8208e142d9d534bc4f4a4cc223687b63d9e35fb30b6d9eee16a65"
+  }
+ },
+ "old": {
+  "dir": "results/s08/old_no_llm",
+  "sha256": {
+   "old_run.json": "4ef1f714a41c80bbbc214c5ab649c33e4e5c66e4148d061b830f7814841b1b43",
+   "results/duckdb_no_llm_20261015_083535_s08_old_s0/bugs.jsonl": "2d45753433925cd5eab2044c1558b4fc2f8a8aeb48003efb929744cd86fb9c26"
+  }
+ },
  "recall": {
   "dir": "results/s08/recall113",
   "sha256": {
