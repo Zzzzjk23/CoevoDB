@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -237,6 +238,9 @@ def test_brier_calibration_edges_and_high_surprise(tmp_path: Path) -> None:
     assert rq2["brier"] == pytest.approx(sum((p - y) ** 2 for p, y in zip(probs, outcomes)) / 7)
     rate = 3 / 7
     assert rq2["brier_reference"] == pytest.approx(rate * (1.0 - rate))
+    # p of 0 or 1, and invalid rows, have no surprise. The rest are -log2 of the outcome probability.
+    scored = [-math.log2(0.05), -math.log2(0.5), -math.log2(0.1), -math.log2(0.95), -math.log2(0.05)]
+    assert rq2["mean_surprise"] == pytest.approx(sum(scored) / len(scored))
     bins = {(row["lo"], row["hi"]): row for row in rq2["calibration"]}
     assert len(rq2["calibration"]) == 7
     assert bins[(0.0, 0.05)]["count"] == 1 and bins[(0.0, 0.05)]["fail_rate"] == 0.0
@@ -550,6 +554,27 @@ def test_old_metrics_from_bug_reports(tmp_path: Path) -> None:
     assert metrics["cost"]["llm_calls"] is None and metrics["cost"]["usd"] is None
 
 
+def test_old_metrics_without_bugs_file_is_zero_reports(tmp_path: Path) -> None:
+    root = tmp_path / "old"
+    inner = root / "inner"
+    inner.mkdir(parents=True)
+    _write_json(
+        root / "old_run.json",
+        {
+            "mode": "no_llm",
+            "seed": 1,
+            "wall_s": 3600.0,
+            "ended": "killed",
+            "run_dir": "inner",
+        },
+    )
+    metrics = old_metrics(root)
+    assert not (inner / "bugs.jsonl").exists()
+    assert metrics["rq1"]["family_count"] == 0
+    assert metrics["rq1"]["families_per_hour"] == 0.0
+    assert metrics["rq1"]["duplicate_rate"] is None
+
+
 def test_frozen_theory_uses_ledger_keys(tmp_path: Path) -> None:
     records = [_record("run-1", 1, fail_label("f1")), _record("run-1", 2, fail_label("f1"))]
     frozen = _run(
@@ -636,6 +661,7 @@ def test_pure_llm_counts_its_own_expect(tmp_path: Path) -> None:
     metrics = run_metrics(root)
     assert metrics["run"]["kind"] == "pure_llm" and metrics["run"]["engines"] == ["duckdb"]
     assert metrics["rq2"]["brier"] is None and metrics["rq2"]["valid"] == 0
+    assert metrics["rq2"]["mean_surprise"] is None
     assert metrics["rq3"]["pure_llm"] == {"total": 4, "kept": 1, "broken": 2, "accuracy": pytest.approx(1 / 3)}
 
 

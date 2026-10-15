@@ -614,6 +614,7 @@ def run_metrics(
             "valid": len(_valid(records)),
             "brier": brier,
             "brier_reference": reference,
+            "mean_surprise": _mean([_surprise(record) for record in records]),
             "calibration": _calibration(records),
             "high_surprise": _high_surprise(records, progress),
             "window": used_window,
@@ -666,10 +667,18 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def old_metrics(old_dir: str | Path) -> dict[str, Any]:
-    """Metrics of one original CoevoDB run, from ``old_run.json`` and its ``bugs.jsonl``."""
+    """Metrics of one original CoevoDB run, from ``old_run.json`` and its ``bugs.jsonl``.
+
+    A killed run may never create ``bugs.jsonl``. That is zero reports, the same
+    count ``old_no_llm`` stores. A missing ``run_dir`` is still an error.
+    """
     root = Path(old_dir)
     meta = _read_json(root / "old_run.json")
-    reports = old_reports(root / meta["run_dir"] / "bugs.jsonl")
+    run_dir = root / meta["run_dir"]
+    if not run_dir.is_dir():
+        raise FileNotFoundError(run_dir)
+    bugs = run_dir / "bugs.jsonl"
+    reports = old_reports(bugs) if bugs.is_file() else []
     seen: set[str] = set()
     families: list[dict[str, Any]] = []
     keys: list[str] = []

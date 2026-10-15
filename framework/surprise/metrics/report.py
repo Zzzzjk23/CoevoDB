@@ -12,7 +12,6 @@ import argparse
 import json
 import math
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +50,7 @@ RQ_METRICS = {
         "first_family_minutes",
         "duplicate_rate",
     ),
-    "rq2": ("brier", "brier_reference", "high_surprise_share", "teeth"),
+    "rq2": ("brier", "brier_reference", "mean_surprise", "high_surprise_share", "teeth"),
     "rq3": (
         "survival_rate",
         "prediction_accuracy",
@@ -242,6 +241,7 @@ def _rq5(
                     "family_count": _delta(blocks["rq1"]["arms"][name]["family_count"], blocks["rq1"]["arms"][reference]["family_count"]),
                     "families_per_hour": _delta(blocks["rq1"]["arms"][name]["families_per_hour"], blocks["rq1"]["arms"][reference]["families_per_hour"]),
                     "brier": _delta(blocks["rq2"]["arms"][name]["brier"], blocks["rq2"]["arms"][reference]["brier"]),
+                    "mean_surprise": _delta(blocks["rq2"]["arms"][name]["mean_surprise"], blocks["rq2"]["arms"][reference]["mean_surprise"]),
                 },
             })
         if arm.get("theory_from") or arm.get("select_from"):
@@ -261,14 +261,10 @@ def _rq5(
 
 
 def _mean_surprise(metrics: dict[str, Any] | None) -> float | None:
-    """Mean surprise of one cell's valid records.
-
-    ``run_metrics`` does not report that mean. ``rq2.curve`` is a windowed
-    series, so it is not used as a substitute.
-    """
+    """``rq2.mean_surprise`` of one cell. Missing or not a number is ``None``."""
     if not isinstance(metrics, dict):
         return None
-    return None
+    return _number(_dig(metrics, "rq2", "mean_surprise"))
 
 
 def _delta(arm: dict[str, Any], reference: dict[str, Any]) -> float | None:
@@ -502,7 +498,7 @@ def _rq_section(report: dict[str, Any], key: str, heading: str, figures: tuple[s
 
 
 def _rq5_tables(block: dict[str, Any]) -> list[str]:
-    headers = ["arm", "freeze", "hunter", "vs", "family_count", "families_per_hour", "brier"]
+    headers = ["arm", "freeze", "hunter", "vs", "family_count", "families_per_hour", "brier", "mean_surprise"]
     rows = []
     for item in block["freezing"]:
         delta = item["delta"]
@@ -514,9 +510,10 @@ def _rq5_tables(block: dict[str, Any]) -> list[str]:
             _fmt(delta["family_count"]),
             _fmt(delta["families_per_hour"]),
             _fmt(delta["brier"]),
+            _fmt(delta["mean_surprise"]),
         ])
     if not rows:
-        rows.append(["none", "n/a", "n/a", "n/a", "n/a", "n/a", "n/a"])
+        rows.append(["none", "n/a", "n/a", "n/a", "n/a", "n/a", "n/a", "n/a"])
     lines = _table(headers, rows)
     lines.append("")
     pair_rows = []
@@ -935,42 +932,8 @@ def _metrics_for(kind: str, directory: Path, *, known: Any, prices: Any, window:
     if kind in _RUN_KINDS:
         return run_metrics(directory, known=known, prices=prices, window=window)
     if kind == "old_coevodb":
-        return _old_cell_metrics(directory)
+        return old_metrics(directory)
     raise ValueError(f"kind: {kind!r} has no cell")
-
-
-def _old_cell_metrics(directory: Path) -> dict[str, Any]:
-    """``old_metrics`` for one cell.
-
-    A killed original run with zero reports never creates ``bugs.jsonl``
-    (``old_no_llm`` records ``reports: 0`` in that case). ``old_metrics``
-    requires the file, so the same ``old_run.json`` is scored against an empty
-    file in a temporary directory. The cell itself is not written.
-    """
-    meta_path = directory / "old_run.json"
-    if not meta_path.is_file():
-        return old_metrics(directory)
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return old_metrics(directory)
-    run_dir = meta.get("run_dir") if isinstance(meta, dict) else None
-    if not isinstance(run_dir, str) or run_dir == "":
-        return old_metrics(directory)
-    relative = Path(run_dir)
-    if relative.is_absolute() or any(part == ".." for part in relative.parts):
-        return old_metrics(directory)
-    if (directory / relative / "bugs.jsonl").is_file():
-        return old_metrics(directory)
-    if meta.get("reports") not in (0, None):
-        return old_metrics(directory)
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        target = root / relative
-        target.mkdir(parents=True)
-        (target / "bugs.jsonl").write_text("", encoding="utf-8", newline="\n")
-        (root / "old_run.json").write_bytes(meta_path.read_bytes())
-        return old_metrics(root)
 
 
 def _sqlancer_row(arm: dict[str, Any]) -> dict[str, Any]:

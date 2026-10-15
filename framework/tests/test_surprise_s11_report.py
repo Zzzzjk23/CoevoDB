@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import subprocess
 import sys
 import time
@@ -13,11 +14,13 @@ import pytest
 
 from surprise.baselines import sqlancer
 from surprise.experiments import grid, loop
+from surprise.gates.s06 import fail_label, pass_label
 from surprise.gates.s11 import ref_mwu
 from surprise.gates.s11_cases import A12, FIGURES, MEDIAN, MWU_EXACT, MWU_LARGE, MWU_SAME, MWU_TIES
 from surprise.metrics.report import build
 from surprise.metrics.rq import old_metrics, run_metrics
 from surprise.metrics.stats import a12, mann_whitney_u, median, summarize
+from test_surprise_s11_metrics import _record, _run
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 PNG = b"\x89PNG\r\n\x1a\n"
@@ -243,7 +246,12 @@ def test_report_on_failed_cells_and_sqlancer(tmp_path: Path) -> None:
     frozen = report["rq5"]["freezing"]
     assert len(frozen) == 1 and frozen[0]["arm"] == "surprise"
     assert frozen[0]["freeze"] == "theory" and frozen[0]["hunter"] == "random" and frozen[0]["vs"] == "old"
-    assert frozen[0]["delta"] == {"family_count": None, "families_per_hour": None, "brier": None}
+    assert frozen[0]["delta"] == {
+        "family_count": None,
+        "families_per_hour": None,
+        "brier": None,
+        "mean_surprise": None,
+    }
     assert report["rq5"]["ciao"] == {}
     paired = report["rq5"]["pairing"]
     assert len(paired) == 1
@@ -337,8 +345,18 @@ def test_report_build_on_two_real_runs(tmp_path: Path) -> None:
     _old(root / "cells" / "old" / "s0-r0", 0, 3600.0, ["same", "same"])
     _old(root / "cells" / "old" / "s1-r0", 1, 1800.0, ["one", "two"])
     _cell(root / "cells" / "old" / "s1-r0", "old", "old_coevodb", 1, 0, "done")
+    paired_mean = (-math.log2(0.25) + -math.log2(0.75)) / 2.0
     for seed in (0, 1):
-        _cell(root / "cells" / "paired" / f"s{seed}-r0", "paired", "surprise", seed, 0, "failed")
+        cell = root / "cells" / "paired" / f"s{seed}-r0"
+        _run(
+            cell,
+            [
+                _record("run-1", 1, fail_label("f1"), p_t=0.25),
+                _record("run-1", 2, pass_label(), p_t=0.25),
+            ],
+            report={"status": "budget_experiments", "wall_s": 60.0},
+        )
+        _cell(cell, "paired", "surprise", seed, 0, "done")
     before = _digest(root)
     report = build(root)
     assert _digest(root) == before
@@ -392,14 +410,21 @@ def test_report_build_on_two_real_runs(tmp_path: Path) -> None:
     assert keys == sorted(keys)
     frozen = next(item for item in report["rq5"]["freezing"] if item["arm"] == "surprise")
     assert frozen["hunter"] == "random" and frozen["vs"] == "surprise" and frozen["freeze"] is None
-    for metric in ("family_count", "families_per_hour"):
-        median_value = report["rq1"]["arms"]["surprise"][metric]["median"]
+    for section, metric in (
+        ("rq1", "family_count"),
+        ("rq1", "families_per_hour"),
+        ("rq2", "mean_surprise"),
+    ):
+        median_value = report[section]["arms"]["surprise"][metric]["median"]
         if median_value is None:
             assert frozen["delta"][metric] is None
         else:
             assert frozen["delta"][metric] == pytest.approx(0.0)
     assert [item["arm"] for item in report["rq5"]["pairing"]] == ["paired"]
-    assert report["rq5"]["pairing"][0]["mean_surprise"]["n"] == 0
+    paired_summary = report["rq5"]["pairing"][0]["mean_surprise"]
+    assert paired_summary["n"] == 2
+    assert paired_summary["median"] == pytest.approx(paired_mean)
+    assert report["rq2"]["arms"]["paired"]["mean_surprise"] == paired_summary
     assert report["rq6"]["partition"] is None
     assert report["external"]["sqlancer"]["family_count"] == 0
     saved = json.loads((root / "grid.json").read_text(encoding="utf-8"))
