@@ -14,6 +14,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+from surprise.features.registry import Registry
 from surprise.theory.workbench import Workbench
 
 
@@ -36,14 +37,25 @@ def identity_key(
     )
 
 
-def new_families(store_dir: str | Path) -> list[dict[str, Any]]:
+def run_registry(run_dir: str | Path) -> Registry | None:
+    """The registry file named in ``run_dir/config.json``, or None when that key is absent."""
+    path = Path(run_dir) / "config.json"
+    if not path.is_file():
+        return None
+    config = json.loads(path.read_text(encoding="utf-8"))
+    if "vocabulary" not in config:
+        return None
+    return Registry.load(config["vocabulary"])
+
+
+def new_families(store_dir: str | Path, registry: Registry | None = None) -> list[dict[str, Any]]:
     """One dict per family in ``store_dir``.
 
     Families that own a failure come first, in the order of that failure in
     ``partition()``. A family that owns nothing follows, in ``families()`` order.
     The key is the identity of the family's first hypothesis.
     """
-    bench = Workbench.open(store_dir)
+    bench = Workbench.open(store_dir, registry=registry)
     grouped = bench.families()
     owned = bench.partition()
     first_of: dict[str, str] = {}
@@ -162,7 +174,7 @@ def compare(run_dir: str | Path, old_dir: str | Path) -> dict[str, Any]:
     """Families of ``run_dir/theory`` beside the reports of the old run pinned in ``old_dir``."""
     old_root = Path(old_dir)
     meta = json.loads((old_root / "old_run.json").read_text(encoding="utf-8"))
-    families = new_families(Path(run_dir) / "theory")
+    families = new_families(Path(run_dir) / "theory", registry=run_registry(run_dir))
     reports = old_reports(old_root / meta["run_dir"] / "bugs.jsonl")
     return {
         "new": {"families": families, "rate": duplicate_rate([row["key"] for row in families])},

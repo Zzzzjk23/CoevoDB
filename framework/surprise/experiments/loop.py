@@ -25,6 +25,7 @@ import math
 import os
 import sys
 import time
+import traceback
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -196,7 +197,21 @@ def run(
             state.status = "error"
             state.exc = exc
             pending = exc
-        state.report = _write_report(state)
+        if pending is not None:
+            _write_error_file(state.directory, pending)
+        try:
+            state.report = _write_report(state)
+        except BaseException as report_exc:
+            if pending is None:
+                _write_error_file(state.directory, report_exc)
+                raise
+            _write_error_file(
+                state.directory,
+                report_exc,
+                append=True,
+                note="--- while writing the report ---\n",
+            )
+            raise pending from None
     finally:
         try:
             _close(state)
@@ -810,6 +825,23 @@ def _print_saved_summary(out) -> None:
         return
     if "status" in report and "experiments" in report:
         print(f"{report['status']} {report['experiments']}", flush=True)
+
+
+def _write_error_file(
+    directory: Path,
+    exc: BaseException,
+    *,
+    append: bool = False,
+    note: str | None = None,
+) -> None:
+    """Write ``exc``'s traceback to ``<directory>/error.txt``."""
+    text = "".join(traceback.format_exception(exc))
+    if note is not None:
+        text = note + text
+    path = directory / "error.txt"
+    if append and path.is_file():
+        text = path.read_text(encoding="utf-8") + text
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _write_json(path: Path, payload: dict) -> None:
