@@ -1,0 +1,106 @@
+{
+  "run_id": "loop-s0",
+  "seed": 0,
+  "engines": [
+    "datafusion"
+  ],
+  "oracles": [
+    "cross_dbms",
+    "tlp",
+    "norec"
+  ],
+  "beta": 1.0,
+  "status": "budget_experiments",
+  "experiments": 21,
+  "choices": 20,
+  "started_at": "2026-10-15T06:42:05.236590+00:00",
+  "finished_at": "2026-10-15T06:49:31.471466+00:00",
+  "wall_s": 446.234876,
+  "labels": {
+    "fail": 4,
+    "pass": 17
+  },
+  "lanes": {
+    "bootstrap": 1,
+    "generalize": 5,
+    "bet": 5,
+    "implement": 7,
+    "refine": 3
+  },
+  "triage": {
+    "new_family": 2,
+    "boundary_move": 14,
+    "unexpected_pass": 1,
+    "no_information": 4
+  },
+  "hypotheses": 3,
+  "families": 3,
+  "edits": {
+    "accepted": 1,
+    "rejected": 1,
+    "rolled_back": 1
+  },
+  "curve": [],
+  "teeth": [],
+  "new_families": 3,
+  "extractor": {
+    "calls": 1343,
+    "cache_hits": 1249,
+    "timeouts": 0,
+    "restarts": 0,
+    "errors": 0
+  },
+  "llm": {
+    "roles": [
+      "implementer",
+      "conjecturer"
+    ],
+    "calls": {
+      "by_role": {
+        "conjecturer": {
+          "calls": 3,
+          "network": 3,
+          "cache": 0,
+          "ok": 3,
+          "rejected": 0,
+          "blocked": 0,
+          "miss": 0,
+          "error": 0,
+          "input_tokens": 5032,
+          "output_tokens": 17812
+        },
+        "implementer": {
+          "calls": 22,
+          "network": 22,
+          "cache": 0,
+          "ok": 21,
+          "rejected": 1,
+          "blocked": 0,
+          "miss": 0,
+          "error": 0,
+          "input_tokens": 14992,
+          "output_tokens": 48565
+        }
+      },
+      "network": 25,
+      "max_calls": 80
+    },
+    "book": {
+      "conjectures": 3,
+      "rejected": 0,
+      "predictions": 12,
+      "open": 4,
+      "kept": 6,
+      "broken": 2
+    },
+    "implementer": {
+      "attempts": 20,
+      "ok": 18,
+      "first_ok": 18,
+      "by_status": {
+        "ok": 18,
+        "spec_unmet": 2
+      }
+    }
+  }
+}
