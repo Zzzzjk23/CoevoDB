@@ -347,7 +347,7 @@ class ExplorationPrior(Role):
             if not isinstance(item, dict):
                 continue
             unit = item.get("unit")
-            if unit not in batch_set or unit in seen:
+            if not isinstance(unit, str) or unit not in batch_set or unit in seen:
                 continue
             seen.add(unit)
             price, reason = _p_fail(item.get("p_fail"))

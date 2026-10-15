@@ -290,6 +290,34 @@ def test_bad_reply_drops_out_of_range_non_numeric_and_unasked(tmp_path: Path) ->
         role.close()
 
 
+def test_non_string_unit_in_reply_is_skipped(tmp_path: Path) -> None:
+    odd = list(C.PRIOR_UNITS[:3])
+    script = Script(
+        {
+            "prior": {
+                "prediction": [
+                    {"unit": ["a"], "p_fail": 0.1, "why": "list"},
+                    {"unit": {"name": odd[0]}, "p_fail": 0.2, "why": "dict"},
+                    {"unit": 3, "p_fail": 0.3, "why": "number"},
+                    {"unit": odd[2], "p_fail": 0.4, "why": "ok"},
+                ]
+            }
+        }
+    )
+    role = _role(tmp_path, script)
+    wb = Workbench.create(tmp_path / "theory")
+    try:
+        role.prepare(wb, odd, index=1)
+        assert role.priced() == {odd[2]: 0.4}
+        assert role.pseudo(odd[0]) is None
+        assert role.pseudo(odd[1]) is None
+        assert role.pseudo(odd[2]) is not None
+        unpriced = {row["unit"]: row["reason"] for row in _book(tmp_path) if row.get("type") == "unpriced"}
+        assert set(unpriced) == {odd[0], odd[1]}
+    finally:
+        role.close()
+
+
 def test_rejected_blocked_miss_error_leave_batch_unpriced(tmp_path: Path) -> None:
     odd = list(C.PRIOR_UNITS[:2])
     wb = Workbench.create(tmp_path / "theory")
