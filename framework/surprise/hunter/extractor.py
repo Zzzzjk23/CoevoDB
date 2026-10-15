@@ -23,9 +23,11 @@ _FRAMEWORK = Path(__file__).resolve().parents[2]
 class PhiExtractor:
     """Cached phi extraction. The child starts on the first miss and dies on close."""
 
-    def __init__(self, *, timeout_s: float = PHI_TIMEOUT_S) -> None:
+    def __init__(self, *, timeout_s: float = PHI_TIMEOUT_S, registry_path=None) -> None:
         self.timeout_s = float(timeout_s)
         self._command = [sys.executable, "-m", "surprise.hunter.phi_worker"]
+        if registry_path is not None:
+            self._command.extend(["--registry", str(registry_path)])
         self._proc: subprocess.Popen[str] | None = None
         self._cache: dict[str, Phi] = {}
         self._next_id = 1

@@ -12,6 +12,7 @@ from seeds.mutate import SeedMutator
 from seeds.store import SeedCorpus
 from surprise.features.phi import Phi
 from surprise.features.registry import default_registry
+from surprise.features.units import unit_of
 from surprise.harness.contracts import ExperimentRecord, SqlCase
 from . import constants
 from .constants import (
@@ -137,6 +138,9 @@ class Hunter:
         corpus_path=None,
         extractor: PhiExtractor | None = None,
         sources=(),
+        prior=None,
+        extra_rules=None,
+        registry=None,
     ) -> None:
         self.engines = _names(engines, "engines")
         self.oracles = _names(oracles, "oracles")
@@ -145,7 +149,9 @@ class Hunter:
         self.rng = random.Random(self._seed)
         self.mutator = SeedMutator(rng=random.Random(self._seed + 1))
         self.corpus = SeedCorpus.load(_DEFAULT_CORPUS if corpus_path is None else corpus_path)
-        self._registry = default_registry()
+        self._registry = default_registry() if registry is None else registry
+        self._prior = prior
+        self._extra_rules = extra_rules
         self._owns_extractor = extractor is None
         self._extractor = PhiExtractor() if extractor is None else extractor
         self._index = 0
@@ -213,7 +219,9 @@ class Hunter:
             for cand in raw:
                 pool[cand.lane] = pool.get(cand.lane, 0) + 1
             units = hypothesis_units(wb, self._registry)
-            scored: list[Scored] = []
+            # The lottery below is the only random draw in this loop. Collect
+            # survivors first so a prior cannot change how many draws are made.
+            passed: list[tuple[Candidate, Phi]] = []
             seen_keys: set[tuple[str, str, str]] = set()
             for cand in raw:
                 key = cand.key()
@@ -234,6 +242,11 @@ class Hunter:
                 if self.rng.random() >= accept_probability(nov):
                     pool["rejected_novelty"] += 1
                     continue
+                passed.append((cand, example))
+            if self._prior is not None and passed:
+                self._prior.prepare(wb, self._prior_units(passed), index=self._index)
+            scored: list[Scored] = []
+            for cand, example in passed:
                 scored.append(
                     Scored(
                         candidate=cand,
@@ -245,6 +258,7 @@ class Hunter:
                             beta=self.beta,
                             probes=self._probes,
                             units=units,
+                            prior=self._prior,
                         ),
                     )
                 )
@@ -284,6 +298,23 @@ class Hunter:
             "oracles": list(self.oracles),
             "seed": self._seed,
         }
+
+    def _extra(self) -> tuple[str, ...]:
+        """Extra rewrite ids for this listing. ``()`` when the hook is off."""
+        if self._extra_rules is None:
+            return ()
+        return tuple(self._extra_rules())
+
+    def _prior_units(self, passed: list[tuple[Candidate, Phi]]) -> list[str]:
+        """Units of the survivors, in candidate order, duplicates dropped."""
+        found: list[str] = []
+        seen: set[str] = set()
+        for cand, example in passed:
+            unit = unit_of(example, cand.oracle, self._registry)
+            if unit not in seen:
+                seen.add(unit)
+                found.append(unit)
+        return found
 
     def _parents(self, hypothesis) -> list[str]:
         known = [record_id for record_id in hypothesis.positives if record_id in self._by_id]
@@ -355,6 +386,7 @@ class Hunter:
     def _migrate(self, wb) -> list[Candidate]:
         if len(self.engines) < 2:
             return []
+        extra = self._extra()
         found: list[Candidate] = []
         for hypothesis in wb.theory.hypotheses:
             if hypothesis.oracle is None:
@@ -368,7 +400,7 @@ class Hunter:
                         moved = replace(parent_case, engine=engine)
                     except ValueError:
                         continue
-                    options = oracle_options(moved, [hypothesis.oracle])
+                    options = oracle_options(moved, [hypothesis.oracle], extra_rules=extra)
                     if not options:
                         continue
                     if any(rule == parent_rule for _oracle, rule in options):
@@ -393,6 +425,7 @@ class Hunter:
         return found
 
     def _explore(self) -> list[Candidate]:
+        extra = self._extra()
         found: list[Candidate] = []
         for engine in self.engines:
             seeds = [
@@ -435,7 +468,7 @@ class Hunter:
                     except ValueError:
                         continue
                 for case, op in cases:
-                    for oracle, rule in oracle_options(case, self.oracles):
+                    for oracle, rule in oracle_options(case, self.oracles, extra_rules=extra):
                         found.append(
                             Candidate(
                                 case=case,

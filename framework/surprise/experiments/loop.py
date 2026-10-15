@@ -12,14 +12,17 @@ match a run that has no role code loaded.
         [--max-experiments N] [--max-minutes M]
         [--beta B] [--bootstrap FILE] [--run-id ID]
         [--llm ROLE]... [--llm-cache DIR] [--llm-max-calls N] [--llm-offline]
+        [--vocabulary FILE]
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import math
+import os
 import sys
 import time
 from collections.abc import Sequence
@@ -29,7 +32,7 @@ from typing import Any
 
 from surprise.diagnoser import Diagnoser
 from surprise.diagnoser import constants as diagnoser_constants
-from surprise.features.registry import default_registry
+from surprise.features.registry import Registry, default_registry
 from surprise.harness.contracts import ORACLE_IDS, SqlCase
 from surprise.harness.evaluate import evaluate_final
 from surprise.harness.ledger import Ledger
@@ -43,8 +46,18 @@ from surprise.theory.constants import BETA
 
 _FRAMEWORK = Path(__file__).resolve().parents[2]
 _CODE_DIRS = ("surprise/hunter", "surprise/diagnoser", "surprise/experiments")
-_LLM_ROLES = ("implementer", "conjecturer")
+_LLM_ROLES = (
+    "implementer",
+    "conjecturer",
+    "prior",
+    "translator",
+    "vocab_inventor",
+    "oracle_inventor",
+)
 _LLM_KEYS = ("roles", "cache", "max_calls", "network", "transport")
+# Same name as roles.constants.REWRITE_LIBRARY_ENV. Hardcoded so an off run
+# does not import the roles.
+_REWRITE_LIBRARY_ENV = "SURPRISE_REWRITE_LIBRARY"
 _PROGRESS_KEYS = (
     "seq",
     "record_id",
@@ -101,13 +114,18 @@ def code_digests() -> dict[str, str]:
 def _build_roles(config, *, run_dir, extract, registry, engines, seed):
     from surprise.roles.runtime import build_roles  # imported here, never at module level
 
+    # ``oracles`` rides in the config so an S9 test double with this signature
+    # still accepts the call. It is not a role-switch key.
+    oracles = config.get("oracles", ())
+    forwarded = {key: value for key, value in config.items() if key != "oracles"}
     return build_roles(
-        config,
+        forwarded,
         run_dir=run_dir,
         extract=extract,
         registry=registry,
         engines=engines,
         seed=seed,
+        oracles=tuple(oracles),
     )
 
 
@@ -124,11 +142,13 @@ def run(
     run_id: str | None = None,
     echo: bool = False,
     llm=None,
+    vocabulary=None,
 ) -> dict[str, Any]:
     """Run the loop into ``out`` and return the report. ``echo`` prints one ASCII line per experiment.
 
     ``echo`` is for the command line. A library caller leaves it false.
     ``llm`` is None, or a dict that turns on a subset of the LLM roles.
+    ``vocabulary`` is a registry file. Omitted, the run uses the base vocabulary.
     """
     seed = _require_int(seed, "seed")
     engines = _strings(engines, "engines")
@@ -144,6 +164,7 @@ def run(
     elif not isinstance(run_id, str) or run_id == "":
         raise UsageError(f"run_id: expected a non-empty string, got {run_id!r}")
     llm_config = _normalise_llm(llm)
+    vocabulary_path = _normalise_vocabulary(vocabulary)
 
     directory = Path(out)
     _ensure_out(directory)
@@ -161,6 +182,7 @@ def run(
         started_at=started_at,
         echo=echo,
         llm=llm_config,
+        vocabulary=vocabulary_path,
     )
     pending: BaseException | None = None
     try:
@@ -176,7 +198,10 @@ def run(
             pending = exc
         state.report = _write_report(state)
     finally:
-        _close(state)
+        try:
+            _close(state)
+        finally:
+            _restore_library(state)
     if pending is not None:
         raise pending
     return state.report
@@ -194,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--beta", type=float, default=None)
     parser.add_argument("--bootstrap", default=None)
     parser.add_argument("--run-id", default=None)
+    parser.add_argument("--vocabulary", default=None, help="registry file for this run")
     parser.add_argument(
         "--llm",
         action="append",
@@ -224,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             echo=True,
             llm=_llm_from_args(args),
+            vocabulary=args.vocabulary,
         )
     except UsageError as exc:
         print(f"error: {_ascii(exc)}", file=sys.stderr)
@@ -257,6 +284,7 @@ class _State:
         started_at: datetime,
         echo: bool,
         llm: dict[str, Any] | None = None,
+        vocabulary: str | None = None,
     ) -> None:
         self.directory = directory
         self.seed = seed
@@ -270,7 +298,11 @@ class _State:
         self.started_at = started_at
         self.echo = echo
         self.llm = llm
+        self.vocabulary = vocabulary
+        self.registry = None
         self.roles = None
+        self._library_armed = False
+        self._library_previous: str | None = None
         self.status = "error"
         self.exc: BaseException | None = None
         self.choices = 0
@@ -333,29 +365,46 @@ class _Step:
 
 def _prepare(state: _State) -> None:
     _write_json(state.directory / "config.json", _config(state))
-    state.extractor = _open_extractor()
+    loaded = None if state.vocabulary is None else Registry.load(state.vocabulary)
+    state.registry = loaded
+    state.extractor = _open_extractor(state.vocabulary)
     sources = ()
     if state.llm is not None:
+        role_config = dict(state.llm)
+        role_config["oracles"] = state.oracles
         state.roles = _build_roles(
-            state.llm,
+            role_config,
             run_dir=state.directory,
             extract=state.extractor.extract,
-            registry=default_registry(),
+            registry=default_registry() if loaded is None else loaded,
             engines=state.engines,
             seed=state.seed,
         )
         sources = tuple(state.roles.sources)
-    state.hunter = Hunter(
-        engines=state.engines,
-        oracles=state.oracles,
-        seed=state.seed,
-        beta=state.beta,
-        extractor=state.extractor,
-        sources=sources,
-    )
-    registry = default_registry()
-    state.diagnoser = Diagnoser(phi=state.hunter.phi, registry=registry)
-    state.wb = _open_workbench(state.directory / "theory")
+        _arm_library(state)
+    hunter_kwargs: dict[str, Any] = {
+        "engines": state.engines,
+        "oracles": state.oracles,
+        "seed": state.seed,
+        "beta": state.beta,
+        "extractor": state.extractor,
+        "sources": sources,
+    }
+    if loaded is not None:
+        hunter_kwargs["registry"] = loaded
+    if state.roles is not None:
+        # Absent on the S9 test double, which predates these hooks.
+        if hasattr(state.roles, "prior"):
+            hunter_kwargs["prior"] = state.roles.prior
+        if hasattr(state.roles, "rewrite_rules"):
+            hunter_kwargs["extra_rules"] = state.roles.rewrite_rules
+    state.hunter = Hunter(**hunter_kwargs)
+    if loaded is None:
+        state.diagnoser = Diagnoser(phi=state.hunter.phi, registry=default_registry())
+        state.wb = _open_workbench(state.directory / "theory")
+    else:
+        state.diagnoser = Diagnoser(phi=state.hunter.phi, registry=loaded)
+        state.wb = _open_workbench(state.directory / "theory", loaded)
     state.ledger = Ledger(state.directory / "ledger.sqlite")
     manifest = extend_manifest(build_manifest(state.run_id))
     manifest["hunter"] = {
@@ -365,21 +414,52 @@ def _prepare(state: _State) -> None:
     }
     if state.roles is not None:
         manifest["llm"] = state.roles.manifest()
+    if loaded is not None:
+        manifest["vocabulary"] = {
+            "path": state.vocabulary,
+            "sha256": hashlib.sha256(Path(state.vocabulary).read_bytes()).hexdigest(),
+            "digest": loaded.digest(),
+        }
     state.ledger.start_run(state.run_id, manifest)
     state.run_started = True
     state.progress = (state.directory / "progress.jsonl").open("w", encoding="utf-8", newline="\n")
 
 
-def _open_extractor():
+def _open_extractor(registry_path: str | None = None):
     from surprise.hunter import PhiExtractor
 
-    return PhiExtractor()
+    if registry_path is None:
+        return PhiExtractor()
+    return PhiExtractor(registry_path=registry_path)
 
 
-def _open_workbench(root: Path):
+def _open_workbench(root: Path, registry: Registry | None = None):
     from surprise.theory import Workbench
 
-    return Workbench.create(root)
+    if registry is None:
+        return Workbench.create(root)
+    return Workbench.create(root, registry=registry)
+
+
+def _arm_library(state: _State) -> None:
+    """Point the harness at the oracle inventor's library for the rest of the run."""
+    library = getattr(state.roles, "rewrite_library", None) if state.roles is not None else None
+    if library is None:
+        return
+    state._library_previous = os.environ.get(_REWRITE_LIBRARY_ENV)
+    os.environ[_REWRITE_LIBRARY_ENV] = str(library)
+    state._library_armed = True
+
+
+def _restore_library(state: _State) -> None:
+    """Put ``SURPRISE_REWRITE_LIBRARY`` back. A missing previous value is deleted."""
+    if not state._library_armed:
+        return
+    if state._library_previous is None:
+        os.environ.pop(_REWRITE_LIBRARY_ENV, None)
+    else:
+        os.environ[_REWRITE_LIBRARY_ENV] = state._library_previous
+    state._library_armed = False
 
 
 def _drive(state: _State) -> None:
@@ -497,8 +577,7 @@ def _execute(state: _State, step: _Step) -> None:
     )
     # Roles see the experiment only after the Diagnoser has revised.
     if state.roles is not None:
-        state.roles.observe(step.phi, record.label, record.record_id)
-        state.roles.after(state.wb, record, outcome)
+        _notify_roles(state, step, record, outcome)
     row = _progress_row(state, step, record, outcome, edits)
     state.rows.append(row)
     state.progress.write(json.dumps(row, ensure_ascii=True, separators=(",", ":")) + "\n")
@@ -593,7 +672,7 @@ def _write_report(state: _State) -> dict[str, Any]:
         "edits": _edit_tally(state),
         "curve": curve,
         "teeth": teeth(curve),
-        "new_families": _new_family_count(state.directory / "theory"),
+        "new_families": _new_family_count(state),
         "extractor": {} if state.extractor is None else state.extractor.stats,
     }
     if state.status == "error":
@@ -634,10 +713,22 @@ def _edit_tally(state: _State) -> dict[str, int]:
     return counts
 
 
-def _new_family_count(theory: Path) -> int:
+def _new_family_count(state: _State) -> int:
+    """Families in the run's theory.
+
+    With no vocabulary file, this is ``len(new_families(theory))``. That helper
+    opens the store on the base vocabulary, which does not match a run that
+    loaded another registry, so that run is counted from the workbench opened
+    on the same registry the store was created with.
+    """
+    theory = state.directory / "theory"
     if not (theory / "head.json").is_file():
         return 0
-    return len(new_families(theory))
+    if state.registry is None:
+        return len(new_families(theory))
+    from surprise.theory import Workbench
+
+    return len(Workbench.open(theory, registry=state.registry).families())
 
 
 def _config(state: _State) -> dict[str, Any]:
@@ -651,6 +742,8 @@ def _config(state: _State) -> dict[str, Any]:
         "bootstrap": [dict(item) for item in state.bootstrap],
         "run_id": state.run_id,
     }
+    if state.vocabulary is not None:
+        payload["vocabulary"] = state.vocabulary
     if state.llm is not None:
         payload["llm"] = _llm_public(state.llm)
     return payload
@@ -776,6 +869,60 @@ def _resolve_beta(beta: object) -> float:
     if not math.isfinite(number) or number <= 0:
         raise UsageError(f"beta: expected a number > 0, got {beta!r}")
     return number
+
+
+def _accepts_keyword(method: object, name: str) -> bool:
+    """Whether ``method(..., name=value)`` is a legal call.
+
+    The S9 loop tests install a role double whose ``observe`` has no ``event``.
+    """
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+    if name in parameters:
+        return True
+    return any(item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values())
+
+
+def _notify_roles(state: _State, step: _Step, record, outcome) -> None:
+    """Settle the book, hand the experiment to the plugins, then run ``after``."""
+    roles = state.roles
+    observe = roles.observe
+    if _accepts_keyword(observe, "event"):
+        from surprise.roles.base import Observed
+
+        observe(
+            step.phi,
+            record.label,
+            record.record_id,
+            event=Observed(
+                wb=state.wb,
+                phi=step.phi,
+                record=record,
+                outcome=outcome,
+                prediction=step.prediction,
+                lane=step.lane,
+                op=step.op,
+                hypothesis=step.hypothesis,
+                target=step.target,
+                index=step.index,
+            ),
+        )
+    else:
+        observe(step.phi, record.label, record.record_id)
+    roles.after(state.wb, record, outcome)
+
+
+def _normalise_vocabulary(vocabulary: object) -> str | None:
+    """A registry file path, or None. The stored string is the one the caller gave."""
+    if vocabulary is None:
+        return None
+    if not isinstance(vocabulary, str) or vocabulary == "":
+        raise UsageError(f"vocabulary: expected a non-empty file path, got {vocabulary!r}")
+    if not Path(vocabulary).is_file():
+        raise UsageError(f"vocabulary file does not exist: {vocabulary}")
+    return vocabulary
 
 
 def _normalise_llm(llm: object) -> dict[str, Any] | None:
