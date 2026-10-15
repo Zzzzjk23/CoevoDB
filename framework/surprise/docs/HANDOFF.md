@@ -13,12 +13,28 @@
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
-| S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
+| S9 | Phase 5a LLM 网关、实现器、猜想者 | 进行中（见下一节） | | |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S9（2026-10-15 开工）
+
+用户的指示："现在是不是可以进入S9了"；开工前问的密钥一件，用户选了"给需要的包，加调用上限"（DECISIONS 有记）。会话分支 `session/s09` 从 `s08-done-r2`（804ec1c）建立；起点独立复跑 613 passed / 3 skipped，GATES PASS 8/8。
+
+- 门槛 `gates/s09.py`（十二组）与 `s09_cases.py` 已提交（ad0e90b）。后三组（`implementer_report`、`dfa`、`replay`）读编排者录制、提交在 `gates/s09_llm/` 的回复缓存，合并之后才录。
+- 引擎源码：`.src/duckdb-v1.5.5`、`.src/datafusion-54.0.0`（浅克隆，不入库，提交号由门槛钉住）。
+- 派发脚本：`spawn --llm-key N` 给包密钥与上限（DECISIONS 有记）。用户要在 Windows 用户环境变量里设 `DEEPSEEK_API_KEY`（不必重启 Claude Code，脚本会读用户级变量）。2026-10-15 开工时还没有设。
+
+| 包 | 内容 | 允许路径 | 依赖 | 状态 |
+|---|---|---|---|---|
+| s09-gateway | 网关、缓存、账本、上限、两档模型、DeepSeek 传输、读源码工具 | `roles/` 的 constants、schema、cache、gateway、transport、source 与 `__init__`；两个测试文件 | 无 | 已派发（无密钥） |
+| s09-roles | 实现器、猜想者、猜想簿、选源、`RoleSet`、`ImplementerSource` | `roles/` 的 implementer、conjecturer、runtime、sources_map 与 `__init__`；三个测试文件 | s09-gateway | 说明已写，等网关包合并；派发时 `--llm-key 60` |
+| s09-wire | Hunter 的 `sources` 钩子；主循环的 `llm` 参数与 `--llm*` 开关 | `hunter/hunter.py`、`experiments/loop.py`、一个测试文件 | s09-gateway | 说明已写，与 s09-roles 并行 |
+
+合并之后编排者要做的：(1) 用 `/models` 核对模型名；(2) 录实现器的 φ 核对报告（30 条规格）、DF-A 的猜想、开着角色的 DataFusion 短跑，缓存与期望输出放 `gates/s09_llm/{implementer,dfa,loop}/`；(3) 因为改了 `hunter/` 与 `experiments/`，在 LLM 全关的情况下重跑 3 小时长跑（DuckDB 1.5.5、种子 0、七类 oracle），用 `.orch/scratch/s8/pin.py longrun` 重钉 S8 门槛的 `longrun` 一项。
 
 ## 最近完成会话：S8（2026-10-15）
 
