@@ -48,7 +48,7 @@ IMPLEMENTER_ATTEMPTS = 2
 IMPLEMENTER_PER_CHOICE = 1
 
 # Model tier the conjecturer uses for every call.
-CONJECTURER_TIER = "strong"
+CONJECTURER_TIER = "fast"
 
 # Sampling temperature of the conjecturer.
 CONJECTURER_TEMPERATURE = 0.6
