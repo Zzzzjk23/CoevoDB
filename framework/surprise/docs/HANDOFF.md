@@ -33,10 +33,10 @@
 | s11-grid | 实验网格、原 CoevoDB 的 mode、SQLancer 转录 | 2 | `experiments/grid.py`、`baselines/old_no_llm.py`、`baselines/sqlancer.py`、`baselines/data/` | 首轮通过，已合并 |
 | s11-dedup | 离线去重对比、上游回归测试重放 | 2 | `metrics/dedup.py`、`metrics/coverage.py` | 首轮通过，已合并 |
 | s11-purellm2 | 纯 LLM 提示讲清谓词拼法、每次 4 个用例（计划外） | 3 | `baselines/pure_llm.py` | 已合并 |
-| s11-purellm3 | 纯 LLM 换短提示、上限 32000（计划外） | 3 | `baselines/pure_llm.py` | 已派发 |
+| s11-purellm3 | 纯 LLM 换短提示、上限 32000（计划外） | 3 | `baselines/pure_llm.py` | 已合并 |
 | s11-report | 统计检验、`python -m surprise.metrics.report` 与 7 张图 | 3 | `metrics/stats.py`、`metrics/report.py`（另带 `experiments/grid.py` 的一行修正） | 返工 1 轮，已合并 |
 
-全部合并之后：编排者用真实调用录 `gates/s11_llm/pure_llm`（门槛 `pure_llm` 组）；单独重跑 3 小时长跑并按 S8 验收的办法重钉（本会话改了 `experiments/`、`hunter/`、`diagnoser/`、`theory/`）。
+全部合并之后：编排者用真实调用录 `gates/s11_llm/pure_llm`（门槛 `pure_llm` 组；第三次录制进行中，前两次因提示问题作废）；3 小时长跑已于 cc2af2b 起跑（`results/s08/longrun`，旧的挪到 `longrun-s10code`），跑完按 S8 验收的办法重钉。
 
 ## 最近完成会话：S10（2026-10-16）
 
