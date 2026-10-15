@@ -1046,8 +1046,12 @@ def check_m3() -> str:
     wb = T.Workbench.open(out / "theory")
     registry = F.default_registry()
     first = records[0]
-    dfa_family = wb.family_of(rows[first.record_id]["opened"]) if rows[first.record_id]["opened"] else None
-    require(first.label.y == "fail" and dfa_family is not None, "the bootstrap DF-A fails and opens a family")
+    # Families are read from the theory as it stands at the end: an accepted revise replaces the
+    # hypothesis a record opened, so the record's current owner names its family.
+    first_owner = wb.owner_of(first.record_id)
+    dfa_family = None if first_owner is None else wb.family_of(first_owner)
+    require(first.label.y == "fail" and rows[first.record_id]["opened"] is not None and dfa_family is not None,
+            "the bootstrap DF-A fails, opens a family, and is owned at the end")
     hits = []
     for record in records[1:]:
         if record.label.y != "fail" or record.label.oracle != C.DF_B["oracle"] or record.case.engine != "datafusion":
@@ -1064,8 +1068,9 @@ def check_m3() -> str:
     hit = hits[0]
     row = rows[hit.record_id]
     require(row["lane"] in C.DF_B["role_lanes"], f"DF-B was reached through a role's lane: {row['lane']}")
-    owner = row["opened"] or row["owner"]
-    require(owner is not None and wb.family_of(owner) != dfa_family, "DF-B lives in a family of its own, not DF-A's")
+    owner = wb.owner_of(hit.record_id)
+    require((row["opened"] or row["owner"]) is not None and owner is not None and wb.family_of(owner) != dfa_family,
+            "DF-B opened or joined a family when it ran, and that family is not DF-A's")
     families = {fam["family"]: fam for fam in new_families(out / "theory")}
     require(families.get(wb.family_of(owner), {}).get("key") == keys["DF-B"], "the referee keys that family as DF-B")
     chain = "-"

@@ -26,6 +26,9 @@ TRANSLATOR_OP = "translator"
 
 # ---- constants (PLAN decision 8: in roles/constants.py, hence in the run manifest's llm section) ----
 
+# The three long-answer roles take 16000 tokens (raised from 8000 after the M3 recording: deepseek-flash
+# counts reasoning tokens against max_tokens, and the translator's and the oracle inventor's replies were
+# cut off at 8000 with no JSON, the same lesson S9 learned for the conjecturer). The prior answers in ~3000.
 CONSTANTS = {
     "REWRITE_LIBRARY_ENV": "SURPRISE_REWRITE_LIBRARY",
     # exploration prior
@@ -41,13 +44,13 @@ CONSTANTS = {
     # migration translator
     "TRANSLATOR_TIER": "fast",
     "TRANSLATOR_TEMPERATURE": 0.2,
-    "TRANSLATOR_MAX_TOKENS": 8000,
+    "TRANSLATOR_MAX_TOKENS": 16000,
     "TRANSLATOR_ATTEMPTS": 2,
     "TRANSLATOR_PER_CHOICE": 1,
     # vocabulary inventor
     "VOCAB_TIER": "fast",
     "VOCAB_TEMPERATURE": 0.4,
-    "VOCAB_MAX_TOKENS": 8000,
+    "VOCAB_MAX_TOKENS": 16000,
     "VOCAB_TRIGGER_CONTRADICTIONS": 2,
     "VOCAB_MIN_POSITIVES": 2,
     "VOCAB_HOLDOUT_DIVISOR": 3,
@@ -58,7 +61,7 @@ CONSTANTS = {
     # oracle inventor
     "ORACLE_TIER": "fast",
     "ORACLE_TEMPERATURE": 0.6,
-    "ORACLE_MAX_TOKENS": 8000,
+    "ORACLE_MAX_TOKENS": 16000,
     "ORACLE_EVERY": 100,
     "ORACLE_CALLS_PER_RUN": 3,
     "ORACLE_RULES_PER_CALL": 3,
