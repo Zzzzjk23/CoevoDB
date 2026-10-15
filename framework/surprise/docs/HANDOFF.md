@@ -13,34 +13,211 @@
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
-| S9 | Phase 5a LLM 网关、实现器、猜想者 | 进行中（见下一节） | | |
+| S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 进行中：S9（2026-10-15 开工）
+## 最近完成会话：S9（2026-10-15）
 
-用户的指示："现在是不是可以进入S9了"；开工前问的密钥一件，用户选了"给需要的包，加调用上限"（DECISIONS 有记）。会话分支 `session/s09` 从 `s08-done-r2`（804ec1c）建立；起点独立复跑 613 passed / 3 skipped，GATES PASS 8/8。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"现在是不是可以进入S9了"。开工前问了 LLM 密钥怎么给工作包，用户选了"给需要的包，加调用上限"，之后告知"密钥已经设好了"。会话分支 `session/s09` 从 `s08-done-r2`（804ec1c）建立；起点独立复跑 613 passed / 3 skipped，GATES PASS 8/8。
 
-- 门槛 `gates/s09.py`（十二组）与 `s09_cases.py` 已提交（ad0e90b）。后三组（`implementer_report`、`dfa`、`replay`）读编排者录制、提交在 `gates/s09_llm/` 的回复缓存，合并之后才录。
-- 引擎源码：`.src/duckdb-v1.5.5`、`.src/datafusion-54.0.0`（浅克隆，不入库，提交号由门槛钉住）。
-- 派发脚本：`spawn --llm-key N` 给包密钥与上限（DECISIONS 有记）。用户要在 Windows 用户环境变量里设 `DEEPSEEK_API_KEY`（不必重启 Claude Code，脚本会读用户级变量）。2026-10-15 开工时还没有设。
+四个包全部合并。真实调用的录制、LLM 全关的 3 小时长跑由编排者自己做。收尾合并回 main，tag `s09-done`。
 
-| 包 | 内容 | 允许路径 | 依赖 | 状态 |
+### 交付与门槛
+
+LLM 角色全部在新目录 `surprise/roles/` 里。`hunter/hunter.py` 与 `experiments/loop.py` 只加了接线，角色由开关接入，全关时与 S8 逐行相同。`diagnoser/`、`harness/`、`features/`、`theory/` 与冻结清单都没有动。
+
+- **网关**（`roles/gateway.py`、`cache.py`、`schema.py`、`transport.py`、`constants.py`）：
+  - 响应缓存：键是 `sha256(提示的 sha256 + 模型 + 种子)`。命中时不联网；条目里存着提示哈希，对不上的条目拒收。
+  - 回复必须是带 `prediction` 字段的 JSON 对象，否则拒收。拒收也进缓存，重放时仍是拒收。
+  - 按角色记账：调用、联网、缓存、通过、拒收、被上限挡下、缓存缺失、出错，以及输入输出 token。每次调用在 run 目录的 `llm/calls.jsonl` 写一行。
+  - 上限：每个网关实例默认最多 200 次联网调用。环境变量 `SURPRISE_LLM_MAX_CALLS` 只能把它调低。出错的调用也计数，不进缓存。
+  - 两档模型：`fast = deepseek-flash`，`strong = deepseek-v4-pro`。
+  - `DeepSeekTransport` 继承旧的 `agents/base_agent.BaseAgent`，每次调用也记进旧的 `llm/ledger`。只有真要联网时才构造它。
+- **读源码工具**（`roles/source.py`）：只读，限定在根目录之内。`open_sources()` 核对仓库根 `.src/` 下两份检出的提交号：DuckDB v1.5.5 是 d8cdaa33，DataFusion 54.0.0 是 45d943df。
+- **实现器**（`roles/implementer.py`）：
+  - 把规格写成 setup、query、predicate 三项的 JSON。
+  - 提取 φ，用 `check_spec` 核对。不满足时，带上缺了哪些特征、多了哪些特征重试一次。
+  - 命令行 `--specs` 给出 φ 核对报告。
+- **猜想者**（`roles/conjecturer.py`）：
+  - 新家族开出时调用一次。
+  - 提示里有：用例、最小化用例、fix set、计划差异、φ、源码片段、只许用的词表。源码片段按 `roles/sources_map.py` 选，最多 4 个文件、400 行。
+  - 回复要给出机制、触发条件（用词表里的特征）和 1–5 条预测，其中至少一条 fail、一条 pass。
+  - 登记进猜想簿 `llm/conjectures.jsonl`。状态为 open 的预测就是待检实验。
+  - 同时经 `wb.propose` 提一条 `revise`，押注就是这些预测。
+  - 之后的实验落进某条预测的规格时兑现，记为 kept 或 broken。
+- **接线**：
+  - `roles/runtime.py` 提供 `RoleSet`、`ImplementerSource` 与 `build_roles`。
+  - Hunter 加了 `sources` 钩子。实现器经它给 Hunter 两条新车道的候选：`bet` 来自猜想的待检预测，`implement` 来自假设边界上的规格。
+  - 主循环加了 `llm` 参数与 `--llm*` 开关。
+  - progress 每行多一个 `llm` 摘要。摘要里不放耗时与 token，这样重放才能逐行相同。
+
+门槛 `gates/s09.py` 共十二组：
+
+- 九组用脚本回复或不调用：`isolation`、`constants`、`cache`、`reject`、`cap`、`source`、`implementer`、`conjecturer`、`wiring`。
+- 三组重放编排者录下的真实回复：`implementer_report`、`dfa`、`replay`。
+  - 回复缓存提交在 `gates/s09_llm/`，里面只有提示与回复，没有密钥。
+  - 整个门槛不联网。
+
+与 SESSIONS 的对应：
+
+| SESSIONS 的要求 | 门槛组 |
+|---|---|
+| 缓存命中时零网络调用、重放结果一致 | `cache`、`replay`（开着角色的 21 条短跑逐行重放） |
+| 缺预测的输出被拒收 | `reject` |
+| 实现器 SQL 的 φ 核对通过率报告 | `implementer`（脚本回复）、`implementer_report`（真实回复，只报告、不设线） |
+| 猜想者在 DF-A 上给出带预测的假设并登记为待检实验 | `conjecturer`（脚本回复）、`dfa`（真实回复） |
+| 按角色记账、调用上限、两档模型 | `cache`、`cap`、`constants` |
+| 读源码工具与源码检出 | `source` |
+| （S8 验收定下）LLM 全关时与 S8 相同 | `wiring`、`isolation`，以及 S8 门槛重钉的 `longrun` |
+
+最终复跑（四包合并、录制与长跑重钉之后，在 `session/s09` 主检出区独立运行，在 `framework/` 下，去掉密钥）：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 692 passed, 3 skipped，退出码 0（起点 613，新增 79，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12；S01–S04 PASS（输出只留了末 80 行，前四个门槛的组数没有留下）；GATES: PASS (9/9 passed)，退出码 0 |
+
+### 实机运行的数字
+
+**真实调用**：全部在 fast 档（`deepseek-flash`）。
+
+| 谁 | 次数 | 用途 |
+|---|---|---|
+| 执行者 | 80 | `s09-roles` 首轮 48 次、返工 32 次，确认提示与上限在真模型上有效 |
+| 编排者 | 57 | 录制：实现器报告 31 次，DF-A 猜想 1 次，短跑 25 次 |
+| 编排者 | 几次 | 冒烟测试；strong 档的排队探测 |
+
+**实现器的 φ 核对**（`gates/s09_llm/implementer/report.json`；30 条规格，十个家族各三条）
+- 首次通过 29/30（0.97），重试之后 30/30。
+- 按类别（首次 → 最终）：整个 S 9 → 10；特征核心 10 → 10；边界（核心去掉一个字面量当禁止项）10 → 10。
+- 31 次调用，其中 1 次回复被拒收。输入 19,599 token，输出 52,933 token。
+
+**DF-A 的猜想**（`gates/s09_llm/dfa/conjecture.json`）
+- 结果：登记成功。选的源码是 `datafusion/expr/src/logical_plan/builder.rs` 第 1332–1422 行。
+- 机制：`LogicalPlanBuilder::intersect_or_except` 把 EXCEPT ALL 实现成带 NullEqualsNull 的 LeftAnti 连接，于是只要右侧有匹配，左侧的行就全部删掉，而不是按重复次数逐个抵消。
+- 触发条件：`ast:set_op:except_all`、`ast:stmt:select`、`data:setop:left_has_dups`。
+- 4 条预测（fail、pass、fail、pass）。随之提的 `revise`（e1）被接受。
+
+**开着角色的 DataFusion 短跑**（`gates/s09_llm/loop/`；产物在 `results/s09/loop_llm`，不入库）
+- 设置：种子 0；cross_dbms、tlp、norec 三类 oracle；从 DF-A 引导。
+- 规模：20 次选择、21 条实验，446 秒。联网 25 次：猜想者 3 次，实现器 22 次。
+- 车道：引导 1、implement 7、bet 5、generalize 5、refine 3。标签：fail 4、pass 17。
+- 实现器：20 次尝试，18 次首次就满足规格，2 次 `spec_unmet`。
+- 猜想：3 条，共 12 条预测。kept 6、broken 2，4 条仍是 open。
+- 编辑：报告里接受 1、拒绝 1、回滚 1。最后留在理论里的猜想者提议只有 h5（下面第一点）。
+- **从 DF-A 走到了 INTERSECT ALL**：
+  - 第 10 条开出新家族。对它的猜想 c2 有一条预测："左侧有重复的 INTERSECT ALL 会失败"。
+  - 第 13 条就是这条预测的 bet 车道实验。它判 fail（只多行），开了新假设。
+  - 对它的猜想 c3 说：INTERSECT ALL 被降成 LeftSemi 哈希连接，保留了左侧全部的重复行。这与 `datafusion/DF-B_intersect_all.sql` 的描述一致。
+  - c3 的 `revise`（e3）被接受，S 缩到 3 个字面量（h5）。
+  - 它是不是 DF-B 没有经身份裁判核对，只是编排者的判读。S10 的 M3 门槛是"从 DF-A 出发闭环复现 DF-B"，这次短跑可以当参考。
+- **被证伪的预测**：c1 预测"左侧有重复、两侧都没有 NULL 的 EXCEPT ALL 会失败"，第 4 条实验却通过了（`unexpected_pass`）。之后 DF-A 的两个假设（h1、h3）的 S 都带着 NULL 的特征。
+- DF-A 开了两个家族：h1 来自引导，h3 来自第 10 条。第 10 条的失败没有右侧 NULL，落在 h1 的 G 之外，按 S6 的规则另开了一个身份相同的家族（见 S6 发现"身份一致但落在 G 之外"）。
+
+**LLM 全关的 3 小时长跑（重跑）**（`results/s08/longrun`；S8 代码跑出的那份挪到 `results/s08/longrun-s8code`，两份都不入库）
+
+| | S8 代码 | S9 代码（角色全关） |
+|---|---|---|
+| 实验 | 8900 | 9388 |
+| fail / pass / invalid | 89 / 4197 / 4614 | 106 / 4438 / 4844 |
+| 车道（探索 / 泛化 / 细化） | 8804 / 60 / 36 | 9279 / 68 / 41 |
+| 假设 / 家族 / 不同身份 | 26 / 12 / 6 | 30 / 15 / 7 |
+| 重复率（旧系统 0.818） | 0.500 | 0.533 |
+| 窗口与齿 | 89 个窗口，齿在 3、9、17、40 | 93 个窗口，齿在 3、9、17、43 |
+
+- 两份都是 0 条 harness_error。
+- 去掉 `elapsed_s` 后，前 2936 行逐行相同。
+- 第 2937 行是同一条 plan variant 用例：S8 那次判 `invalid / unstable_rerun`，这次判 pass。这是 harness 第 1 档的重跑不稳定，不是代码差异。之后的选择链就分开了。
+- 这次是单独跑的；S8 时与旧系统基线、召回 run 三个并行。所以这次吞吐更高、条数更多。
+
+### 拆包清单与结论（全部已合并）
+
+| 包 | 内容 | 轮数 | 合并 | 审查 |
 |---|---|---|---|---|
-| s09-gateway | 网关、缓存、账本、上限、两档模型、DeepSeek 传输、读源码工具 | `roles/` 的 constants、schema、cache、gateway、transport、source 与 `__init__`；两个测试文件 | 无 | 已合并（fad16c2，返工 1 轮） |
-| s09-roles | 实现器、猜想者、猜想簿、选源、`RoleSet`、`ImplementerSource` | `roles/` 的 implementer、conjecturer、runtime、sources_map 与 `__init__`；三个测试文件 | s09-gateway | 已派发（`--llm-key 60`） |
-| s09-wire | Hunter 的 `sources` 钩子；主循环的 `llm` 参数与 `--llm*` 开关 | `hunter/hunter.py`、`experiments/loop.py`、一个测试文件 | s09-gateway | 已合并（8b7541e，首轮通过）；长跑已重跑中（约 19:25 结束） |
+| s09-gateway | 网关、缓存、账本、上限、两档模型、DeepSeek 传输、读源码工具 | 返工 1 轮：模型改名（编排者没在派发前核对） | fad16c2 | 独立复跑 635 passed / 3 skipped；约 1.05 美元 |
+| s09-wire | Hunter 的 `sources` 钩子；主循环的 `llm` 参数与 `--llm*` 开关 | 首轮通过 | 8b7541e | 独立复跑 668 passed / 3 skipped，全关 40 行与 S8 相同；约 1.28 美元 |
+| s09-roles | 实现器、猜想者、猜想簿、选源、`RoleSet`、`ImplementerSource` | 返工 1 轮：五处，见 DECISIONS | 4c5f31b | 真实调用 80 次（`--llm-key 60`，返工 40）；约 5.65 美元 |
+| s09-testfix | 一条测试不再依赖执行次序 | 首轮通过 | 9069083 | 合并后 692 passed / 3 skipped；约 0.13 美元 |
 
-合并之后编排者要做的：(1) 用 `/models` 核对模型名；(2) 录实现器的 φ 核对报告（30 条规格）、DF-A 的猜想、开着角色的 DataFusion 短跑，缓存与期望输出放 `gates/s09_llm/{implementer,dfa,loop}/`；(3) 因为改了 `hunter/` 与 `experiments/`，在 LLM 全关的情况下重跑 3 小时长跑（DuckDB 1.5.5、种子 0、七类 oracle），用 `.orch/scratch/s8/pin.py longrun` 重钉 S8 门槛的 `longrun` 一项。
+- 说明、报告、审查包归档在 `docs/orch/s09/`。
+- grok 成本合计约 8.11 美元。
+- 第四个包是计划外的：两个包并行开发时各自都绿，合并之后一条测试才因为执行次序失败。
+
+### 当前接口
+
+命令（在 `framework/` 下）：
+
+- `python -m surprise.experiments.loop … [--llm implementer] [--llm conjecturer] [--llm-cache 目录] [--llm-max-calls N] [--llm-offline]`
+  - 不带 `--llm` 时与 S8 相同，不导入任何角色模块。
+  - 带 `--llm` 必须给 `--llm-cache`。
+  - 联网要 `DEEPSEEK_API_KEY`。`--llm-offline` 只从缓存回答，缓存缺失记为 `miss`。
+  - 其余参数同 S8。
+- `python -m surprise.roles.implementer --specs <JSON：[{id, spec}]> --cache <目录> --out <报告> [--seed N] [--max-calls N] [--offline]`
+  - 会打出一条 runpy 的 RuntimeWarning，无害。
+
+run 目录在 S8 之外多了 `llm/`：
+- `calls.jsonl`：每次调用一行，有角色、档、模型、键、提示哈希、状态、来源、token、耗时。
+- `conjectures.jsonl`：猜想簿，包括 conjecture 行与 settle 行。
+- `implementer.jsonl`：实现器的每次尝试。
+- 此外，`config.json` 与 manifest 多了 `llm` 一节，`report.json` 多了 `llm` 摘要。
+
+Python 接口（`surprise.roles`）：
+- `Gateway(*, cache_dir, ledger_path=None, max_calls=None, transport=None)`：
+  - `.call(role, prompt, *, tier, seed, temperature=0.0, max_tokens=4000) -> Reply`
+  - `.totals()`、`.manifest()`、`.network_calls`
+- `Implementer(*, gateway, extract, registry=None, seed, tier=None, attempts=None)`：`.implement(spec) -> Attempt`。另有 `implementer_report(specs, implementer)`。
+- `Conjecturer(*, gateway, extract, book, registry=None, sources=None, seed, tier=None)`：`.after(wb, record, outcome) -> Conjecture | None`。
+- `ConjectureBook(path)`：`.pending()`、`.observe(phi, label, record_id)`、`.summary()`。
+- `select_sources(engine, hypothesis, phi, readers)`；`open_sources()`；`SourceReader`。
+- `build_roles(config, *, run_dir, extract, registry, engines, seed) -> RoleSet`：
+  - `config` 是 `{"roles", "cache", "max_calls", "network"}`；测试可以多传一个 `transport`。
+- `Hunter(…, sources=())`：每个来源要有 `.candidates(wb, *, index, round)`，返回 `Candidate` 列表。
+
+S10 的四个角色接进来的位置：
+- 每个角色照 `roles/` 的写法，经同一个网关。
+- 由 `build_roles` 的 `roles` 列表加开关。
+- 需要给 Hunter 候选的，走 `sources` 钩子；需要提编辑的，走 `wb.propose`。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+1. **模型名**：两档改为 `deepseek-flash` / `deepseek-v4-pro`。开工时定的 `deepseek-chat` / `deepseek-reasoner` 不在 DeepSeek 的 `/models` 列表里。
+2. **猜想者默认用 fast 档**：
+   - strong 档第一次冒烟时排队了 900 秒；录制前再试，1.8 秒就开始输出。
+   - 但传输没有每个请求的总时限，长跑里一次卡住就会拖住整个循环。提示也是在 flash 上调出来的。
+   - strong 档保留，供 S11 做模型强度消融。
+3. **token 上限**：实现器 8000、猜想者 16000。`deepseek-flash` 把推理 token 算进 `max_tokens`，2000 时有 5/30 条规格在写出 JSON 之前就用完了。
+4. **门槛 `F7/boundary` 的规格改了**：原题"有 date_arith、无 interval"按词表定义做不到，是编排者出题的错。没有放宽任何检查。
+5. **"全关时与 S8 相同"的落地办法**：
+   - 门槛：同种子 40 条短跑，去掉耗时字段之后的哈希等于 S8 长跑的前 40 行，且进程里没有加载任何 `surprise.roles` 模块。
+   - 长跑：重跑一次再重钉哈希（S8 验收定下的办法），单独跑。
+6. **实现器的规格不放 plan 层字面量**：实现器写的是 SQL，挑不了计划。φ 核对报告只报告，不设线。
+7. **"登记为待检实验"落成两件事**：猜想簿里状态为 open 的预测，加上 `revise` 编辑的押注。编辑被不被接受由 S7 的规则定，门槛不要求接受。
+8. **真实回复录一次、提交入库**（`gates/s09_llm/`，57 个缓存文件，共 344 KB）。门槛从缓存重放，不联网。缓存里只有提示与回复；提交前查过，没有密钥。
+
+### 与计划的偏差
+
+- 拆了四个包，比开工时定的三个多一个修复包 `s09-testfix`。
+- 门槛 `gates/s09_cases.py` 在派发后改了三次，期望都没有放宽：
+  - a2c5cc7：模型名；
+  - cbe2773：猜想者改用 fast 档；
+  - 04c0da9：token 上限与 F7 边界规格。
+  - 录制的回复（4e696af、0fb197c）是门槛事先说好要补的数据，不算改门槛。
+- PLAN 决策 10 写的是"至少两档"，网关照做了。但两个角色实际都用 fast 档，strong 档在本会话只在冒烟与探测里用过。
+- 执行者拿到了真实密钥（用户的决定）。各轮都没有超过上限；日志与 worktree 里都扫过，没有密钥。
+- 重跑的长跑数字与 S8 不同（见上），原因是 harness 的不稳定与单独运行，不是接线。S8 门槛的 `longrun`、`sawtooth`、`duplicates`、`recall` 四组对新产物通过。
+- 没有改冻结区、S6 / S7 的规则与 S8 门槛的检查逻辑；LLM 没有打任何标签。
+
+S9 留下的未决问题在文末"未决问题"一节的"S9 发现"一组里。
 
 ## 最近完成会话：S8（2026-10-15）
 
 Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"确认S7中的新常数和编排规则，然后开始S8"。会话分支 `session/s08` 从 `s07-done-r2`（f762a66）建立；PG 服务器原先停着，按 S3 一节的命令启动（没有重新 initdb）。起点独立复跑：550 passed, 3 skipped；GATES PASS 7/7。四个包全部合并，长跑等产物由编排者自己跑；收尾合并回 main，tag `s08-done`。用户验收后另打 `s08-done-r2`（只多了验收记录，代码与门槛相同）；S9 从 `s08-done-r2` 起。
 
-**用户验收（2026-10-15）：** 用户的答复是"全部按照你建议的确认"。收尾消息里的五项人工检查都按编排者的建议定下，逐项见 DECISIONS 的 S8 验收一条：门槛的修正（798c7c4）保留；`window_self_join` 维持现状（不对外报告、不加进已知集）；β = 1.0；S9 改到 S8 长跑绑定的代码时的处理办法（见文末"下一会话的起点：S9"）；产物不入库、由用户自行备份。
+**用户验收（2026-10-15）：** 用户的答复是"全部按照你建议的确认"。收尾消息里的五项人工检查都按编排者的建议定下，逐项见 DECISIONS 的 S8 验收一条：门槛的修正（798c7c4）保留；`window_self_join` 维持现状（不对外报告、不加进已知集）；β = 1.0；S9 改到 S8 长跑绑定的代码时的处理办法（S9 已按它重跑长跑，见 S9 一节）；产物不入库、由用户自行备份。
 
 **用户在开工后确认的三件事（2026-10-15）：** 用户答复"由你定、可以推翻的几件事都确认"。三件事是：重复率用同一个身份裁判、按同样的墙钟预算比；β 预实验的方案；误吸收的规则不改。
 
@@ -802,7 +979,26 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S9 及之后需要知道的）
+### 未决问题（S10 及之后需要知道的）
+
+S9 发现、留后续会话：
+- **传输没有每个请求的总时限**：
+  - `DeepSeekTransport` 用的是旧 `BaseAgent` 的 httpx 客户端，`timeout=300` 管的是两次读之间的间隔。
+  - DeepSeek 排队时会一直发 keep-alive，所以这个超时不会触发。冒烟时一次 strong 档调用 900 秒没有任何内容。
+  - 要在长 run 里用 strong 档，先在 `roles/transport.py` 里加每个请求的总时限（旧的 `agents/base_agent.py` 不改）。
+- **`deepseek-v4-pro` 时好时坏**：一次排队 15 分钟，一小时后 1.8 秒就开始输出。两个角色现在都用 fast 档，见 S9 一节"PI 已自行核查"第 2 条。
+- **缓存键不含温度与 token 上限**（PLAN 定的是"提示哈希 + 模型 + 种子"）：
+  - 只改温度或 `*_MAX_TOKENS` 时，旧缓存照样命中，拿到的是旧设置下的回答。
+  - 要重新录，就换缓存目录。门槛的 `gates/s09_llm/` 是按现在的常数录的。
+- **提示里不能有随运行而变的东西**：记录号、假设号、时间戳都会让缓存键变，重放就失效。S9 的猜想者提示因此不带这些编号（门槛 `conjecturer` 组查过）。S10 的四个角色照此办理。
+- **开着角色的长 run 很快会撞上上限**：短跑 20 次选择就用了 25 次调用，默认上限是 200。到了上限之后角色全部被挡下，循环照常跑（门槛 `wiring` 组查过上限为 0 的情形），只是之后就没有 LLM 了。S11 跑带角色的评估时，要按预算定 `--llm-max-calls`。
+- **猜想的预测里可以出现 plan 层字面量**（词表允许）。实现器只写 SQL、挑不了计划，这类预测作 bet 时可能总是 `spec_unmet`，只能等探索碰上，可能一直是 open。
+- **DuckDB 的选源取的是文件开头**：按 fix set 里的优化器名查 `roles/sources_map.py` 找文件，每个文件取开头的 400 / k 行。DataFusion 一侧按特征定位到函数（如 `fn intersect_or_except`）。DuckDB 也要定位到函数的话，得给每个优化器补一个函数名标记，没有做。
+- **DF-A 在开着角色的短跑里开了两个家族**（h1、h3）：第 10 条的失败没有右侧 NULL，落在 h1 的 G 之外，于是另开了一个身份相同的家族。这是 S6 发现里"身份一致但落在 G 之外"的实机例子，合并要靠 MDL。
+- **`python -m surprise.roles.implementer` 会打一条 runpy 的 RuntimeWarning**：`roles/__init__.py` 已经导入了这个模块。无害，没有改。
+- **长跑门槛仍与代码摘要绑定**：S10 改了 `hunter/`、`diagnoser/`、`experiments/` 的任何一行，S8 门槛的 `longrun` 组又会失败，要按 S8 验收的办法在 LLM 全关时重跑 3 小时长跑、重钉哈希。
+- **门槛 `replay` 组现跑一次 21 条的循环**（DataFusion，回复全从缓存来），`replay` 约 42 秒、`wiring` 约 44 秒，`surprise.gates.all` 因此多了一分半钟左右。
+- **重跑的长跑在第 2937 行与 S8 分叉**：同一条 plan variant 用例，一次判 `invalid / unstable_rerun`，一次判 pass。harness 的第 1 档重跑不稳定会让同种子的长跑不可逐行复现；S8 的 `determinism` 组只在短跑上查同种子一致。
 
 S8 发现、留后续会话：
 - **DuckDB 1.5.5 的 `window_self_join` 错误结果**（复现与数字见 S8 一节）：没有对外报告，也没有写进 `duckdb/` 复现目录或 M1 表；要不要报告、要不要把它加进已知集，由用户定。用户验收时确认维持现状：不报告、不加。
@@ -823,7 +1019,7 @@ S8 发现、留后续会话：
 - **旧系统基线是到点强杀的**（`ended: killed`，`returncode 1`）：`bugs.jsonl` 的最后一行可能是半截。`old_reports` 会忽略截断的最后一行，这次 11 条都完整。
 - **第 3 档里崩溃与超时的复核很慢**：长跑最慢的五次各用 2–7 分钟，都是 crash / timeout 的重跑与最小化，五次合计约 19 分钟，占墙钟的 11%。S4 记的"每次原始判定起一个进程"在长跑里实测平均每条 1.2 秒，没有成为瓶颈。
 - **`loop` 不支持续跑**，输出目录必须为空，中断了只能整个重跑。理论存储每 100 条切一代，可以从最近一代恢复，没有做。
-- **长跑门槛与代码摘要绑定**：`longrun` 组要求 manifest 里的代码摘要等于当前 `hunter/`、`diagnoser/`、`experiments/` 的代码。之后的会话只要改了这三个目录，S8 门槛的 `longrun` 组就会失败，得重跑 3 小时长跑再钉哈希；不想重跑，就要先问用户怎么处理旧门槛。`sawtooth`、`duplicates` 用同一份产物，不查代码摘要。用户验收时按编排者的建议定下办法，见文末"下一会话的起点：S9"。
+- **长跑门槛与代码摘要绑定**：`longrun` 组要求 manifest 里的代码摘要等于当前 `hunter/`、`diagnoser/`、`experiments/` 的代码。之后的会话只要改了这三个目录，S8 门槛的 `longrun` 组就会失败，得重跑 3 小时长跑再钉哈希；不想重跑，就要先问用户怎么处理旧门槛。`sawtooth`、`duplicates` 用同一份产物，不查代码摘要。用户验收时按编排者的建议定下办法（DECISIONS 的 S8 验收一条第 (4) 项）；S9 已按它重跑并重钉一次。
 - **产物不入库**：`framework/results/s08/` 被 gitignore，门槛只钉哈希。换机器或清了目录，四个产物组就会失败；要保留就另行备份这个目录（386 MB）。用户验收时确认：产物不入库，备份由用户自己做。
 
 S7 发现、留后续会话：
@@ -930,6 +1126,22 @@ S2 新发现：
 
 ### 给下一个编排者的操作提醒
 
+S9 踩到的：
+
+- **派发前先用 `GET /models` 核对模型名**（不耗 token）。这次开工时定的两个名字都不存在，网关包因此返工了一轮。
+- **推理模型会把推理 token 算进 `max_tokens`**。上限要先用几条真实调用试出来；只看回复长度会定得太低。
+- **并行开发的两个包，各自都绿，合并后可能互相影响进程状态**：这次是 `sys.modules`，所以多了一个修复包。合并第二个包之后马上全量跑一次测试。
+- **派发后改了门槛，worktree 里的门槛还是旧的**：返工意见里要逐条写明哪些组"预期失败"、为什么，免得执行者去动门槛或放宽测试。
+- **在主检出区跑门槛与测试一律用 `../.venv/Scripts/python.exe`**。PATH 上的 `python` 是 anaconda 的，没有 sqlglot，这次跑错过一次。
+- **真实回复录一次就提交缓存**，门槛从缓存重放：
+  - 录制脚本在 `.orch/scratch/s9/record.py`（不入库）。
+  - 录完先在没有密钥的环境里跑 `--only implementer_report dfa replay`，再提交。
+- **给包密钥用 `spawn … --llm-key N`**：
+  - 只给真要调用的包；N 是该包每个网关实例的上限。
+  - 审查复跑、长跑、门槛照旧加 `env -u DEEPSEEK_API_KEY`。
+  - 审查包的密钥扫描会按值比对密钥本身。
+- **3 小时长跑放后台单独跑**。中途拿半截的 `progress.jsonl` 对 S8 的旧长跑做一次逐行对比（去掉 `elapsed_s`），能尽早发现全关时是否真的与 S8 相同。
+
 S8 踩到的：
 
 - **核对产物的门槛，在长跑中途就拿半截产物跑一遍。** 这次长跑跑完 3 小时才发现门槛的两处逐行检查比说明严。短跑里假设不重叠、保底位总有探索候选，查不出来。中途把门槛模块的 `require` 换成只记录不抛异常，对半截目录调用 `check_rows`，就能一次列出全部不一致。中途算了曲线与重复率，却没有跑逐行检查，这是漏掉的一步。
@@ -991,29 +1203,42 @@ S2、S3 踩到的，仍然有效：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S9
+### 下一会话的起点：S10
 
-S9 要等用户指示再开工。S9 开始调用 LLM，ORCHESTRATION 写明"S9 起需要 LLM 的工作包怎么给密钥，到时候问用户"。S8 验收时编排者没有就这一件给出建议，它仍未决：开工时先问这一件（带上推荐）。
+S10 要等用户指示再开工。
 
-- 从 main 的 `s08-done-r2` 建分支 `session/s09`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
-- 起点检查（在 `framework/` 下）：
-  - `../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 613 passed, 3 skipped；
-  - `../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (8/8 passed)`。
-  - S8 的四个产物组要求 `framework/results/s08/` 还在、且 `hunter/`、`diagnoser/`、`experiments/` 的代码与长跑时一致（见"S8 发现"倒数第二条）。
-- S9 做 LLM 网关、实现器、假设猜想者（范围见 SESSIONS.md 的 S9 一节）。
-  - 网关复用 `agents/base_agent.py`、`llm/ledger.py`：响应缓存的键为提示哈希 + 模型 + 种子；按角色记账；输出缺"预测"字段就拒收；每个会话设调用上限。
-  - 实现器：spec → SQL，用 `check_spec` 核对，产出作为 Hunter 的新候选来源。
-  - 猜想者：在新家族开出后与 Diagnoser 并列调用，提议走 `wb.propose`，押注就是它的可证伪预测。
-  - 接入位置见 S8 一节"当前接口"的最后一段。
-- **改 `hunter/`、`diagnoser/`、`experiments/` 会让 S8 门槛的 `longrun` 组失败**（代码摘要不符）。用户验收时按编排者的建议定下（2026-10-15）：
-  - LLM 角色放进新目录；
-  - 这三个目录只做接线所需的最小改动，角色由开关接入，关掉时行为与 S8 相同；
-  - 三个目录一旦改了，S9 收尾前在 LLM 开关全关的情况下重跑 3 小时长跑（DuckDB 1.5.5、种子 0、七类 oracle），用 `.orch/scratch/s8/pin.py longrun` 重钉哈希；`old` 与 `recall` 两项保留不动；
-  - `gates/s08.py` 的检查逻辑不改。
-  - 3 小时机器时间要算进 S9 的排期。
-- 理论常数十四项（S6 九项、S7 四项、`BETA`）与 Hunter 十二项、Diagnoser 两项常数由门槛钉住取值，改它们先问用户。
-- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`，跑测试用 `python -m pytest`。审查测试通过数至少 613；完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
-- S8 四个包都已合并并清理，`gw list` 应全部显示 cleaned。
-  - 历史 brief / report / review 在 `docs/orch/s08/`。
-  - 编排者的探测与钉哈希脚本在 `.orch/scratch/s8/`，不入库：`proto.py`、`pre.py`、`pin.py`、各运行的控制台输出。
-  - 恢复时看 git log、本文件和 gw list。
+- **分支**：从 main 的 `s09-done` 建分支 `session/s10`；用户验收后若另打 `s09-done-r2`，就从它起。
+- **开工前检查**：
+  - 主分支、tag、工作区；
+  - PG 状态：服务器停着时按 S3 一节的恢复命令启动，不重新 initdb；
+  - `DEEPSEEK_API_KEY` 仍在 Windows 用户环境变量里。
+- **起点复跑**（在 `framework/` 下，去掉密钥）：
+  - `../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 692 passed, 3 skipped；
+  - `../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (9/9 passed)`。
+- **门槛依赖仓库外的东西**：
+  - S8 的四个产物组要求 `framework/results/s08/` 还在，且 `hunter/`、`diagnoser/`、`experiments/` 的代码与重跑的长跑一致。
+  - S09 的 `source`、`conjecturer`、`dfa`、`replay` 组要求 `.src/` 下两份源码检出还在。丢了的话这样恢复：
+    - `git clone --depth 1 --branch v1.5.5 https://github.com/duckdb/duckdb .src/duckdb-v1.5.5`
+    - `git clone --depth 1 --branch 54.0.0 https://github.com/apache/datafusion .src/datafusion-54.0.0`
+    - 两份的提交号由门槛钉住。
+- **S10 的范围**（见 SESSIONS.md 的 S10 一节）：
+  - 探索先验、迁移翻译者、词汇发明者、oracle 发明者，每个角色一个开关。
+  - M3 门槛：每个角色能单独开关、关掉时零调用；DataFusion 54.0.0 上从 DF-A 出发闭环复现 DF-B，固定缓存后可以重放。
+  - S9 的开着角色的短跑在第 13 条就从 DF-A 走到了 INTERSECT ALL 的失败（见 S9 一节），可以当起点参考；但"复现 DF-B"要用身份裁判核对，不能只凭判读。
+- **四个角色怎么接**：照 `roles/` 的写法，都经同一个网关，由 `build_roles` 的 `roles` 列表加开关。
+  - 给 Hunter 出候选的走 `sources` 钩子，提编辑的走 `wb.propose`。
+  - LLM 永不打标签。
+  - 词汇发明者会改词表摘要，旧的 φ 怎么迁移见 S6 发现的对应一条。
+  - oracle 发明者只往 Equivalent query 的改写规则库里加规则，判定代码不变。
+- **常数与长跑**：
+  - S9 的常数十九项由门槛 `constants` 组钉住；改模型名、档位或上限先记 DECISIONS，与 PLAN 冲突的先问用户。
+  - 改 `hunter/`、`diagnoser/`、`experiments/` 就要再重跑 3 小时长跑（S8 验收的办法），排期里算进去。
+- **派发与审查**：
+  - 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；要真实调用的包加 `--llm-key N`。worktree 里直接用 `python`，跑测试用 `python -m pytest`。
+  - 审查测试通过数至少 692；完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。
+  - 默认两轮返工上限。
+- **恢复工作时**：
+  - S9 四个包都已合并并清理，`gw list` 应全部显示 cleaned。
+  - 历史 brief / report / review 在 `docs/orch/s09/`。
+  - 编排者的录制与探测脚本在 `.orch/scratch/s9/`（不入库）；钉长跑哈希仍用 `.orch/scratch/s8/pin.py longrun`。
+  - 看 git log、本文件和 `gw list`。
