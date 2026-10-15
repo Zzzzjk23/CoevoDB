@@ -794,3 +794,28 @@ def test_sqlancer_load_rejects_a_bad_file(tmp_path: Path) -> None:
         sqlancer.load(path)
     with pytest.raises(ValueError, match="summary"):
         sqlancer.load(tmp_path / "missing.json")
+
+
+def test_hunter_value_matches_the_omitted_hunter(tmp_path: Path) -> None:
+    bare = _load(tmp_path, _base())
+    explicit = _load(tmp_path, {
+        "schema": 1,
+        "name": "s11-smoke",
+        "budget": {"minutes": 1},
+        "seeds": [0],
+        "arms": [{"name": "surprise", "kind": "surprise", "hunter": "value"}],
+    })
+    assert explicit == bare
+    assert explicit["arms"][0]["hunter"] is None
+    cell = tmp_path / "cells" / "surprise" / "s0-r0"
+    argv = grid.command_for(explicit["arms"][0], out=cell, seed=0, rep=0)
+    assert "--hunter" not in argv
+    random_arm = _load(tmp_path, {
+        "schema": 1,
+        "name": "s11-smoke",
+        "budget": {"minutes": 1},
+        "seeds": [0],
+        "arms": [{"name": "surprise", "kind": "surprise", "hunter": "random"}],
+    })["arms"][0]
+    random_argv = grid.command_for(random_arm, out=cell, seed=0, rep=0)
+    assert random_argv[random_argv.index("--hunter") + 1] == "random"
