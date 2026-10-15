@@ -80,3 +80,12 @@ class Diagnoser:
         if done % CHECKPOINT_EVERY == 0:
             wb.checkpoint(f"after {done} experiments")
         return edits
+
+    def checkpoint_only(self, wb, done) -> tuple[TheoryEdit, ...]:
+        """Close a generation on the checkpoint beat. Does not compress.
+
+        The note and the beat match :meth:`periodic`. Nothing is proposed.
+        """
+        if done % CHECKPOINT_EVERY == 0:
+            wb.checkpoint(f"after {done} experiments")
+        return ()
