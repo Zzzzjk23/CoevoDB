@@ -46,7 +46,7 @@ _LLM_ROLES = (
     "oracle_inventor",
 )
 _FREEZE_OK = ("theory", "diagnoser")
-_HUNTER_OK = ("random",)
+_HUNTER_OK = ("value", "random")
 # Roles that do not edit the theory. A frozen arm may turn only these on.
 _FROZEN_ROLES = ("implementer", "prior")
 _NAME = re.compile(r"[a-z0-9_-]+")
@@ -295,6 +295,9 @@ def _arm_surprise(raw: Mapping[str, Any], where: str, top_budget: dict[str, Any]
     bootstrap = None if _absent(raw, "bootstrap") else _require_bootstrap(raw["bootstrap"], where)
     freeze = None if _absent(raw, "freeze") else _require_choice(raw["freeze"], f"{where}.freeze", _FREEZE_OK)
     hunter = None if _absent(raw, "hunter") else _require_choice(raw["hunter"], f"{where}.hunter", _HUNTER_OK)
+    # "value" is the default hunter, the same as leaving the switch out.
+    if hunter == "value":
+        hunter = None
     theory_from = None if _absent(raw, "theory_from") else _require_run_at(raw["theory_from"], f"{where}.theory_from")
     select_from = None if _absent(raw, "select_from") else _require_run_at(raw["select_from"], f"{where}.select_from")
     vocabulary = None if _absent(raw, "vocabulary") else _require_file(raw["vocabulary"], f"{where}.vocabulary")
