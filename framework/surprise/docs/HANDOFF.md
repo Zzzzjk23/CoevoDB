@@ -14,7 +14,7 @@
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
-| S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
+| S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
@@ -22,7 +22,16 @@
 
 ## 最近完成会话：S10（2026-10-16）
 
-Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"读取当前项目进度，然后开始完成S10"。会话分支 `session/s10` 从 `s09-done-r2`（1637287）建立；起点独立复跑 692 passed / 3 skipped，GATES PASS 9/9。九个包（含两个计划外的小包）全部合并；真实调用的录制、长跑由编排者自己做。收尾合并回 main，tag `s10-done`。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"读取当前项目进度，然后开始完成S10"。会话分支 `session/s10` 从 `s09-done-r2`（1637287）建立；起点独立复跑 692 passed / 3 skipped，GATES PASS 9/9。九个包（含两个计划外的小包）全部合并；真实调用的录制、长跑由编排者自己做。收尾合并回 main，tag `s10-done`。用户验收后另打 `s10-done-r2`（只多了验收记录，代码与门槛相同）；S11 从 `s10-done-r2` 起。
+
+**用户验收（2026-10-16）：** 用户的答复是"全部确认"。收尾消息里的五项人工检查都按编排者的建议定下，逐项见 DECISIONS 的 S10 验收一条：
+- harness 第二层照现在的样子保留：参照引擎不一致、或改写只在目标引擎上报错，都判 invalid，不判 fail；
+- 词表按版本分段保留：发明的特征只写进 `llm/vocabulary.json`，下一次用 `--vocabulary` 起的运行才生效；
+- 翻译者、词汇发明者、oracle 发明者的 token 上限保留 16000；
+- 理论存储写盘的重试与主循环保留原始异常，在 S11 开头与 S11 自己对 `theory/`、`experiments/` 的改动一起修，只重跑一次长跑；
+- oracle 发明者的"所有引擎一致"验收规则按 PLAN 决策 9 暂不改，接上证明器时再定。
+
+下面"PI 已自行核查并定下的选择"六条也随之由用户确认。
 
 **用户在开工时的决定（2026-10-15）：** 同意小范围解冻 harness。oracle 发明者要把多引擎验收过的改写放进 Equivalent query 的规则库，而这个库在冻结区里。只改 `harness/oracles/rewrites.py` 与 `equivalent_query.py`：规则库加第二层"已验收的改写模板"，判 fail 的代码与冻结的三条规则不变；改完重新冻结（477d6eb，新哈希 `98b70d9e81fc`）。
 
@@ -134,7 +143,9 @@ Python 接口：
 - harness：`rewrites.template_problem`、`apply_template`、`load_library(path=None)`、`is_library_rule`、`LIBRARY_*` 常数。
 - Hunter：`Hunter(..., prior=None, extra_rules=None, registry=None)`；`scoring.score(..., prior=None)`；`operators.oracle_options(case, oracles, extra_rules=())`；`PhiExtractor(..., registry_path=None)`。
 
-### PI 已自行核查并定下的选择（用户可以推翻）
+### PI 已自行核查并定下的选择（用户已验收）
+
+**用户验收（2026-10-16）：下面六条，用户答复"全部确认"。** 它们从此是用户确认过的决定。
 
 1. **词表按版本分段**（S6 留给 S10 定）：发明的特征写进 `llm/vocabulary.json`，本次运行不改理论，之后用 `--vocabulary` 的运行从头用它。中途改词表就要重放整个理论、重新判接受过的编辑，没有做。
 2. **探索先验只改 Hunter 的 U**，不改理论的 P_T 与惊讶；Brier 校准的规则见上面；证据不读项目自己的 bug 账本（那是召回的真值）。
@@ -1126,8 +1137,8 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 ### 未决问题（S11 及之后需要知道的）
 
 S10 发现、留后续会话：
-- **理论存储的 `save` 不耐瞬时文件错误，主循环会把原始异常盖掉**：长跑第一次重跑在第 6526 条之后中断。`save` 已经写了 `passes/` 的两个文件、还没写 `head.json` 时失败；主循环接着写报告，`metrics.dups.new_families` 用 `Workbench.open` 读存储，报版本不一致，这个异常把原始异常盖掉了（`run` 里 `_write_report` 抛出时 `state.exc` 丢失）。原因没能确定，判断是负载下的一次文件错误（Windows 上 `os.replace` 遇到被别的进程打开的文件会失败）。可选的修法：`theory/store.py` 的 `_write_text` 在 `PermissionError` 时短暂重试；`experiments/loop.py` 在写报告失败时先把原始异常写出来。后者改的是 `experiments/`，又要重跑长跑重钉，宜与 S11 自己对这几个目录的改动一起做。产物在 `results/s08/longrun-s10-crashed`（不入库）。
-- **oracle 发明者的验收会把引擎缺陷当成"改写不等价"**：`({p}) IS TRUE` 在种子语料第 183 条上被 DuckDB 1.5.5 的已知错误（F1 家族，`filter_pushdown` / `deliminator`）挡下，一条正确的模板没收下。PLAN 决策 9 定的是"多引擎一致"，规则没有改；接上证明器、或改成"多数一致且异类是单个引擎"，都要先问用户。反过来看，这也是一次 oracle 发明者顺带撞上真实缺陷的例子。
+- **理论存储的 `save` 不耐瞬时文件错误，主循环会把原始异常盖掉**：长跑第一次重跑在第 6526 条之后中断。`save` 已经写了 `passes/` 的两个文件、还没写 `head.json` 时失败；主循环接着写报告，`metrics.dups.new_families` 用 `Workbench.open` 读存储，报版本不一致，这个异常把原始异常盖掉了（`run` 里 `_write_report` 抛出时 `state.exc` 丢失）。原因没能确定，判断是负载下的一次文件错误（Windows 上 `os.replace` 遇到被别的进程打开的文件会失败）。可选的修法：`theory/store.py` 的 `_write_text` 在 `PermissionError` 时短暂重试；`experiments/loop.py` 在写报告失败时先把原始异常写出来。后者改的是 `experiments/`，又要重跑长跑重钉，宜与 S11 自己对这几个目录的改动一起做。产物在 `results/s08/longrun-s10-crashed`（不入库）。用户验收时定下：两处都在 S11 开头修，与 S11 对这几个目录的其它改动合在一起，只重跑一次长跑。
+- **oracle 发明者的验收会把引擎缺陷当成"改写不等价"**：`({p}) IS TRUE` 在种子语料第 183 条上被 DuckDB 1.5.5 的已知错误（F1 家族，`filter_pushdown` / `deliminator`）挡下，一条正确的模板没收下。PLAN 决策 9 定的是"多引擎一致"，规则没有改；接上证明器、或改成"多数一致且异类是单个引擎"，都要先问用户。反过来看，这也是一次 oracle 发明者顺带撞上真实缺陷的例子。用户验收时确认：按 PLAN 决策 9 暂不改规则，接上证明器时再定。
 - **oracle 发明者收的两条规则都是提示里的例子**（`SELECT * FROM ({q}) AS llm_sub`、CTE 包裹）。提示给了例子，模型就照抄。要它发明新东西，S11 做评估时可以去掉例子或只给一种形状，再比较收下的条数。
 - **收下的规则在 DataFusion 上用不上**：Equivalent query 的候选只从探索与迁移车道来，DataFusion 没有种子（探索车道空）、单引擎时没有迁移。要让 DataFusion 用上发明的规则，得让细化 / 泛化或实现器的候选也挂 `llm:*` 规则，属于改车道规则。
 - **`metrics.dups.new_families` 不认扩展词表**：带 `--vocabulary` 的运行里，它用默认词表打开理论会报摘要不符；主循环已在这种运行里改用同一个 `Registry` 计数，但 `metrics/` 本身没改。S11 做指标时让 `metrics/` 接受词表（或从 run 的 manifest 读词表文件）。
@@ -1374,7 +1385,7 @@ S2、S3 踩到的，仍然有效：
 
 S11 要等用户指示再开工。
 
-- **分支**：从 main 的 `s10-done`（验收后若有 `s10-done-r2`，从它）建分支 `session/s11`。
+- **分支**：从 main 的 `s10-done-r2` 建分支 `session/s11`。
 - **开工前检查**：
   - 主分支、tag、工作区；
   - PG 状态：服务器停着时按 S3 一节的恢复命令启动，不重新 initdb；
@@ -1391,7 +1402,7 @@ S11 要等用户指示再开工。
   - 用 strong 档做模型强度比较之前，先在 `roles/transport.py` 加每个请求的总时限（S9 验收定下）。
   - 带角色的评估运行要按预算定 `--llm-max-calls`；M3 的 32 条用了 43 次调用。
   - `metrics/` 要接受扩展词表（S10 发现）。
-  - 理论存储写盘的重试与主循环保留原始异常（S10 发现），要不要在 S11 开头一起做：改的是 `theory/` 与 `experiments/`，会触发 S8 长跑重跑。
+  - 理论存储写盘的重试与主循环保留原始异常（S10 发现）：在 S11 开头做（S10 验收定下）。改的是 `theory/store.py` 与 `experiments/loop.py`，会触发 S8 长跑重跑；与 S11 对 `theory/`、`experiments/`、`hunter/`、`diagnoser/` 的其它改动排在一起，全部合并之后只重跑一次。
 - **常数**：S10 的常数三十五项由门槛 `constants` 组钉住（其中三个上限 16000）。改模型名、档位或上限先记 DECISIONS，与 PLAN 冲突的先问用户。
 - **派发与审查**：照旧；要录真实调用的包加 `--llm-key N`，别的包不给密钥。长跑单独跑。
 - **恢复工作时**：S10 九个包都已合并并清理，`gw list` 应全部显示 cleaned；历史 brief / report / review 在 `docs/orch/s10/`；编排者的录制与探测脚本在 `.orch/scratch/s10/`（不入库）；钉长跑哈希仍用 `.orch/scratch/s8/pin.py longrun`。
