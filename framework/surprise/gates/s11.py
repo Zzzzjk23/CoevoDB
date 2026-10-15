@@ -916,11 +916,11 @@ def check_arms() -> str:
     # a theory started from another run
     source_head = T.Workbench.open(base / "theory").theory.version
     started = arm("theory-from", "--theory-from", f"{base}@head", bootstrap=None)
-    first = lines_of(started / "progress.jsonl")[0]
+    _, started_records, _ = open_records(started)
     cfg = json.loads((started / "config.json").read_text(encoding="utf-8"))["arm"]["theory_from"]
     require(cfg["generation"] == "head" and cfg["version"] == source_head and Path(cfg["run"]) == base.resolve(),
             f"config records the source theory: {cfg}")
-    require(first["theory_version"] == source_head, "the first experiment runs under the source theory")
+    require(started_records[0].theory_version == source_head, "the first experiment runs under the source theory")
     # a Hunter that selects with another run's theory, while this run's theory is empty and frozen
     paired = arm("select-from", "--select-from", f"{base}@head", "--freeze", "theory", bootstrap=None)
     _, records, _ = open_records(paired)
@@ -1133,10 +1133,9 @@ def check_coverage() -> str:
     spec = C.COVERAGE
     root = tmpdir("coverage")
     files = {}
-    old_python = REPO / ".venvs" / C.OLD_FULL_VENV / "Scripts" / "python.exe"
-    if not old_python.is_file():
-        old_python = REPO / ".venvs" / C.OLD_FULL_VENV / "bin" / "python"
-    require(old_python.is_file(), f".venvs/{C.OLD_FULL_VENV} is present (S8 built it for DuckDB 1.1.3 runs)")
+    from .s01 import venv_python
+
+    old_python = venv_python(C.OLD_FULL_VENV)   # found through the git common dir, so a worktree finds it too
     for tag, python in (("new", None), ("old", str(old_python))):
         path = root / f"{tag}.json"
         argv = ["-m", "surprise.metrics.coverage", "run", "--out", str(path), "--prefix", spec["prefix"],
@@ -1242,9 +1241,11 @@ def check_grid() -> str:
     require(report["rq5"].get("ciao"), "rq5 has the CIAO matrices of the reference arm")
     require(report["external"]["sqlancer"]["family_count"] == 0, "the SQLancer row is in the report")
     for cell in ("surprise/s0-r0", "surprise/s1-r0"):
-        metrics_file = cells[cell][0] / "metrics.json"
         require(report["cells"][cell]["metrics"]["rq1"]["family_count"] == metrics().run_metrics(cells[cell][0], window=10)["rq1"]["family_count"],
                 f"{cell}: the report's metrics are run_metrics")
+    require(all(json.loads((path / "cell.json").read_text(encoding="utf-8")) == json.loads(snapshot[name])
+                and not (path / "metrics.json").exists() for name, (path, _) in cells.items()),
+            "the report writes nothing into the cells")
     markdown = (rdir / "report.md").read_text(encoding="utf-8")
     require(all(f"RQ{i}" in markdown for i in range(1, 7)), "report.md has a section per RQ")
     for name in C.FIGURES:
