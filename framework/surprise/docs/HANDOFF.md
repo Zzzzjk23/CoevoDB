@@ -30,9 +30,9 @@
 
 | 包 | 内容 | 允许路径 | 依赖 | 状态 |
 |---|---|---|---|---|
-| s09-gateway | 网关、缓存、账本、上限、两档模型、DeepSeek 传输、读源码工具 | `roles/` 的 constants、schema、cache、gateway、transport、source 与 `__init__`；两个测试文件 | 无 | 已派发（无密钥） |
-| s09-roles | 实现器、猜想者、猜想簿、选源、`RoleSet`、`ImplementerSource` | `roles/` 的 implementer、conjecturer、runtime、sources_map 与 `__init__`；三个测试文件 | s09-gateway | 说明已写，等网关包合并；派发时 `--llm-key 60` |
-| s09-wire | Hunter 的 `sources` 钩子；主循环的 `llm` 参数与 `--llm*` 开关 | `hunter/hunter.py`、`experiments/loop.py`、一个测试文件 | s09-gateway | 说明已写，与 s09-roles 并行 |
+| s09-gateway | 网关、缓存、账本、上限、两档模型、DeepSeek 传输、读源码工具 | `roles/` 的 constants、schema、cache、gateway、transport、source 与 `__init__`；两个测试文件 | 无 | 已合并（fad16c2，返工 1 轮） |
+| s09-roles | 实现器、猜想者、猜想簿、选源、`RoleSet`、`ImplementerSource` | `roles/` 的 implementer、conjecturer、runtime、sources_map 与 `__init__`；三个测试文件 | s09-gateway | 已派发（`--llm-key 60`） |
+| s09-wire | Hunter 的 `sources` 钩子；主循环的 `llm` 参数与 `--llm*` 开关 | `hunter/hunter.py`、`experiments/loop.py`、一个测试文件 | s09-gateway | 已派发 |
 
 合并之后编排者要做的：(1) 用 `/models` 核对模型名；(2) 录实现器的 φ 核对报告（30 条规格）、DF-A 的猜想、开着角色的 DataFusion 短跑，缓存与期望输出放 `gates/s09_llm/{implementer,dfa,loop}/`；(3) 因为改了 `hunter/` 与 `experiments/`，在 LLM 全关的情况下重跑 3 小时长跑（DuckDB 1.5.5、种子 0、七类 oracle），用 `.orch/scratch/s8/pin.py longrun` 重钉 S8 门槛的 `longrun` 一项。
 
