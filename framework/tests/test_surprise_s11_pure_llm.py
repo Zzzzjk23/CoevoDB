@@ -74,11 +74,42 @@ def test_constants_match_the_planned_values() -> None:
     assert PURE_LLM_TIER == "fast" and type(PURE_LLM_TIER) is str
     assert PURE_LLM_TEMPERATURE == 0.8 and type(PURE_LLM_TEMPERATURE) is float
     assert PURE_LLM_MAX_TOKENS == 16000 and type(PURE_LLM_MAX_TOKENS) is int
-    assert PURE_LLM_CASES_PER_CALL == 8 and type(PURE_LLM_CASES_PER_CALL) is int
+    assert PURE_LLM_CASES_PER_CALL == 4 and type(PURE_LLM_CASES_PER_CALL) is int
     assert isinstance(PURE_LLM_TOPICS, tuple)
     assert len(PURE_LLM_TOPICS) >= 8 and len(set(PURE_LLM_TOPICS)) == len(PURE_LLM_TOPICS)
     assert all(isinstance(topic, str) and topic.strip() for topic in PURE_LLM_TOPICS)
     assert TIERS[PURE_LLM_TIER]
+
+
+def test_prompt_states_the_predicate_splice(tmp_path: Path) -> None:
+    script = Script([{"prediction": "pass", "cases": [_good("tlp")]}])
+    pure_llm.run(
+        tmp_path / "splice",
+        seed=0,
+        engine="duckdb",
+        oracles=(
+            "tlp",
+            "norec",
+            "plan_variant",
+            "index_presence",
+            "equivalent_query",
+            "version_differential",
+            "cross_dbms",
+        ),
+        max_experiments=1,
+        transport=script,
+    )
+    assert len(script.prompts) == 1
+    prompt = script.prompts[0]
+    assert "WHERE (" in prompt
+    assert "semicolon" in prompt
+    assert "set predicate to null" in prompt
+    assert "TLP and NoREC require a predicate" in prompt
+    assert PURE_LLM_CASES_PER_CALL == 4
+    assert f"exactly {PURE_LLM_CASES_PER_CALL} cases" in prompt
+    assert str(PURE_LLM_MAX_TOKENS) in prompt
+    assert "GROUP BY / DISTINCT when the WHERE form does not apply" not in prompt
+    assert "an optional predicate is inserted as the top-level WHERE" not in prompt
 
 
 def test_scripted_replies_follow_the_gate(tmp_path: Path) -> None:
