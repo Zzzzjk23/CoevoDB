@@ -8,7 +8,7 @@ from __future__ import annotations
 
 # ---- constants (PLAN decision 8: written into the run manifest's llm section) -------
 
-TIERS = {"fast": "deepseek-chat", "strong": "deepseek-reasoner"}
+TIERS = {"fast": "deepseek-flash", "strong": "deepseek-v4-pro"}
 
 CONSTANTS = {
     "TIERS": TIERS,
