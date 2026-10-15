@@ -18,7 +18,7 @@
 - 执行者的 shell 是 Windows PowerShell 5.1：没有 `&&`（用 `;`），中文输出会乱码。任务说明里的命令按 PowerShell 写，判断结果用 ASCII 关键字。
 - grok 的会话号必须是 UUID，脚本在 `spawn` 时生成并记在 `.orch/state/<包号>.json`；返工用 `--resume <UUID>` 续接，上下文保留（S0 已验证）。
 - grok 在 worktree 里会自动读 `CLAUDE.md`（脚本传了 `--trust`）。任务说明第一行是"角色：执行者"时，执行者按 CLAUDE.md 的"执行者模式"行事。
-- 密钥：脚本从执行者进程和审查复跑的环境里去掉 `DEEPSEEK_API_KEY`（S0 已验证：父进程有、子 shell 里没有）。S9 起需要 LLM 的工作包怎么给密钥，到时候问用户。
+- 密钥：脚本从执行者进程和审查复跑的环境里去掉 `DEEPSEEK_API_KEY`（S0 已验证：父进程有、子 shell 里没有）。S9 开工时用户定下（DECISIONS 2026-10-15）：需要真实调用的包用 `spawn --llm-key N` 派发，它的 grok 进程得到密钥与 `SURPRISE_LLM_MAX_CALLS=N`（网关把它当作每个实例的上限），返工各轮沿用；审查复跑与其余包照旧去掉密钥。密钥取自编排者进程的环境，没有时读 Windows 用户级环境变量。说明里写明这一包真实调用的总数上限，审查时按网关账本核对，并确认日志与 worktree 文件里没有密钥本身（审查包第 4.6 节按值比对）。编排者自己要做真实调用时，在那一条命令里从用户级环境变量取值，不打印。
 - 隔离：grok 的沙箱在原生 Windows 上不生效，`--always-approve` 下执行者可以在本机执行任意命令，worktree 只隔离代码。防线是 deny 规则加你的审查，两样都不能省。
 - 花费：grok 在日志的 `end` 事件里上报每轮的美元花费，审查包第 6 节有合计。S0 两个冒烟包各约 0.1 美元。
 
@@ -51,7 +51,7 @@
 
 | 命令 | 作用 | 退出码 |
 |---|---|---|
-| `gw spawn <包号> --base <tag或分支>` | 建 `.worktrees/<包号>` 与分支 `grok/<包号>`，拷入 brief，启动 grok 并等它退出 | 0 正常结束；2 非零退出或超时；1 前置条件不满足 |
+| `gw spawn <包号> --base <tag或分支> [--llm-key N]` | 建 `.worktrees/<包号>` 与分支 `grok/<包号>`，拷入 brief，启动 grok 并等它退出；`--llm-key N` 给这个包密钥与调用上限 | 0 正常结束；2 非零退出或超时；1 前置条件不满足 |
 | `gw status <包号> [--wait] [--tail N] [--timeout 分钟]` | 阶段、时长、分支上的提交数、未提交改动、日志末尾；超时就终止 | 0 正常结束；10 还在跑；2 异常结束 |
 | `gw review <包号> [--expect-passed N] [--skip-tests]` | 生成审查包并在 worktree 里复跑 pytest 与门槛 | 0 没有红旗；3 有红旗 |
 | `gw resume <包号> <审查意见.md>` | 把意见放进 worktree，续接原会话返工 | 同 spawn |
