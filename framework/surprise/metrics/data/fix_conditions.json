@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "name": "F2",
+      "engine": "duckdb",
+      "key": "fix|duckdb|window_self_join",
+      "fix": "https://github.com/duckdb/duckdb/pull/24685",
+      "evidence": "PR 'Compare window partitions as sets' (fixes duckdb/duckdb#24629): PartitionsAreEquivalent compared two window expressions' PARTITION BY lists by length plus one-directional membership, so 'a, a' matched 'a, b'. Triggering needs two or more window expressions with PARTITION BY and a duplicated partition key. See docs/UPSTREAM_ISSUES.md item 16.",
+      "conditions": ["ast:window_spec:partition", "ast:window_trait:dup_partition_key", "ast:window_trait:multiple"]
+    }
+  ]
+}
