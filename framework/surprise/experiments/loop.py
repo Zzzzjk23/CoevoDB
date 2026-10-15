@@ -1,13 +1,17 @@
-"""Main loop without an LLM: Hunter, CVE, surprise, Diagnoser, accept or roll back.
+"""Main loop: Hunter, CVE, surprise, Diagnoser, accept or roll back.
 
 One run writes ``config.json``, ``ledger.sqlite``, ``theory/``, ``progress.jsonl``
 and ``report.json`` under ``--out``. The same arguments and seed produce the same
 experiments, labels and theory; only the wall-clock fields differ.
 
+LLM roles are off unless ``--llm`` is set. With every role off the files above
+match a run that has no role code loaded.
+
     python -m surprise.experiments.loop --out DIR --seed N
         [--engine E]... [--oracle O]...
         [--max-experiments N] [--max-minutes M]
         [--beta B] [--bootstrap FILE] [--run-id ID]
+        [--llm ROLE]... [--llm-cache DIR] [--llm-max-calls N] [--llm-offline]
 """
 
 from __future__ import annotations
@@ -39,6 +43,8 @@ from surprise.theory.constants import BETA
 
 _FRAMEWORK = Path(__file__).resolve().parents[2]
 _CODE_DIRS = ("surprise/hunter", "surprise/diagnoser", "surprise/experiments")
+_LLM_ROLES = ("implementer", "conjecturer")
+_LLM_KEYS = ("roles", "cache", "max_calls", "network", "transport")
 _PROGRESS_KEYS = (
     "seq",
     "record_id",
@@ -92,6 +98,19 @@ def code_digests() -> dict[str, str]:
     return digests
 
 
+def _build_roles(config, *, run_dir, extract, registry, engines, seed):
+    from surprise.roles.runtime import build_roles  # imported here, never at module level
+
+    return build_roles(
+        config,
+        run_dir=run_dir,
+        extract=extract,
+        registry=registry,
+        engines=engines,
+        seed=seed,
+    )
+
+
 def run(
     out,
     *,
@@ -104,10 +123,12 @@ def run(
     bootstrap: Sequence[dict] = (),
     run_id: str | None = None,
     echo: bool = False,
+    llm=None,
 ) -> dict[str, Any]:
     """Run the loop into ``out`` and return the report. ``echo`` prints one ASCII line per experiment.
 
     ``echo`` is for the command line. A library caller leaves it false.
+    ``llm`` is None, or a dict that turns on a subset of the LLM roles.
     """
     seed = _require_int(seed, "seed")
     engines = _strings(engines, "engines")
@@ -122,6 +143,7 @@ def run(
         run_id = f"loop-s{seed}"
     elif not isinstance(run_id, str) or run_id == "":
         raise UsageError(f"run_id: expected a non-empty string, got {run_id!r}")
+    llm_config = _normalise_llm(llm)
 
     directory = Path(out)
     _ensure_out(directory)
@@ -138,6 +160,7 @@ def run(
         run_id=run_id,
         started_at=started_at,
         echo=echo,
+        llm=llm_config,
     )
     pending: BaseException | None = None
     try:
@@ -161,7 +184,7 @@ def run(
 
 def main(argv: list[str] | None = None) -> int:
     """Command line. Returns 0, 2 for bad arguments, 1 for a run that raised, 130 for an interrupt."""
-    parser = argparse.ArgumentParser(description="Hunter loop without an LLM")
+    parser = argparse.ArgumentParser(description="Hunter loop, with optional LLM roles")
     parser.add_argument("--out", required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--engine", action="append", default=None, dest="engines")
@@ -171,6 +194,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--beta", type=float, default=None)
     parser.add_argument("--bootstrap", default=None)
     parser.add_argument("--run-id", default=None)
+    parser.add_argument(
+        "--llm",
+        action="append",
+        default=None,
+        choices=_LLM_ROLES,
+        dest="llm_roles",
+        help="turn on one LLM role (repeatable)",
+    )
+    parser.add_argument("--llm-cache", default=None, help="directory for the role response cache")
+    parser.add_argument("--llm-max-calls", type=int, default=None, help="cap on role calls")
+    parser.add_argument("--llm-offline", action="store_true", help="answer roles from the cache only")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -189,6 +223,7 @@ def main(argv: list[str] | None = None) -> int:
             bootstrap=loaded,
             run_id=args.run_id,
             echo=True,
+            llm=_llm_from_args(args),
         )
     except UsageError as exc:
         print(f"error: {_ascii(exc)}", file=sys.stderr)
@@ -221,6 +256,7 @@ class _State:
         run_id: str,
         started_at: datetime,
         echo: bool,
+        llm: dict[str, Any] | None = None,
     ) -> None:
         self.directory = directory
         self.seed = seed
@@ -233,6 +269,8 @@ class _State:
         self.run_id = run_id
         self.started_at = started_at
         self.echo = echo
+        self.llm = llm
+        self.roles = None
         self.status = "error"
         self.exc: BaseException | None = None
         self.choices = 0
@@ -296,12 +334,24 @@ class _Step:
 def _prepare(state: _State) -> None:
     _write_json(state.directory / "config.json", _config(state))
     state.extractor = _open_extractor()
+    sources = ()
+    if state.llm is not None:
+        state.roles = _build_roles(
+            state.llm,
+            run_dir=state.directory,
+            extract=state.extractor.extract,
+            registry=default_registry(),
+            engines=state.engines,
+            seed=state.seed,
+        )
+        sources = tuple(state.roles.sources)
     state.hunter = Hunter(
         engines=state.engines,
         oracles=state.oracles,
         seed=state.seed,
         beta=state.beta,
         extractor=state.extractor,
+        sources=sources,
     )
     registry = default_registry()
     state.diagnoser = Diagnoser(phi=state.hunter.phi, registry=registry)
@@ -313,6 +363,8 @@ def _prepare(state: _State) -> None:
         "diagnoser": diagnoser_constants.as_dict(),
         "code": code_digests(),
     }
+    if state.roles is not None:
+        manifest["llm"] = state.roles.manifest()
     state.ledger.start_run(state.run_id, manifest)
     state.run_started = True
     state.progress = (state.directory / "progress.jsonl").open("w", encoding="utf-8", newline="\n")
@@ -443,6 +495,10 @@ def _execute(state: _State, step: _Step) -> None:
     edits = state.diagnoser.after(state.wb, record, outcome) + state.diagnoser.periodic(
         state.wb, state.done
     )
+    # Roles see the experiment only after the Diagnoser has revised.
+    if state.roles is not None:
+        state.roles.observe(step.phi, record.label, record.record_id)
+        state.roles.after(state.wb, record, outcome)
     row = _progress_row(state, step, record, outcome, edits)
     state.rows.append(row)
     state.progress.write(json.dumps(row, ensure_ascii=True, separators=(",", ":")) + "\n")
@@ -505,6 +561,8 @@ def _progress_row(state: _State, step: _Step, record, outcome, edits) -> dict[st
     }
     if tuple(row) != _PROGRESS_KEYS:
         raise RuntimeError("progress row keys drifted from the loop contract")
+    if state.roles is not None:
+        row["llm"] = state.roles.step()
     return row
 
 
@@ -544,6 +602,8 @@ def _write_report(state: _State) -> dict[str, Any]:
             "type": type(exc).__name__ if exc is not None else "Exception",
             "message": "" if exc is None else str(exc),
         }
+    if state.roles is not None:
+        report["llm"] = state.roles.report()
     _write_json(state.directory / "report.json", report)
     return report
 
@@ -581,7 +641,7 @@ def _new_family_count(theory: Path) -> int:
 
 
 def _config(state: _State) -> dict[str, Any]:
-    return {
+    payload = {
         "seed": state.seed,
         "engines": list(state.engines),
         "oracles": list(state.oracles),
@@ -591,10 +651,13 @@ def _config(state: _State) -> dict[str, Any]:
         "bootstrap": [dict(item) for item in state.bootstrap],
         "run_id": state.run_id,
     }
+    if state.llm is not None:
+        payload["llm"] = _llm_public(state.llm)
+    return payload
 
 
 def _close(state: _State) -> None:
-    """Close the progress file, the phi worker and the ledger. The first failure is re-raised."""
+    """Close the progress file, the roles, the phi worker and the ledger. The first failure is re-raised."""
     first: Exception | None = None
     if state.progress is not None:
         try:
@@ -602,6 +665,13 @@ def _close(state: _State) -> None:
         except Exception as exc:
             first = exc
         state.progress = None
+    if state.roles is not None:
+        try:
+            state.roles.close()
+        except Exception as exc:
+            if first is None:
+                first = exc
+        state.roles = None
     if state.extractor is not None:
         try:
             state.extractor.close()
@@ -706,6 +776,86 @@ def _resolve_beta(beta: object) -> float:
     if not math.isfinite(number) or number <= 0:
         raise UsageError(f"beta: expected a number > 0, got {beta!r}")
     return number
+
+
+def _normalise_llm(llm: object) -> dict[str, Any] | None:
+    """Check a role switch. None leaves the loop exactly as it is without roles."""
+    if llm is None:
+        return None
+    if not isinstance(llm, dict):
+        raise UsageError(f"llm: expected a dict, got {type(llm).__name__}")
+    unknown = sorted(str(key) for key in llm if key not in _LLM_KEYS)
+    if unknown:
+        raise UsageError(f"llm: unknown keys {unknown}")
+    missing = [name for name in ("roles", "cache") if name not in llm]
+    if missing:
+        raise UsageError(f"llm: missing {', '.join(missing)}")
+    roles = llm["roles"]
+    if isinstance(roles, str) or not isinstance(roles, (list, tuple)) or len(roles) == 0:
+        raise UsageError(
+            "llm: roles must be a non-empty list or tuple drawn from "
+            f"{', '.join(_LLM_ROLES)}, got {roles!r}"
+        )
+    seen: set[str] = set()
+    for role in roles:
+        if not isinstance(role, str) or role not in _LLM_ROLES:
+            raise UsageError(f"llm: unknown role {role!r}")
+        if role in seen:
+            raise UsageError(f"llm: duplicate role {role!r}")
+        seen.add(role)
+    cache = llm["cache"]
+    if not isinstance(cache, str) or cache == "":
+        raise UsageError(f"llm: cache must be a non-empty string, got {cache!r}")
+    if "max_calls" in llm:
+        max_calls = llm["max_calls"]
+    else:
+        max_calls = None
+    if max_calls is not None and (isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 0):
+        raise UsageError(f"llm: max_calls must be an integer >= 0 or null, got {max_calls!r}")
+    if "network" in llm:
+        network = llm["network"]
+        if not isinstance(network, bool):
+            raise UsageError(f"llm: network must be a bool, got {network!r}")
+    else:
+        network = True
+    config: dict[str, Any] = {
+        "roles": list(roles),
+        "cache": cache,
+        "max_calls": max_calls,
+        "network": network,
+    }
+    if "transport" in llm:
+        config["transport"] = llm["transport"]
+    return config
+
+
+def _llm_public(llm: dict[str, Any]) -> dict[str, Any]:
+    """The role switch as stored in config.json. ``transport`` stays in the process."""
+    return {
+        "roles": list(llm["roles"]),
+        "cache": llm["cache"],
+        "max_calls": llm["max_calls"],
+        "network": llm["network"],
+    }
+
+
+def _llm_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
+    roles = args.llm_roles
+    cache = args.llm_cache
+    max_calls = args.llm_max_calls
+    offline = args.llm_offline
+    if roles:
+        if not isinstance(cache, str) or cache == "":
+            raise UsageError("--llm requires --llm-cache")
+        return {
+            "roles": list(roles),
+            "cache": cache,
+            "max_calls": max_calls,
+            "network": not offline,
+        }
+    if cache is not None or max_calls is not None or offline:
+        raise UsageError("--llm-cache, --llm-max-calls and --llm-offline require --llm")
+    return None
 
 
 def _strings(value: object, name: str, *, allowed: Sequence[str] | None = None) -> tuple[str, ...]:
