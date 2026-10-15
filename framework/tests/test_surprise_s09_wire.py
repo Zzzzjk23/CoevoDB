@@ -411,9 +411,19 @@ def test_roles_off_matches_s8_files(tmp_path, monkeypatch) -> None:
         raise AssertionError("roles were built")
 
     monkeypatch.setattr(loop_mod, "_build_roles", boom)
+    for name in [
+        module
+        for module in list(sys.modules)
+        if module == "surprise.roles" or module.startswith("surprise.roles.")
+    ]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
     out = tmp_path / "off"
     report = _short(out, seed=1, run_id="off")
-    assert "surprise.roles.runtime" not in sys.modules
+    assert [
+        module
+        for module in sys.modules
+        if module == "surprise.roles" or module.startswith("surprise.roles.")
+    ] == []
     assert list(report) == list(_REPORT_ORDER)
     assert "llm" not in report
     config = json.loads((out / "config.json").read_text(encoding="utf-8"))
