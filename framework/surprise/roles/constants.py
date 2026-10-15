@@ -65,6 +65,114 @@ SOURCE_MAX_FILES = 4
 # Source lines the conjecturer may attach to one prompt.
 SOURCE_MAX_LINES = 400
 
+# Environment variable naming the oracle inventor's rewrite library file.
+REWRITE_LIBRARY_ENV = "SURPRISE_REWRITE_LIBRARY"
+
+# Model tier the exploration prior uses for every call.
+PRIOR_TIER = "fast"
+
+# Sampling temperature of the exploration prior.
+PRIOR_TEMPERATURE = 0.2
+
+# Maximum tokens the exploration prior asks the model for.
+PRIOR_MAX_TOKENS = 8000
+
+# Units the prior prices in one call.
+PRIOR_UNITS_PER_CALL = 16
+
+# Calls the prior may make for one Hunter choice.
+PRIOR_CALLS_PER_CHOICE = 1
+
+# Pseudo-count strength of a priced unit.
+PRIOR_STRENGTH = 100.0
+
+# Weight of the model's price before any calibration.
+PRIOR_INITIAL_WEIGHT = 0.5
+
+# Settled experiments required before the prior's weight moves.
+PRIOR_MIN_SETTLED = 20
+
+# Evidence lines the prior attaches per construct.
+PRIOR_EVIDENCE_PER_CONSTRUCT = 4
+
+# Model tier the migration translator uses for every call.
+TRANSLATOR_TIER = "fast"
+
+# Sampling temperature of the migration translator.
+TRANSLATOR_TEMPERATURE = 0.2
+
+# Maximum tokens the migration translator asks the model for.
+# deepseek-flash counts reasoning tokens inside max_tokens, so 8000 truncated replies before JSON.
+TRANSLATOR_MAX_TOKENS = 16000
+
+# Times the translator may call the gateway for one family and engine.
+TRANSLATOR_ATTEMPTS = 2
+
+# Translations the translator source may offer per Hunter choice.
+TRANSLATOR_PER_CHOICE = 1
+
+# Model tier the vocabulary inventor uses for every call.
+VOCAB_TIER = "fast"
+
+# Sampling temperature of the vocabulary inventor.
+VOCAB_TEMPERATURE = 0.4
+
+# Maximum tokens the vocabulary inventor asks the model for.
+# deepseek-flash counts reasoning tokens inside max_tokens, so 8000 truncated replies before JSON.
+VOCAB_MAX_TOKENS = 16000
+
+# Unexpected passes in the confirmed zone that wake the inventor.
+VOCAB_TRIGGER_CONTRADICTIONS = 2
+
+# Positive records required before the inventor proposes a feature.
+VOCAB_MIN_POSITIVES = 2
+
+# Held-out fraction: the last ceil(n / divisor) of each kind stay hidden.
+VOCAB_HOLDOUT_DIVISOR = 3
+
+# Proposals the inventor may make for one family.
+VOCAB_ATTEMPTS_PER_FAMILY = 1
+
+# Longest pattern the inventor may accept, in characters.
+VOCAB_MAX_PATTERN_CHARS = 200
+
+# Largest share of the seed corpus a pattern may match.
+VOCAB_MAX_CORPUS_SHARE = 0.5
+
+# Wall-clock budget of the corpus scan, in seconds.
+VOCAB_SCAN_TIMEOUT_S = 20.0
+
+# Model tier the oracle inventor uses for every call.
+ORACLE_TIER = "fast"
+
+# Sampling temperature of the oracle inventor.
+ORACLE_TEMPERATURE = 0.6
+
+# Maximum tokens the oracle inventor asks the model for.
+# deepseek-flash counts reasoning tokens inside max_tokens, so 8000 truncated replies before JSON.
+ORACLE_MAX_TOKENS = 16000
+
+# Experiments between oracle-inventor calls.
+ORACLE_EVERY = 100
+
+# Calls the oracle inventor may make in one run.
+ORACLE_CALLS_PER_RUN = 3
+
+# Rewrite templates the oracle inventor may propose in one call.
+ORACLE_RULES_PER_CALL = 3
+
+# Engines that may accept an invented rewrite.
+ORACLE_ACCEPT_ENGINES = ["duckdb", "datafusion", "sqlite", "postgres"]
+
+# Agreeing engines required before an invented rewrite is accepted.
+ORACLE_ACCEPT_MIN_ENGINES = 3
+
+# Corpus instances an invented rewrite must pass.
+ORACLE_ACCEPT_INSTANCES = 5
+
+# Statements the oracle inventor may scan for those instances.
+ORACLE_SCAN_MAX = 200
+
 
 def as_dict() -> dict[str, Any]:
     """Every public uppercase constant in this module, as a detached JSON object."""

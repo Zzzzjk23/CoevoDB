@@ -31,6 +31,9 @@ Equivalence arguments (SQL three-valued logic):
 
 from __future__ import annotations
 
+import json
+import os
+import re
 from dataclasses import dataclass
 
 _DOUBLE_NEGATION_PROOF = (
@@ -64,6 +67,15 @@ RULES: dict[str, dict[str, str]] = {
     "demorgan": {"proof": _DEMORGAN_PROOF},
     "case_to_coalesce": {"proof": _CASE_TO_COALESCE_PROOF},
 }
+
+# Accepted LLM templates. The file is read on every call; a bad file is no library.
+LIBRARY_ENV = "SURPRISE_REWRITE_LIBRARY"
+LIBRARY_RULE_PREFIX = "llm:"
+LIBRARY_KINDS = ("query_wrap", "predicate_wrap")
+LIBRARY_MIN_REFERENCES = 2
+LIBRARY_SCHEMA = 1
+_LIBRARY_RULE_ID = re.compile(r"^llm:[a-z0-9_]{1,40}$")
+_LIBRARY_KEYS = ("rule_id", "kind", "template", "argument", "acceptance")
 
 _KEYWORDS = frozenset({
     "ALL", "ALTER", "AND", "AS", "BETWEEN", "BY", "CALL", "CASE", "COPY",
@@ -106,10 +118,17 @@ def apply_rule(query: str, rule_id: str) -> str | None:
     """Return the rule's SQL, or None when its premises do not hold.
 
     Unknown rules and queries that are not a single read-only statement also
-    return None. Callers must not execute a query this function did not return.
+    return None. A rule id with the library prefix is applied only when the
+    current library file names it. Callers must not execute a query this
+    function did not return.
     """
     if not isinstance(query, str) or not isinstance(rule_id, str):
         return None
+    if rule_id.startswith(LIBRARY_RULE_PREFIX):
+        entry = load_library().get(rule_id)
+        if entry is None:
+            return None
+        return apply_template(query, entry["kind"], entry["template"])
     impl = _IMPL.get(rule_id)
     if impl is None or rule_id not in RULES:
         return None
@@ -706,3 +725,207 @@ _IMPL = {
     "demorgan": _apply_demorgan,
     "case_to_coalesce": _apply_case_to_coalesce,
 }
+
+
+def template_problem(kind: str, template: str) -> str | None:
+    """None when ``template`` can be applied, otherwise a short English reason."""
+    if kind not in LIBRARY_KINDS:
+        return "unknown kind"
+    if not isinstance(template, str):
+        return "template is not a string"
+    if template == "":
+        return "template is empty"
+    if len(template) > 2000:
+        return "template is longer than 2000 characters"
+    if ";" in template:
+        return "template contains a semicolon"
+    if "--" in template or "/*" in template:
+        return "template contains a comment"
+    slots = _placeholder_problem(kind, template)
+    if slots is not None:
+        return slots
+    try:
+        tokens = tokenize(template)
+    except ScanError as exc:
+        return f"template does not scan: {exc}"
+    if _hidden_placeholder(template, tokens):
+        return "placeholder is not a token"
+    if any(tok.kind == "kw" and tok.text.upper() in _DML for tok in tokens):
+        return "template contains DML"
+    return None
+
+
+def apply_template(query: str, kind: str, template: str) -> str | None:
+    """Apply one template, or return None when a premise does not hold.
+
+    One trailing top-level semicolon is removed first. ``query_wrap`` substitutes
+    the stripped statement for ``{q}``. ``predicate_wrap`` rewrites the single
+    top-level WHERE predicate and keeps every other byte. The result must be a
+    different read-only statement.
+    """
+    if template_problem(kind, template) is not None:
+        return None
+    body = _without_trailing_semicolon(query)
+    if body is None:
+        return None
+    if kind == "query_wrap":
+        rewritten = template.replace("{q}", body.strip())
+    else:
+        rewritten = _apply_predicate_template(body, template)
+        if rewritten is None:
+            return None
+    if rewritten == query or not is_read_only_query(rewritten):
+        return None
+    return rewritten
+
+
+def load_library(path: str | os.PathLike[str] | None = None) -> dict[str, dict]:
+    """Read the library file. Any defect rejects the whole file.
+
+    ``path`` defaults to ``LIBRARY_ENV``. An unset variable or a missing file
+    is an empty library. The file is read again on every call.
+    """
+    chosen = path
+    if chosen is None:
+        raw = os.environ.get(LIBRARY_ENV)
+        if raw is None or not str(raw).strip():
+            return {}
+        chosen = raw
+    if not os.path.isfile(chosen):
+        return {}
+    try:
+        with open(chosen, encoding="utf-8") as handle:
+            payload = json.loads(handle.read())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    parsed = _library_payload(payload)
+    if parsed is None:
+        return {}
+    return parsed
+
+
+def is_library_rule(rule_id: str) -> bool:
+    """True when ``rule_id`` is present in the library loaded right now."""
+    if not isinstance(rule_id, str) or not rule_id.startswith(LIBRARY_RULE_PREFIX):
+        return False
+    return rule_id in load_library()
+
+
+def _placeholder_problem(kind: str, template: str) -> str | None:
+    query_slots = template.count("{q}")
+    predicate_slots = template.count("{p}")
+    if kind == "query_wrap":
+        if predicate_slots:
+            return "query_wrap must not contain {p}"
+        if query_slots != 1:
+            return "query_wrap needs exactly one {q}"
+    else:
+        if query_slots:
+            return "predicate_wrap must not contain {q}"
+        if predicate_slots < 1 or predicate_slots > 3:
+            return "predicate_wrap needs one to three {p}"
+    stripped = template.replace("{q}", "").replace("{p}", "")
+    if "{" in stripped or "}" in stripped:
+        return "template has a stray brace"
+    return None
+
+
+def _hidden_placeholder(template: str, tokens: list[Tok]) -> bool:
+    """True when a ``{q}`` or ``{p}`` text is not the three tokens ``{ name }``."""
+    return (
+        template.count("{q}") != _adjacent_placeholders(tokens, "q")
+        or template.count("{p}") != _adjacent_placeholders(tokens, "p")
+    )
+
+
+def _adjacent_placeholders(tokens: list[Tok], name: str) -> int:
+    found = 0
+    index = 0
+    while index + 2 < len(tokens):
+        opener, ident, closer = tokens[index], tokens[index + 1], tokens[index + 2]
+        if (
+            opener.text == "{"
+            and closer.text == "}"
+            and ident.kind == "ident"
+            and ident.text == name
+            and opener.end == ident.start
+            and ident.end == closer.start
+        ):
+            found += 1
+            index += 3
+            continue
+        index += 1
+    return found
+
+
+def _without_trailing_semicolon(query: str) -> str | None:
+    """Statement text without one trailing top-level semicolon, or None."""
+    if not isinstance(query, str) or not is_read_only_query(query):
+        return None
+    try:
+        tokens = tokenize(query)
+    except ScanError:
+        return None
+    if tokens and tokens[-1].text == ";" and tokens[-1].depth == 0:
+        return query[: tokens[-1].start]
+    return query
+
+
+def _apply_predicate_template(query: str, template: str) -> str | None:
+    try:
+        tokens = tokenize(query)
+    except ScanError:
+        return None
+    found = _where_indexes(tokens)
+    if len(found) != 1:
+        return None
+    bounds = _predicate_bounds(tokens, found[0])
+    if bounds is None:
+        return None
+    predicate = tokens[bounds[0] : bounds[1]]
+    replacement = "(" + template.replace("{p}", "(" + _slice(query, predicate) + ")") + ")"
+    return _splice(query, predicate, replacement)
+
+
+def _library_payload(payload: object) -> dict[str, dict] | None:
+    if not isinstance(payload, dict):
+        return None
+    schema = payload.get("schema")
+    if type(schema) is not int or schema != LIBRARY_SCHEMA:
+        return None
+    rules = payload.get("rules")
+    if not isinstance(rules, list):
+        return None
+    loaded: dict[str, dict] = {}
+    for rule in rules:
+        copied = _library_rule(rule, loaded)
+        if copied is None:
+            return None
+        loaded[copied["rule_id"]] = copied
+    return loaded
+
+
+def _library_rule(rule: object, loaded: dict[str, dict]) -> dict | None:
+    if not isinstance(rule, dict) or any(key not in rule for key in _LIBRARY_KEYS):
+        return None
+    rule_id = rule["rule_id"]
+    if (
+        not isinstance(rule_id, str)
+        or _LIBRARY_RULE_ID.fullmatch(rule_id) is None
+        or rule_id in loaded
+        or rule_id[len(LIBRARY_RULE_PREFIX) :] in RULES
+    ):
+        return None
+    if template_problem(rule["kind"], rule["template"]) is not None:
+        return None
+    argument = rule["argument"]
+    acceptance = rule["acceptance"]
+    if not isinstance(argument, str) or argument == "":
+        return None
+    if not isinstance(acceptance, dict) or not acceptance:
+        return None
+    if "proposer" in rule and not isinstance(rule["proposer"], str):
+        return None
+    copied = dict(rule)
+    copied["acceptance"] = dict(acceptance)
+    return copied

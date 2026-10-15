@@ -7,15 +7,18 @@ until ``build_roles`` is asked for the network.
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Any
 
+from surprise.features.registry import default_registry
 from surprise.features.vocabulary import layer_of
 from surprise.theory.contracts import Spec
 from surprise.theory.vspace import reduce_conjunction
 
 from . import constants
+from .base import PLUGINS, RoleContext
 from .conjecturer import ConjectureBook, Conjecturer
 from .constants import IMPLEMENTER_PER_CHOICE, TIERS
 from .gateway import Gateway
@@ -23,7 +26,7 @@ from .implementer import Implementer
 from .source import SourceError, open_sources
 
 _CALL_STATUSES = ("ok", "rejected", "blocked", "miss", "error")
-_ROLES = ("implementer", "conjecturer")
+ROLES = ("implementer", "conjecturer", "prior", "translator", "vocab_inventor", "oracle_inventor")
 
 
 def _spec_key(spec: dict) -> str:
@@ -169,6 +172,7 @@ class RoleSet:
         readers: dict[str, Any],
         engines: Any,
         run_dir: Path | str,
+        plugins: dict[str, Any] | None = None,
     ) -> None:
         self._roles = list(roles)
         self._gateway = gateway
@@ -178,8 +182,11 @@ class RoleSet:
         self._seed = seed
         self._network = network
         self._readers = readers
+        self.plugins = {} if plugins is None else dict(plugins)
+        self.prior = self.plugins.get("prior")
         llm = Path(run_dir) / "llm"
         llm.mkdir(parents=True, exist_ok=True)
+        self.rewrite_library = (llm / "rewrites.json") if "oracle_inventor" in self.plugins else None
         self._impl_handle = (llm / "implementer.jsonl").open("a", encoding="utf-8")
         self._attempt_count = 0
         self._attempt_ok = 0
@@ -189,34 +196,53 @@ class RoleSet:
         self._step_conjecture: Any = None
         self._step_settled: list[list[Any]] = []
         self._step_attempts: list[str] = []
-        if implementer is None:
-            self.sources: tuple[Any, ...] = ()
-        else:
-            self.sources = (
+        found: list[Any] = []
+        if implementer is not None:
+            found.append(
                 ImplementerSource(
                     implementer,
                     book,
                     engines=engines,
                     registry=implementer.registry,
                     on_attempt=self._note_attempt,
-                ),
+                )
             )
+        for role in self.plugins.values():
+            found.extend(role.sources())
+        self.sources = tuple(found)
 
-    def observe(self, phi: Any, label: Any, record_id: str) -> tuple:
-        """Settle the book. Returns the predictions this experiment settled."""
+    def observe(self, phi: Any, label: Any, record_id: str, *, event: Any = None) -> tuple:
+        """Settle the book, then tell each plugin. Returns the settled predictions."""
         settled = self._book.observe(phi, label, record_id)
         for item in settled:
             self._step_settled.append([item.conjecture_id, item.index, item.state])
+        if event is not None:
+            for role in self.plugins.values():
+                role.observe(event)
         return settled
 
     def after(self, wb: Any, record: Any, outcome: Any) -> Any:
-        """The conjecturer, when it is on. ``None`` when it is off or nothing opened."""
+        """The conjecturer, when it is on, then each plugin.
+
+        The return value is the conjecturer's, or ``None`` when it is off or
+        nothing opened. Plugin return values are ignored.
+        """
         if self._conjecturer is None:
-            return None
-        conjecture = self._conjecturer.after(wb, record, outcome)
-        if conjecture is not None:
-            self._step_conjecture = conjecture
+            conjecture = None
+        else:
+            conjecture = self._conjecturer.after(wb, record, outcome)
+            if conjecture is not None:
+                self._step_conjecture = conjecture
+        for role in self.plugins.values():
+            role.after(wb, record, outcome)
         return conjecture
+
+    def rewrite_rules(self) -> tuple:
+        """Rule ids the oracle inventor has accepted. Empty when that role is off."""
+        role = self.plugins.get("oracle_inventor")
+        if role is None:
+            return ()
+        return tuple(role.rules())
 
     def step(self) -> dict[str, Any]:
         """What the roles did since the previous step, then clear that window.
@@ -243,6 +269,8 @@ class RoleSet:
             "settled": [list(item) for item in self._step_settled],
             "attempts": list(self._step_attempts),
         }
+        for name, role in self.plugins.items():
+            result[name] = role.step()
         self._calls_snap = current
         self._step_conjecture = None
         self._step_settled = []
@@ -259,7 +287,7 @@ class RoleSet:
                 "dir": "" if root is None else root.name,
                 "commit": commit or None,
             }
-        return {
+        result = {
             "roles": list(self._roles),
             "tiers": dict(TIERS),
             "max_calls": self._gateway.max_calls,
@@ -268,10 +296,13 @@ class RoleSet:
             "constants": constants.as_dict(),
             "sources": sources,
         }
+        if self.plugins:
+            result["plugins"] = {name: role.manifest() for name, role in self.plugins.items()}
+        return result
 
     def report(self) -> dict[str, Any]:
         """Totals for the whole run, not just the last step."""
-        return {
+        result = {
             "roles": list(self._roles),
             "calls": self._gateway.totals(),
             "book": self._book.summary(),
@@ -282,13 +313,28 @@ class RoleSet:
                 "by_status": dict(self._by_status),
             },
         }
+        for name, role in self.plugins.items():
+            result[name] = role.report()
+        return result
 
     def close(self) -> None:
-        """Close the implementer log. The book flushes on every write."""
+        """Close the implementer log, then each plugin. The first error is re-raised."""
+        first: Exception | None = None
         handle = self._impl_handle
         if handle is not None and not handle.closed:
-            handle.flush()
-            handle.close()
+            try:
+                handle.flush()
+                handle.close()
+            except Exception as exc:
+                first = exc
+        for role in self.plugins.values():
+            try:
+                role.close()
+            except Exception as exc:
+                if first is None:
+                    first = exc
+        if first is not None:
+            raise first
 
     def _note_attempt(self, attempt: Any, lane: str, index: int) -> None:
         row = attempt.to_dict()
@@ -317,12 +363,17 @@ def build_roles(
     registry: Any,
     engines: Any,
     seed: int,
+    oracles: Any = (),
 ) -> RoleSet:
-    """One ``RoleSet`` for ``config``. The transport is built only when the network is on."""
+    """One ``RoleSet`` for ``config``. The transport is built only when the network is on.
+
+    A new role's module is imported only when that role is on. A missing module
+    raises ``ValueError``; it is not treated as "off".
+    """
     chosen: list[str] = []
     seen: set[str] = set()
     for role in config["roles"]:
-        if role not in _ROLES:
+        if role not in ROLES:
             raise ValueError(f"unknown role: {role!r}")
         if role in seen:
             continue
@@ -367,6 +418,20 @@ def build_roles(
             sources=readers,
             seed=seed,
         )
+    active = registry if registry is not None else default_registry()
+    ctx = RoleContext(
+        gateway=gateway,
+        book=book,
+        extract=extract,
+        registry=active,
+        readers=readers,
+        engines=tuple(engines),
+        oracles=tuple(oracles),
+        seed=int(seed),
+        run_dir=root,
+        llm_dir=llm,
+    )
+    plugins = _load_plugins(chosen, ctx)
     roleset = RoleSet(
         roles=chosen,
         gateway=gateway,
@@ -378,5 +443,40 @@ def build_roles(
         readers=readers,
         engines=engines,
         run_dir=root,
+        plugins=plugins,
     )
     return roleset
+
+
+def _load_plugins(chosen: list[str], ctx: RoleContext) -> dict[str, Any]:
+    """Import and build each new role that is on, in ``ROLES`` order.
+
+    A module that is not on is not imported. A module that is on but missing
+    raises ``ValueError``.
+    """
+    selected = set(chosen)
+    plugins: dict[str, Any] = {}
+    built: list[Any] = []
+    try:
+        for name in ROLES:
+            if name not in PLUGINS or name not in selected:
+                continue
+            module_name = PLUGINS[name]
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError as exc:
+                raise ValueError(f"role {name!r} is not available: {exc}") from exc
+            build = getattr(module, "build", None)
+            if not callable(build):
+                raise ValueError(f"role {name!r} is not available: {module_name} has no build(ctx)")
+            role = build(ctx)
+            built.append(role)
+            plugins[name] = role
+    except Exception:
+        for role in built:
+            try:
+                role.close()
+            except Exception:
+                pass
+        raise
+    return plugins

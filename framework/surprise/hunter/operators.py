@@ -76,8 +76,16 @@ def mutants(case: SqlCase) -> list[tuple[SqlCase, str]]:
     return found
 
 
-def oracle_options(case: SqlCase, oracles: Sequence[str]) -> list[tuple[str, str | None]]:
-    """Which (oracle, rule) pairs ``case`` may be judged under, in ``oracles`` order."""
+def oracle_options(
+    case: SqlCase,
+    oracles: Sequence[str],
+    extra_rules: Sequence[str] = (),
+) -> list[tuple[str, str | None]]:
+    """Which (oracle, rule) pairs ``case`` may be judged under, in ``oracles`` order.
+
+    ``equivalent_query`` offers the frozen rules, then ``extra_rules`` in the
+    given order. An extra id that repeats a frozen rule is dropped.
+    """
     options: list[tuple[str, str | None]] = []
     for oracle in oracles:
         if oracle not in ORACLE_IDS:
@@ -88,6 +96,11 @@ def oracle_options(case: SqlCase, oracles: Sequence[str]) -> list[tuple[str, str
             continue
         if oracle == "equivalent_query":
             for rule in RULES:
+                options.append((oracle, rule))
+            frozen = set(RULES)
+            for rule in extra_rules:
+                if rule in frozen:
+                    continue
                 options.append((oracle, rule))
             continue
         if oracle == "index_presence":

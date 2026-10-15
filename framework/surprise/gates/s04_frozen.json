@@ -9,7 +9,7 @@
     "CVE_WALL_TIMEOUT_S": 120.0,
     "QUERY_TIMEOUT_S": 10.0
   },
-  "created_at": "2026-10-08T21:21:57.670852+00:00",
+  "created_at": "2026-10-15T10:05:44.523458+00:00",
   "environment": {
     "engines": {
       "datafusion": "54.0.0",
@@ -25,7 +25,7 @@
       "duckdb": "1.5.5",
       "psycopg2-binary": "2.9.13",
       "pyarrow": "21.0.0",
-      "sqlglot": null
+      "sqlglot": "30.21.0"
     },
     "platform": "win32",
     "python": "3.13.9",
@@ -33,7 +33,7 @@
       "postgres": "16.15"
     }
   },
-  "git_commit": "02bf15a37e1823568fe068b3014c28e21cf15d0b",
+  "git_commit": "476c23ce9f39ead59eb977fa11289d52d3975913",
   "harness": {
     "algorithm": "sha256",
     "files": {
@@ -73,14 +73,14 @@
       "surprise/harness/oracles/__init__.py": "d591c34dc17f9bc69f459bde719db9ef5e8aaadc7270fc4b6bebfe37e6121ffd",
       "surprise/harness/oracles/common.py": "2d8fea41fead99c5629e04c8cd49ef5f3a9efe90fc4064154090af344cc11ee5",
       "surprise/harness/oracles/cross_dbms.py": "df29d36920b0b455463e1577499c3736f02337a957fefc72e4e21707c9775569",
-      "surprise/harness/oracles/equivalent_query.py": "1e0e6b44e6b8f1bc307802e4830c7448a8c0add2a89a61cb9b86a159bba08337",
+      "surprise/harness/oracles/equivalent_query.py": "af49a1c521e24dd848b3efc7ec0e5312ec0338664a3ba577f8aa588950a4a7ff",
       "surprise/harness/oracles/forms.py": "8762527f5010f30fe8a7bd544078865f91481854769c028c63a9d201661feb69",
       "surprise/harness/oracles/index_presence.py": "b7451c4651842c4b4a813f7a73114cad6eb960200df29fe020a3cefb777b09a2",
       "surprise/harness/oracles/norec.py": "d0c0d9bf25847ed0ea7dbd0c84cd6329e62bcda6584b45178e443f7a13211197",
       "surprise/harness/oracles/pg_reference.py": "128de61d36c73bc792da16762cf20f6240e675a7160c6edb19ef1c933141bded",
       "surprise/harness/oracles/plan_variant.py": "8fe229204b9ac67ed22c2b59c9b37848a3ea12fe129df0749d7d82403f7cd77a",
       "surprise/harness/oracles/registry.py": "eeca9eb11f9e5a26c9f642b65bad17f81ac5b576b4a2f3acfd6c73d2cc8c22a6",
-      "surprise/harness/oracles/rewrites.py": "31fd4c168ad05e1388f644f76f63f106c72588933370d18e7aa4a0e74009ceeb",
+      "surprise/harness/oracles/rewrites.py": "3229fca604c40e1f9669f0639ddfb0714fe5061af047fc000b5f19558ba8c0da",
       "surprise/harness/oracles/sound.py": "0b078d9c3aee4d704075602aceb628439ea27f404a831eac67771077b781f12c",
       "surprise/harness/oracles/tlp.py": "f2dc9db9a151ca293b741a9c4ce3c9b252c354e9b1ca1dd1bb7320255def9965",
       "surprise/harness/oracles/version_differential.py": "2cb0f5e0cb8c65ff725d3f16c4d4e77c8a0f72118d5e357ce25cbedb4b66d099",
@@ -89,8 +89,8 @@
       "targets/duckdb_runner.py": "94047ec60dc7f4984c7e756ed1ed67b04b1a27234be765eb9304b3cabb35e5b9",
       "targets/sqlite_runner.py": "1072b95dc055520391aa06b64b0e1476815eefcc229636ae460f586fe3e201f2"
     },
-    "hash": "50fa40cf2d1988e8718369487b42be2c1da1a76964c0c520af51ce919b8d5fd9"
+    "hash": "98b70d9e81fced1606a03b02e9db5ee574ecd7b8121f786c88f8380a333c12dc"
   },
-  "run_id": "s04-freeze",
+  "run_id": "s10-refreeze",
   "schema": 1
 }

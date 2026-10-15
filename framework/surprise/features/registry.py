@@ -199,6 +199,9 @@ def _require_regex_definition(definition: Any) -> dict[str, str]:
         re.compile(pattern)
     except re.error as exc:
         raise ValueError(f"pattern does not compile: {exc}") from exc
+    # A match on the empty string is true of every statement.
+    if re.search(pattern, "") is not None:
+        raise ValueError("pattern matches the empty string")
     return {"kind": "regex", "pattern": pattern}
 
 

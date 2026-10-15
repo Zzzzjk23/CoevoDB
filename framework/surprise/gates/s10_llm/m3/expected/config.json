@@ -1,0 +1,46 @@
+{
+  "seed": 0,
+  "engines": [
+    "datafusion"
+  ],
+  "oracles": [
+    "cross_dbms",
+    "tlp",
+    "norec",
+    "equivalent_query"
+  ],
+  "max_experiments": 40,
+  "max_minutes": null,
+  "beta": 1.0,
+  "bootstrap": [
+    {
+      "case": {
+        "engine": "datafusion",
+        "setup": [
+          "CREATE TABLE t(v INT)",
+          "INSERT INTO t VALUES (1),(1),(2),(2),(2),(NULL)",
+          "CREATE TABLE u(v INT)",
+          "INSERT INTO u VALUES (1),(2),(NULL)"
+        ],
+        "query": "SELECT v FROM t EXCEPT ALL SELECT v FROM u",
+        "predicate": null
+      },
+      "oracle": "cross_dbms",
+      "rule": null
+    }
+  ],
+  "run_id": "loop-s0",
+  "llm": {
+    "roles": [
+      "implementer",
+      "conjecturer",
+      "prior",
+      "translator",
+      "vocab_inventor",
+      "oracle_inventor"
+    ],
+    "cache": "D:\\CoevoDB\\framework\\surprise\\gates\\s10_llm\\m3\\cache",
+    "max_calls": 120,
+    "network": true
+  }
+}
