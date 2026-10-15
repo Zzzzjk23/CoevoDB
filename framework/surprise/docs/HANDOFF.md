@@ -27,11 +27,11 @@
 | 包 | 内容 | 波 | 允许路径（摘要） | 状态 |
 |---|---|---|---|---|
 | s11-fixes | 存储写盘重试、主循环保留原始异常、请求总时限、metrics 认扩展词表 | 1 | `theory/store.py`、`experiments/loop.py`、`roles/transport.py`、`roles/constants.py`、`metrics/dups.py`、`metrics/recall.py` | 首轮通过，已合并（c8aeff5） |
-| s11-runmetrics | 单次运行的 RQ1–RQ6 指标、CIAO、边界吻合、划分一致性 | 1 | `metrics/constants.py`、`rundata.py`、`rq.py`、`boundary.py`、`partition.py`、`data/fix_conditions.json` | 已派发 |
+| s11-runmetrics | 单次运行的 RQ1–RQ6 指标、CIAO、边界吻合、划分一致性 | 1 | `metrics/constants.py`、`rundata.py`、`rq.py`、`boundary.py`、`partition.py`、`data/fix_conditions.json` | 首轮通过，已合并 |
 | s11-purellm | 纯 LLM 对照组 | 1 | `baselines/pure_llm.py` | 首轮通过，已合并（bf270d2） |
 | s11-arms | 冻结理论 / Diagnoser、随机 Hunter、`--theory-from`、`--select-from` | 2 | `experiments/loop.py`、`hunter/hunter.py`、`diagnoser/diagnoser.py`、`theory/workbench.py`、`theory/store.py` | 已派发 |
 | s11-grid | 实验网格、原 CoevoDB 的 mode、SQLancer 转录 | 2 | `experiments/grid.py`、`baselines/old_no_llm.py`、`baselines/sqlancer.py`、`baselines/data/` | 已派发 |
-| s11-dedup | 离线去重对比、上游回归测试重放 | 2 | `metrics/dedup.py`、`metrics/coverage.py` | 待第一波合并 |
+| s11-dedup | 离线去重对比、上游回归测试重放 | 2 | `metrics/dedup.py`、`metrics/coverage.py` | 已派发 |
 | s11-report | 统计检验、`python -m surprise.metrics.report` 与 7 张图 | 3 | `metrics/stats.py`、`metrics/report.py` | 待第二波合并 |
 
 全部合并之后：编排者用真实调用录 `gates/s11_llm/pure_llm`（门槛 `pure_llm` 组）；单独重跑 3 小时长跑并按 S8 验收的办法重钉（本会话改了 `experiments/`、`hunter/`、`diagnoser/`、`theory/`）。
