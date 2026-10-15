@@ -1,0 +1,64 @@
+{
+ "beta": {
+  "candidates": [
+   0.5,
+   1.0,
+   2.0,
+   4.0
+  ],
+  "dir": "results/s08/pre",
+  "experiments": 300,
+  "results": {
+   "0.5": {
+    "9001": 1,
+    "9002": 3,
+    "9003": 3
+   },
+   "1.0": {
+    "9001": 3,
+    "9002": 3,
+    "9003": 3
+   },
+   "2.0": {
+    "9001": 3,
+    "9002": 3,
+    "9003": 3
+   },
+   "4.0": {
+    "9001": 3,
+    "9002": 5,
+    "9003": 1
+   }
+  },
+  "seeds": [
+   9001,
+   9002,
+   9003
+  ],
+  "value": 1.0
+ },
+ "longrun": {
+  "dir": "results/s08/longrun",
+  "sha256": {
+   "ledger.sqlite": "5141cf5e7de95189d76b0ffc2b40153bc0aa9c53afa4d93b5155d0a9852b0f44",
+   "progress.jsonl": "2f5114150763275ed594d8b334216b8003f3e180d368a389b1a9588365301dfc",
+   "report.json": "591cf90d7ac8208e142d9d534bc4f4a4cc223687b63d9e35fb30b6d9eee16a65"
+  }
+ },
+ "old": {
+  "dir": "results/s08/old_no_llm",
+  "sha256": {
+   "old_run.json": "4ef1f714a41c80bbbc214c5ab649c33e4e5c66e4148d061b830f7814841b1b43",
+   "results/duckdb_no_llm_20261015_083535_s08_old_s0/bugs.jsonl": "2d45753433925cd5eab2044c1558b4fc2f8a8aeb48003efb929744cd86fb9c26"
+  }
+ },
+ "recall": {
+  "dir": "results/s08/recall113",
+  "sha256": {
+   "known.json": "6608e2a38f063c4f141c3e601bf1b358c47f85c7756662033de7e0cf9b891526",
+   "recall.json": "093d89c720e1f7f16a83ffa2accb02326005066e2e0675fc934d954dbcdff938",
+   "run/ledger.sqlite": "f08da2eec6dc966bf61a34d690bf9811a549654aa7e5b7bced09f62e5affb91e",
+   "run/report.json": "f12d15bb01a9b87ca01333496171386c596bb3354627da4808a020248076b71e"
+  }
+ }
+}

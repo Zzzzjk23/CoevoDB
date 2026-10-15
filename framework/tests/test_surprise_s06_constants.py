@@ -26,6 +26,7 @@ EXPECTED = {
     "MDL_LITERAL_BITS": 7.4,
     "ACCEPT_HOLDOUT_MAX": 1000,
     "ACCEPT_TOLERANCE_BITS": 1e-9,
+    "BETA": 1.0,
 }
 
 
