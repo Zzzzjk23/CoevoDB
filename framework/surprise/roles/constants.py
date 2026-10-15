@@ -102,7 +102,8 @@ TRANSLATOR_TIER = "fast"
 TRANSLATOR_TEMPERATURE = 0.2
 
 # Maximum tokens the migration translator asks the model for.
-TRANSLATOR_MAX_TOKENS = 8000
+# deepseek-flash counts reasoning tokens inside max_tokens, so 8000 truncated replies before JSON.
+TRANSLATOR_MAX_TOKENS = 16000
 
 # Times the translator may call the gateway for one family and engine.
 TRANSLATOR_ATTEMPTS = 2
@@ -117,7 +118,8 @@ VOCAB_TIER = "fast"
 VOCAB_TEMPERATURE = 0.4
 
 # Maximum tokens the vocabulary inventor asks the model for.
-VOCAB_MAX_TOKENS = 8000
+# deepseek-flash counts reasoning tokens inside max_tokens, so 8000 truncated replies before JSON.
+VOCAB_MAX_TOKENS = 16000
 
 # Unexpected passes in the confirmed zone that wake the inventor.
 VOCAB_TRIGGER_CONTRADICTIONS = 2
@@ -147,7 +149,8 @@ ORACLE_TIER = "fast"
 ORACLE_TEMPERATURE = 0.6
 
 # Maximum tokens the oracle inventor asks the model for.
-ORACLE_MAX_TOKENS = 8000
+# deepseek-flash counts reasoning tokens inside max_tokens, so 8000 truncated replies before JSON.
+ORACLE_MAX_TOKENS = 16000
 
 # Experiments between oracle-inventor calls.
 ORACLE_EVERY = 100
