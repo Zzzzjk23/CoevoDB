@@ -15,10 +15,168 @@
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
-| S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
+| S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 最近完成会话：S11（2026-10-16）
+
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"继续完成S11"。会话分支 `session/s11` 从 `s10-done-r2`（c0a9737）建立；起点独立复跑 774 passed / 3 skipped，GATES PASS 10/10。九个包（含两个计划外的纯 LLM 修正包）全部合并；纯 LLM 对照组的真实调用录制、3 小时长跑的重跑与重钉由编排者自己做。收尾合并回 main，tag `s11-done`。
+
+RQ1–RQ6 的定义取自用户 Claude Doc 里的框架文档《惊讶驱动的 CoevoDB：新框架与故事》"评估设计"一节（仓库里没有这份定义）：RQ1 发现、RQ2 校准、RQ3 LLM 猜想、RQ4 Harness、RQ5 协同进化、RQ6 理论质量。
+
+### 交付与门槛
+
+- **S9 / S10 验收定下的四处修复**（`s11-fixes`）：
+  - 理论存储写盘重试：`os.replace` 遇 `PermissionError` 最多 6 次、间隔 0.05–0.8 秒（`theory/store.py` 的私有常数，不进理论常数）。
+  - 主循环保留原始异常：出错时先把完整 traceback 写进 run 目录的 `error.txt`，再写报告；写报告也失败时抛出的仍是原始异常。
+  - 每个请求的总时限：`roles/constants.py` 的 `REQUEST_DEADLINE_S = 600.0`；`DeepSeekTransport` 用工作线程加流式读取，超时抛 `TransportError("DeadlineExceeded")`，网关记账、不缓存。
+  - `metrics/` 认扩展词表：`dups.run_registry(run_dir)`，`dups.new_families(..., registry=)`、`recall.score(..., registry=)`。
+- **单次运行的全部指标**（`metrics/rundata.py`、`rq.py`、`boundary.py`、`partition.py`、`constants.py`、`data/fix_conditions.json`）：`run_metrics(run_dir, known=, prices=, window=)` 只读一个 run 目录，返回 `rq1`–`rq6` 与 `cost`：
+  - RQ1：跨臂统一的"账本家族"（有完整画像的失败的身份键，按 seq 第一次出现）、每千次执行与每小时的家族数、第一个家族出现的时刻、理论家族、重复率；
+  - RQ2：有效记录数、Brier 与参照、平均惊讶、校准分箱、高惊讶记录（≥ 4 比特）、惊讶曲线与齿；
+  - RQ3：猜想存活率、押注预测准确率随时间、翻译结算、经各 LLM 通道开出的家族（implement / bet / translate / llm_rule / invented_feature）、调用与 token、每家族的调用与 token、纯 LLM 臂自己的 `expect` 准确率；
+  - RQ4：无效率（按原因与 oracle）、重复率、理论长度随代、编辑的接受 / 拒绝 / 回滚、留入 / 留出差距；
+  - RQ5：惊讶版 CIAO 矩阵（最多 12 代 × 12 批、每批最多均匀抽 200 条）与本臂的冻结 / 配对设置；
+  - RQ6：已知缺陷召回、假设边界与上游修复范围的吻合度（吻合 / 过宽 / 过窄 / 交错）；家族划分与人工判定的成对一致性（`partition.pair_agreement`）；
+  - 成本：执行数、墙钟、调用、token、美元（给了价格表才算）、每家族成本。
+- **分层冻结与跨代配对**（`s11-arms`；`experiments/loop.py`、`hunter/hunter.py`、`diagnoser/diagnoser.py`、`theory/workbench.py`）：`--freeze theory`（不 observe、不诊断）、`--freeze diagnoser`（照常 observe 与按代关闭，不提编辑）、`--hunter random`、`--theory-from RUN@GEN`（理论从那一代起）、`--select-from RUN@GEN`（Hunter 用那一代的理论选题与打分，进度行多一个 `select_p`）。不是默认值时 `arm` 才写进 config / report / manifest，全关的运行与 S8–S10 逐行相同。开了冻结时只允许实现器、探索先验两个不改理论的角色。
+- **对照组**：
+  - 纯 LLM 生成（`baselines/pure_llm.py`）：fast 档、温度 0.8、每次 4 个用例、`max_tokens` 32000、按种子轮换的主题表；用例走同一套 oracle 与 CVE（每个失败走第 3 档），模型的 `expect` 只记进 spec。提示是一段短而"先给答案"的固定文本（`s11-purellm3`）。
+  - 原 CoevoDB（`baselines/old_no_llm.py`，`--mode`，默认 `no_llm`；旧代码不改）。
+  - SQLancer（`baselines/sqlancer.py` 读 `baselines/data/sqlancer_summary.json`）：只是 `docs/FINAL_REPORT.md` 汇总表的转录（35 次运行、约 9030 万次检查、0 个缺陷），原始结果不在这台机器上。
+  - 新框架无 LLM 版：网格里不开角色的 `surprise` 臂。
+- **实验网格**（`experiments/grid.py`）：JSON 配置，臂 × 种子 × 重复，每格一个子进程、逐格串行（墙钟预算公平）；臂的种类 `surprise`、`old_coevodb`、`pure_llm`、`sqlancer`；完成的格（`cell.json` 为 `done`）续跑时不碰，其它残留改名 `<格>.stale-<k>` 保留；不需要联网的子进程去掉密钥变量；配置可带 `prices`。
+- **统计、报告与图**（`metrics/stats.py`、`metrics/report.py`）：中位数、Mann–Whitney U（无并列且合计 ≤ 20 时精确分布，否则正态近似加并列与连续性修正，与 scipy 一致）、Vargha–Delaney Â₁₂，只用标准库；`python -m surprise.metrics.report GRID_DIR` 一条命令写 `report.json` 与 7 张图（RQ1 家族、RQ2 惊讶曲线与校准、RQ3 LLM、RQ4 质量、RQ5 CIAO、RQ6 召回），同一个网格得到同一份 `report.json`。
+- **离线去重对比与覆盖度量**（`metrics/dedup.py`、`metrics/coverage.py`）：
+  - σ 对执行前成员检验：在一次运行的全部失败上，真值是完整画像的身份键（只做了第 2 档的失败离线重做画像，版本要与运行时一致），σ 键用旧代码 `SignatureEngine._signature` 从同一份画像算；各报精度、召回与所花执行数。
+  - 上游回归测试重放：`seeds/corpus.json` 里解析好的 DuckDB 上游测试按 oracle 重放到 1.1.3 与 1.5.5，报两版的标签分布与"旧版 fail 新版 pass""两版都 fail""只新版 fail"三张清单。只做度量，不写账本、不打标签。
+
+门槛 `gates/s11.py` 共十七组：
+
+- 修复：`constants`、`store`、`loop_error`、`deadline`、`vocabulary`。
+- 指标：`stats`、`runmetrics`（种子 51 的 30 条短跑，全部指标由门槛独立重算）、`ciao`（S8 长跑产物）、`llm_metrics`（S10 的 M3 缓存重放）、`rq6`。
+- 消融：`arms`（冻结、随机 Hunter、`--theory-from`、`--select-from`；每行 `select_p` 等于源理论对该记录的预测）。
+- 对照组：`pure_llm_script`（脚本回复）、`pure_llm`（重放编排者录下的真实回复，`gates/s11_llm/pure_llm`，9 个文件、约 19.6 KB，只有提示与回复，按值查过没有密钥）、`sqlancer`。
+- 去重与覆盖：`dedup`、`coverage`（要 `.venvs/duckdb-1.1.3-full`）。
+- M4 冒烟：`grid`（下面一节）。
+
+与 SESSIONS 的对应：
+
+| SESSIONS 的要求 | 门槛组 |
+|---|---|
+| 从账本算全部指标 | `runmetrics`、`ciao`、`llm_metrics`、`rq6`、`vocabulary` |
+| 分层冻结、跨代配对 | `arms` |
+| CVE 覆盖度量（召回基准、上游回归测试重放），不参与打标签 | `rq6`（召回）、`coverage` |
+| 配置驱动的网格，中位数、MWU、Â₁₂ | `grid`、`stats` |
+| 对照组：SQLancer、原 CoevoDB、纯 LLM、新框架无 LLM | `sqlancer`、`grid`（原 CoevoDB 与无 LLM 臂）、`pure_llm_script`、`pure_llm` |
+| 离线去重对比 | `dedup` |
+| M4 冒烟：2 臂 × 2 种子短时网格跑通，RQ1–RQ6 指标与图一条命令生成 | `grid` |
+
+最终复跑（全部合并、录制与长跑重钉之后，在 `session/s11` 主检出区独立运行，在 `framework/` 下，去掉密钥）：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 935 passed, 3 skipped，退出码 0（起点 774，新增 161，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17；GATES: PASS (11/11 passed)，退出码 0 |
+
+### 实机运行的数字
+
+**M4 冒烟网格**（门槛 `grid` 组；配置在 `gates/s11_cases.GRID_CONFIG`）：新框架无 LLM 臂对原 CoevoDB（`no_llm`），DuckDB 1.5.5，种子 0、1，每格 1 分钟。4 格加报告约 4 分钟（门槛 246 秒），续跑不碰已完成的格，`report.json` 与 7 张图一条命令生成；每小时家族数的中位数：新框架 29.79、原 CoevoDB 29.78，MWU p = 1.0，Â₁₂ = 0.625。 每格 1 分钟、每臂 2 个样本，这组数字只说明管线走通，不能拿来比较两个系统。
+
+**长跑**（`results/s08/longrun`，角色全关、DuckDB 1.5.5、种子 0、七类 oracle、180 分钟）
+
+| | S10 代码 | S11 代码 |
+|---|---|---|
+| 实验 | 9500 | 8600 |
+| fail / pass / invalid | 95 / 4449 / 4956 | 90 / 4117 / 4393 |
+| 车道（探索 / 泛化 / 细化） | 9409 / 53 / 38 | 8511 / 55 / 34 |
+| 假设 / 家族 / 不同身份 | 26 / 11 / 5 | 27 / 13 / 7 |
+| 编辑（接受 / 拒绝） | 0 / 2 | 1 / 2 |
+| 重复率（旧系统 0.818） | 0.545 | 0.462 |
+| 窗口与齿 | 95 个窗口，齿在 3、9、17、40、87 | 86 个窗口，齿在 3、9、17、35、63、78 |
+| CIAO（代数；对角线 / 新理论看旧批 / 旧理论看新批，比特） | 96 代；0.026 / 0.019 / 0.063 | 88 代；0.056 / 0.029 / 0.211 |
+
+- 以 `budget_minutes` 结束，0 条 harness_error；S8 门槛的 `longrun`、`sawtooth`、`duplicates`、`recall` 四组与 S11 的 `ciao` 组对新产物通过（b2e55ce 重钉）。
+- 去掉 `elapsed_s` 后前 2936 行与 S10 代码的长跑逐行相同，第 2937 行分叉：仍是 S8 以来那条 plan variant 用例（harness 第 1 档重跑不稳定，这次判 `invalid / unstable_rerun`）。分叉之后走的路不同，3 小时里少跑了 900 条：前 8000 条的耗时与 S10 相当（9079 秒对 9016 秒），差主要在第 8392 条一条用了 941 秒（细化车道的 cross_dbms 用例，2000 行的自连接、约 200 万行结果，第 1 档重跑 5 次加单线程一次；见未决问题）。
+- 这次长跑在全部改 `experiments/`、`hunter/`、`diagnoser/`、`theory/` 的包合并之后单独起跑（cc2af2b）；之后合并的 `s11-purellm3` 只动 `baselines/`。S10 代码的长跑挪到 `results/s08/longrun-s10code`。
+
+**纯 LLM 对照组**（`gates/s11_llm/pure_llm`；DuckDB 1.5.5、种子 0、fast 档）：第三次录制成功，4 次调用、每次 4–7 千个输出 token、23–40 秒；16 条用例里 15 条 pass、1 条 invalid（equivalent_query 套不上），没有失败、没有家族；模型预测 fail 的 4 条实际都 pass。前两次录制作废、不入库：第一次 4 次调用里 3 次推理吃满 16000 上限、唯一成功的一批 7/8 无效（提示没讲清谓词的拼法）；第二次（修好提示后）6 次全部在 16000 处截断。三次单发探测定下短提示与 32000 上限。纯 LLM 对照组的调试与录制合计真实调用 17 次，全部由编排者做。
+
+**门槛短跑上的数字**（只说明管线走通）：
+- `runmetrics`（种子 51、30 条）：31 条记录、1 个账本家族、Brier 0.2194、1 条高惊讶记录、14 条 invalid、理论长度 193.0 比特。
+- `llm_metrics`（M3 缓存重放）：2 条猜想、存活率 0、7 次结算的押注准确率 0.714；经 bet 开出 1 个家族。
+- `rq6`：F2 家族的假设"过窄"（修复条件全在、多 9 个字面量：出生时的 S 是整条 φ）；1.1.3 召回 run 的召回 0.5。
+- `dedup`（种子 51 短跑）：3 条失败、1 条真重复；σ 精度 / 召回 1.0 / 1.0，成员检验一次也没判重复。
+- `coverage`：4 条上游回归测试 × 2 个 oracle：plan variant 两版都 4 条 pass，equivalent_query 两版都 4 条 invalid。
+- `sqlancer`：35 次运行、0 个缺陷，每行与 `docs/FINAL_REPORT.md` 一致。
+
+### 拆包清单与结论（全部已合并）
+
+| 包 | 内容 | 轮数 | 合并 | 审查 |
+|---|---|---|---|---|
+| s11-fixes | 存储写盘重试、保留原始异常、请求总时限、metrics 认扩展词表 | 首轮通过 | c8aeff5 | 独立复跑 782 passed；S9 `replay`、S10 `m3` 逐行重放；约 0.67 美元 |
+| s11-runmetrics | 单次运行的 RQ1–RQ6 指标、CIAO、边界吻合、划分一致性 | 首轮通过 | 8f88016 | 789 passed；`ciao` 在主检出区对长跑跑过；约 2.43 美元 |
+| s11-purellm | 纯 LLM 对照组 | 首轮通过 | bf270d2 | 约 1.55 美元 |
+| s11-grid | 实验网格、原 CoevoDB 的 mode、SQLancer 转录 | 首轮通过 | de756ff | 889 passed；网格部分通过，报告命令留给 `s11-report`；约 1.26 美元 |
+| s11-arms | 冻结、随机 Hunter、`--theory-from`、`--select-from` | 首轮通过（门槛一条断言改准，a742cca） | b294745 | 807 passed；S8 `lanes` / `determinism`、S10 `m3` 逐行相同；约 2.29 美元 |
+| s11-dedup | 离线去重对比、上游回归测试重放 | 首轮通过 | 69d6811 | 820 passed；约 1.47 美元 |
+| s11-purellm2 | 纯 LLM 提示讲清谓词拼法、每次 4 个用例（计划外） | 首轮通过 | 73f61a0 | 约 0.42 美元 |
+| s11-report | 统计检验、报告命令与 7 张图（带 `grid.py` 的一行修正） | 返工 1 轮：缺 `bugs.jsonl` 时造临时目录绕过；`mean_surprise` 恒为空 | baede2f | 914 passed；`stats`、`runmetrics`、`grid` 通过；约 3.03 美元（两轮） |
+| s11-purellm3 | 纯 LLM 换短提示、上限 32000（计划外） | 首轮通过 | 08b0334 | 约 0.32 美元 |
+
+- 说明、报告、审查包归档在 `docs/orch/s11/`；grok 成本合计约 13.44 美元。
+- 计划外的两个包都因为纯 LLM 对照组的提示：第一次录制暴露了提示没讲清谓词拼法，第二次暴露了推理模型在密集提示上推理不止。
+
+### 当前接口
+
+命令（在 `framework/` 下）：
+
+- `python -m surprise.experiments.loop … [--freeze theory|diagnoser] [--hunter value|random] [--theory-from RUN_DIR@GEN] [--select-from RUN_DIR@GEN]`；出错时 run 目录里有 `error.txt`。
+- `python -m surprise.experiments.grid run CONFIG --out DIR [--only ARM]...`；`python -m surprise.experiments.grid status DIR`。`run` 退出码 0 = 选中的格全部完成，1 = 有格失败，2 = 配置不合法。
+- `python -m surprise.metrics.report GRID_DIR [--out DIR] [--dedup FILE] [--coverage FILE]`：默认写到 `GRID_DIR/report/`。
+- `python -m surprise.baselines.pure_llm --out DIR --seed N [--engine duckdb] [--oracle …] [--max-experiments N] [--max-minutes M] [--llm-cache DIR] [--llm-max-calls N] [--llm-offline]`。
+- `python -m surprise.baselines.old_no_llm --out DIR --minutes M --seed N [--mode no_llm] [--python 解释器]`。
+- `python -m surprise.metrics.dedup RUN_DIR --out FILE [--limit N] [--no-reprofile]`。
+- `<venv 的 python> -m surprise.metrics.coverage run --out FILE [--prefix duckdb:test/] [--limit N] [--oracle …]`（1.1.3 用 `.venvs/duckdb-1.1.3-full`）；`… coverage compare OLD NEW --out FILE`。
+
+Python 接口：
+- `surprise.metrics.rq`：`run_metrics(run_dir, *, known=None, prices=None, window=None)`、`old_metrics(old_dir)`、`ledger_families`、`ciao(wb)`、`theory_lengths(wb)`；`surprise.metrics.rundata.RunData.open(run_dir)`（`records`、`progress`、`config`、`report`、`manifest`、`registry`、`workbench()`、`book(name)`）。
+- `surprise.metrics.stats`：`median`、`summarize`、`a12`、`mann_whitney_u`；`surprise.metrics.boundary`：`classify`、`load_fix_conditions`、`compare`；`surprise.metrics.partition.pair_agreement(pred, truth)`。
+- `surprise.metrics.dedup.compare_dedup(run_dir, *, limit=None, reprofile=True)`；`surprise.metrics.coverage`：`select`、`replay`、`compare`。
+- `surprise.baselines.sqlancer`：`load(path=None)`、`metrics(summary, engine="duckdb")`。
+- `surprise.experiments.grid`：`load_config(path)`、`run_grid(config, out, *, only=None)`、`status_text(out)`。
+- `Workbench.create(root, ..., theory=None)`；`Hunter(..., select="value")` 与 `remember_case`。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+逐条见 DECISIONS 的 S11 各条：
+
+1. **跨臂统一的家族口径**：账本里有完整画像的失败的身份键（S8 重复率裁判的键），按 seq 第一次出现算一个新家族；不依赖理论，所以纯 LLM、冻结理论的臂也能算。新框架臂另外照旧报理论家族；原 CoevoDB 用 `bugs.jsonl` 的报告键；SQLancer 用转录的汇总。所有臂都报"每小时"，有账本的臂另报"每千次执行"。
+2. **指标常数**（`metrics/constants.py`）：高惊讶 4.0 比特、校准分箱 (0, 0.05, 0.2, 0.4, 0.6, 0.8, 0.95, 1.0)、CIAO 最多 12 代、每批抽 200 条、曲线窗口 100、齿 0.25 / 5。
+3. **CIAO 的"第 j 批"** = 第 j 代理论打开期间被观察的有效记录（代按每 100 条的 checkpoint 切）。
+4. **"第 j 代的 Hunter"= 用第 j 代理论选题的 Hunter**（本框架的 Hunter 自己不学东西），跨代配对 = `--select-from` 与 `--theory-from` 的组合；选题时 Hunter 从源运行的账本借正例的 SQL 来细化，不标为已做、不消耗随机数。
+5. **纯 LLM 对照组**：fast 档、温度 0.8、每次 4 个用例、上限 32000、短提示（逐字在 `baselines/pure_llm.py`）；不在代码里替模型修 SQL；失败一律走第 3 档。
+6. **离线去重对比**的真值是完整画像的身份键，σ 用旧代码的 `SignatureEngine._signature`，成员检验 = 执行前预测区为 confirmed。
+7. **SQLancer 只转录汇总表**（原始结果不在这台机器上），标明是转录、检查数是近似值。
+8. **RQ6 的边界真值只有 F2**（唯一合并了上游修复的已知缺陷，duckdb/duckdb#24685）；修复条件按 PR 说明定为 {有 PARTITION BY、分区键重复、两个以上窗口表达式}。家族划分的成对一致性只给函数，网格里没有人工真值，报告留空。
+9. **统计只用标准库**；没有价格表就只报 token、不报美元。
+10. **请求总时限 600 秒**、存储写盘重试 6 次。
+11. **M4 冒烟网格**：新框架无 LLM 臂对原 CoevoDB（`no_llm`），种子 0、1，每格 1 分钟，逐格串行；中断的格改名保留。
+
+### 与计划的偏差
+
+- 拆了九个包，比开工时定的七个多两个计划外的修正包（`s11-purellm2`、`s11-purellm3`）与一轮返工（`s11-report`）。
+- 纯 LLM 对照组录了三次，前两次作废、不入库；合计真实调用 17 次。
+- 门槛 `gates/s11.py` / `s11_cases.py` 在派发后改了三次，期望都没有放宽：a742cca（`arms` 组"要出现细化 / 泛化车道"改成每行 `select_p` 等于源理论的预测，更强也更准）；29260de（`PURE_LLM_CASES_PER_CALL` 8 → 4）；7e202e5（`PURE_LLM_MAX_TOKENS` 16000 → 32000）。录制的回复（a517b4b）是门槛事先说好要补的数据。
+- 编排者先合并了 `s11-purellm2`、`s11-purellm3`，之后才读审查包标出的"改写了断言"：核对过没有放宽（一处是说明要求的常数 8 → 4，一处换成对整段提示的逐字比对）。顺序错了，结论不变。
+- 长跑在最后一个包（`s11-purellm3`，只动 `baselines/`）合并之前起跑。
+- DECISIONS 里 `s11-runmetrics` 的花费先写错（约 1.9 美元），后面追加了一条更正（约 2.43 美元）。
+- SQLancer 对照组只有转录的汇总，不是逐次运行的结果。
+- 没有改 harness，没有改 S6 / S7 的规则与 S8–S10 门槛的检查逻辑；旧代码没有改；LLM 没有打任何标签。
+
+S11 留下的未决问题在文末"未决问题"一节的"S11 发现"一组里。
 
 ## 最近完成会话：S10（2026-10-16）
 
@@ -1134,7 +1292,28 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S11 及之后需要知道的）
+### 未决问题（S12 及之后需要知道的）
+
+S11 发现、留后续会话：
+- **M4 冒烟的数字不能拿来比较**：每格 1 分钟、每臂 2 个样本，新框架与原 CoevoDB 每小时都是约 30 个家族（MWU p = 1.0）。正式比较要长得多的格子与更多种子；SESSIONS 把 24 小时正式实验排除在 S11 之外，S12 的范围里也没有它，什么时候跑、跑多大，要用户定。
+- **`RunData` 一次读入整个账本与进度**：3 小时长跑（8600 条）的 `ciao` 组 26 秒，可以；24 小时的运行（约 7 万条）要改成流式读，否则内存与时间都会成问题。
+- **RQ6 的边界真值只有 F2 一条**：其它已知缺陷没有合并了的上游修复。F2 的假设判为"过窄"，是因为出生时的 S 是整条 φ，要等理论泛化之后再量才有意义；长一点的运行里再看。想让这个指标有统计意义，要找更多"有上游修复、能写出修复条件"的缺陷。
+- **家族划分一致性在网格里没有人工真值**，报告留空。S8 的 `ledger` 组有 24 条人工裁定的失败、10 个人工家族，可以当一份真值接进报告，没有做。
+- **SQLancer 对照组只有转录的汇总**（35 次运行、0 个缺陷），没有逐次运行的家族数与时间。要做"每小时家族数"的检验，得把原始结果（`results/sqlancer_strong/`）拷回来，或在本机重跑 SQLancer。
+- **没有价格表**：`deepseek-flash` / `deepseek-v4-pro` 的单价不知道，报告里美元一栏是空的，只有 token。网格配置的 `prices` 键已经能用。
+- **网格的 `surprise` 格没有墙钟强杀**：时长靠主循环自己的 `--max-minutes`；原 CoevoDB 的格到点强杀。主循环卡在某一条实验上（见下一条）时整个网格会等着它。
+- **单条实验可以很慢**：长跑第 8392 条（细化车道的 cross_dbms 用例：2000 行表的 `t1.id <= t2.id` 自连接，约 200 万行结果）用了 941 秒，第 1 档重跑 5 次加单线程一次，每次都在几个引擎上跑完整结果再比较；比较结果是两边各有约 150 万行对不上，`VARCHAR[]` 的跨引擎表示是不是原因没有核实。harness 没有结果行数上限，它是冻结的，要加上限得先问用户。
+- **推理模型在密集的开放式生成提示上会推理不止**：纯 LLM 对照组的头两版提示让 `deepseek-flash` 把 16000 / 32000 的上限都推理完、正文为空，降温也不管用；改成短而"先给答案"的提示才好。实现器（S9 常数 8000）在 M3 里截断过 3/36，可能是同一个原因；改别的角色的提示要重录对应的缓存。
+- **纯 LLM 对照组在 DuckDB 1.5.5 上 16 条用例没有一个失败**：只录了种子 0 的 4 次调用，样本太小，什么也说明不了；正式实验里它的预算要与其他臂一样按墙钟给，调用上限按预算定。
+- **离线去重与覆盖度量的门槛样本很小**：去重只有 3 条失败（σ 与成员检验的差别看不出来）；覆盖度量只重放 4 条上游测试，equivalent_query 在两个版本上都是 4 条 invalid。正式跑要用长跑的账本与整个 `duckdb:test/` 前缀。
+- **σ 的引擎名固定为 `duckdb`**：`metrics/dedup.py` 用 `SignatureEngine` 的默认引擎名。只在同一次运行内比较键，结论不受影响，但 DataFusion 运行的键里引擎名不对。
+- **`metrics/rq.py` 有两处可以简化的重复**：理论家族键自己按 `dups.new_families` 的规则重算；`recall.score` 用 `inspect.signature` 判断要不要传词表。`s11-fixes` 合并后两处都能直接调用。
+- **`loop.py` 的 `raise pending from None` 丢掉原始异常自带的 `__cause__` 链**；`error.txt` 在写报告之前已存下完整 traceback，排查不受影响。
+- **`llm/pure_llm.jsonl` 不记使运行停下的那次 `blocked` / `miss`**；那次调用在网关的 `calls.jsonl` 里。
+- **S12 移动旧代码时要一起改的**：`baselines/old_no_llm.py` 起旧主循环、`metrics/dedup.py` 导入旧 `diagnosis/signature.py`，S12 把旧代码移到 `baselines/coevodb_v1/` 后这两处的路径要跟着改，S11 的 `grid`、`dedup` 两组要仍然通过。
+- **S8 门槛的 `longrun` 与 S11 的 `ciao` 都绑着 S8 长跑的产物**：之后改 `hunter/`、`diagnoser/`、`experiments/`、`harness/`、`theory/`、`features/` 的任何一行，都要再按 S8 验收的办法重跑长跑、重钉，再跑这五组。
+
+已解决（留作索引）：S9 验收的"请求总时限"、S10 发现的"存储 `save` 不耐瞬时文件错误、主循环盖掉原始异常"与"`metrics.dups.new_families` 不认扩展词表"三条在 `s11-fixes` 解决（见 S11 一节）；S10 发现的"S8 门槛的 `longrun` 与代码摘要绑定"按 S8 验收的办法重跑重钉了一次（b2e55ce）。
 
 S10 发现、留后续会话：
 - **理论存储的 `save` 不耐瞬时文件错误，主循环会把原始异常盖掉**：长跑第一次重跑在第 6526 条之后中断。`save` 已经写了 `passes/` 的两个文件、还没写 `head.json` 时失败；主循环接着写报告，`metrics.dups.new_families` 用 `Workbench.open` 读存储，报版本不一致，这个异常把原始异常盖掉了（`run` 里 `_write_report` 抛出时 `state.exc` 丢失）。原因没能确定，判断是负载下的一次文件错误（Windows 上 `os.replace` 遇到被别的进程打开的文件会失败）。可选的修法：`theory/store.py` 的 `_write_text` 在 `PermissionError` 时短暂重试；`experiments/loop.py` 在写报告失败时先把原始异常写出来。后者改的是 `experiments/`，又要重跑长跑重钉，宜与 S11 自己对这几个目录的改动一起做。产物在 `results/s08/longrun-s10-crashed`（不入库）。用户验收时定下：两处都在 S11 开头修，与 S11 对这几个目录的其它改动合在一起，只重跑一次长跑。
@@ -1294,6 +1473,16 @@ S2 新发现：
 
 ### 给下一个编排者的操作提醒
 
+S11 踩到的：
+
+- **对照组或新角色的提示，派发前先用一两次真实调用试**：推理模型（`deepseek-flash`）对"规则很密、开放式生成"的提示会一直推理到上限，正文为空；提高上限、降温都不管用。纯 LLM 对照组因此作废两次录制、多开两个修正包。试出来能用的提示原文写进说明，由执行者逐字照用（`s11-purellm3` 一次就过）。探测脚本 `.orch/scratch/s11/probe_pure_prompt.py`、录制脚本 `record_pure.py`（不入库，密钥从注册表读、不打印）。
+- **审查包标出"改写了断言"时，先读那几处再合并**，包再小也一样。这次两个纯 LLM 修正包是先合并后核对的（结论没变，顺序错了）。
+- **写进 DECISIONS 的数字先核对日志**：`s11-runmetrics` 的花费凭印象写错，只能追加更正。
+- **`gw cleanup` 报 `PermissionError`，多半是编排者的 shell 停在那个 worktree 里**：先 `cd /d/CoevoDB` 再清理。
+- **门槛断言写得比实现能保证的更强时，换成更准的断言，不放宽**：`arms` 组原来要求 `--select-from` 的运行出现细化 / 泛化车道，源运行跑满之后候选可能为空；改成"每行 `select_p` 等于源理论的预测"，更强也不依赖运气。
+- **长跑可以在只剩不碰钉住代码的包时起跑**：这次最后一个包只动 `baselines/`，长跑与它、与十几条用例的录制同时跑，没有出问题；但审查复跑与全量门槛仍然等长跑结束再跑。
+- **CIAO 用主检出区的长跑核对 worktree 里的代码**：`.orch/scratch/s11/ciao_check.py`。
+
 S10 踩到的：
 
 - **长跑不要与审查、grok 包同时跑。** 第一次重跑与三个审查、两个包并行，第 3886 条在负载下判成 `timeout`、选择链与 S9 分开，第 6526 条之后理论存储写盘失败、整次作废。单独重跑就顺利。另外，改了 `features/` 或 `theory/` 的包没合并之前不要起长跑：长跑的 manifest 会核对这两层的代码哈希，钉不上。
@@ -1381,28 +1570,28 @@ S2、S3 踩到的，仍然有效：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S11
+### 下一会话的起点：S12
 
-S11 要等用户指示再开工。
+S12 要等用户指示再开工。
 
-- **分支**：从 main 的 `s10-done-r2` 建分支 `session/s11`。
+- **分支**：从 main 的 `s11-done`（用户验收后若有 `s11-done-r2`，从它起）建分支 `session/s12`。
 - **开工前检查**：
   - 主分支、tag、工作区；
   - PG 状态：服务器停着时按 S3 一节的恢复命令启动，不重新 initdb；
   - `DEEPSEEK_API_KEY` 仍在 Windows 用户环境变量里。
 - **起点复跑**（在 `framework/` 下，去掉密钥）：
-  - `../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 774 passed, 3 skipped；
-  - `../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (10/10 passed)`。
+  - `../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 935 passed, 3 skipped；
+  - `../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (11/11 passed)`（S11 一组约 8 分钟，最慢的是 `grid`）。
 - **门槛依赖仓库外的东西**：
-  - S8 的四个产物组要求 `framework/results/s08/` 还在，且 harness、理论、特征、`hunter/`、`diagnoser/`、`experiments/` 的代码与重跑的长跑一致。
+  - S8 的四个产物组与 S11 的 `ciao` 要求 `framework/results/s08/`（`longrun`、`old_no_llm`、`recall113`、`pre`）还在，且 harness、理论、特征、`hunter/`、`diagnoser/`、`experiments/` 的代码与重跑的长跑一致。
   - S09、S10 的 `source`、`conjecturer`、`dfa`、`replay`、`prior`、`translator_real`、`m3` 等组要求 `.src/` 下两份源码检出还在（恢复命令见 S9 一节）。
   - S10 的 `library`、`oracle_inventor`、`switches`、`m3` 要 PostgreSQL 参照在跑。
-- **S11 的范围**（见 SESSIONS.md 的 S11 一节）：评估管线，从账本算全部指标；配置驱动的实验网格；对照组；离线去重对比。M4 冒烟门槛：2 臂 × 2 种子的短时网格跑通，RQ1–RQ6 指标与图一条命令生成。
-- **S11 开工时要先定的**（S9、S10 留下的）：
-  - 用 strong 档做模型强度比较之前，先在 `roles/transport.py` 加每个请求的总时限（S9 验收定下）。
-  - 带角色的评估运行要按预算定 `--llm-max-calls`；M3 的 32 条用了 43 次调用。
-  - `metrics/` 要接受扩展词表（S10 发现）。
-  - 理论存储写盘的重试与主循环保留原始异常（S10 发现）：在 S11 开头做（S10 验收定下）。改的是 `theory/store.py` 与 `experiments/loop.py`，会触发 S8 长跑重跑；与 S11 对 `theory/`、`experiments/`、`hunter/`、`diagnoser/` 的其它改动排在一起，全部合并之后只重跑一次。
-- **常数**：S10 的常数三十五项由门槛 `constants` 组钉住（其中三个上限 16000）。改模型名、档位或上限先记 DECISIONS，与 PLAN 冲突的先问用户。
-- **派发与审查**：照旧；要录真实调用的包加 `--llm-key N`，别的包不给密钥。长跑单独跑。
-- **恢复工作时**：S10 九个包都已合并并清理，`gw list` 应全部显示 cleaned；历史 brief / report / review 在 `docs/orch/s10/`；编排者的录制与探测脚本在 `.orch/scratch/s10/`（不入库）；钉长跑哈希仍用 `.orch/scratch/s8/pin.py longrun`。
+  - S11 的 `coverage` 要 `.venvs/duckdb-1.1.3-full`；`grid` 起原 CoevoDB 的旧主循环，`dedup` 导入旧 `diagnosis/signature.py`。
+- **S12 的范围**（见 SESSIONS.md 的 S12 一节）：旧主循环移入 `framework/surprise/baselines/coevodb_v1/` 并保持可运行；与新包共用的原语只保留一份；`coevo/` 与 `repair_bench/` 归档；README、架构文档、`framework/AGENTS.md` 更新。门槛：原 CoevoDB 臂在新位置可跑；S01–S11 的全部门槛仍通过。
+- **S12 要留意的**：
+  - 移动旧代码之后，`baselines/old_no_llm.py`、`metrics/dedup.py` 的路径跟着改（见"S11 发现"）；S01 的门槛也核对旧代码的位置与导入，移动前先读一遍 `gates/s01.py` 查了什么。
+  - "S12 之前旧代码只做移动、不改逻辑"：S12 的移动仍只允许改导入路径；"共用原语只保留一份"若要改逻辑，先问用户。
+  - 不做新功能；S11 留下的问题（流式读账本、结果行数上限等）记着，不在 S12 里修。
+- **常数**：S11 的指标常数、纯 LLM 常数与 `REQUEST_DEADLINE_S` 由门槛 `constants` 组钉住。
+- **派发与审查**：照旧；S12 不需要真实调用，所有包都不给密钥。
+- **恢复工作时**：S11 九个包都已合并并清理，`gw list` 应全部显示 cleaned；历史 brief / report / review 在 `docs/orch/s11/`；编排者的录制与探测脚本在 `.orch/scratch/s11/`（不入库）；钉长跑哈希仍用 `.orch/scratch/s8/pin.py longrun`。

@@ -13,6 +13,8 @@ match a run that has no role code loaded.
         [--beta B] [--bootstrap FILE] [--run-id ID]
         [--llm ROLE]... [--llm-cache DIR] [--llm-max-calls N] [--llm-offline]
         [--vocabulary FILE]
+        [--freeze {theory,diagnoser}] [--hunter {value,random}]
+        [--theory-from RUN_DIR@GEN] [--select-from RUN_DIR@GEN]
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import math
 import os
 import sys
 import time
+import traceback
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -143,12 +146,18 @@ def run(
     echo: bool = False,
     llm=None,
     vocabulary=None,
+    freeze=None,
+    hunter: str = "value",
+    theory_from=None,
+    select_from=None,
 ) -> dict[str, Any]:
     """Run the loop into ``out`` and return the report. ``echo`` prints one ASCII line per experiment.
 
     ``echo`` is for the command line. A library caller leaves it false.
     ``llm`` is None, or a dict that turns on a subset of the LLM roles.
     ``vocabulary`` is a registry file. Omitted, the run uses the base vocabulary.
+    ``freeze`` is None, ``"theory"`` or ``"diagnoser"``. ``hunter`` is ``"value"`` or ``"random"``.
+    ``theory_from`` and ``select_from`` are ``RUN_DIR@GEN`` with ``GEN`` an integer or ``head``.
     """
     seed = _require_int(seed, "seed")
     engines = _strings(engines, "engines")
@@ -165,6 +174,18 @@ def run(
         raise UsageError(f"run_id: expected a non-empty string, got {run_id!r}")
     llm_config = _normalise_llm(llm)
     vocabulary_path = _normalise_vocabulary(vocabulary)
+    freeze_mode = _normalise_freeze(freeze)
+    hunter_mode = _normalise_hunter(hunter)
+    _refuse_frozen_roles(freeze_mode, llm_config)
+    source = None
+    selected = None
+    if theory_from is not None or select_from is not None:
+        active = default_registry() if vocabulary_path is None else Registry.load(vocabulary_path)
+        if theory_from is not None:
+            source = _load_theory_ref(theory_from, "theory_from", active)
+        if select_from is not None:
+            selected = _load_theory_ref(select_from, "select_from", active)
+    arm = _arm_record(freeze_mode, hunter_mode, source, selected)
 
     directory = Path(out)
     _ensure_out(directory)
@@ -183,6 +204,12 @@ def run(
         echo=echo,
         llm=llm_config,
         vocabulary=vocabulary_path,
+        freeze=freeze_mode,
+        hunter_mode=hunter_mode,
+        arm=arm,
+        source_theory=None if source is None else source[2],
+        select_theory=None if selected is None else selected[2],
+        select_run=None if selected is None else selected[0],
     )
     pending: BaseException | None = None
     try:
@@ -196,7 +223,21 @@ def run(
             state.status = "error"
             state.exc = exc
             pending = exc
-        state.report = _write_report(state)
+        if pending is not None:
+            _write_error_file(state.directory, pending)
+        try:
+            state.report = _write_report(state)
+        except BaseException as report_exc:
+            if pending is None:
+                _write_error_file(state.directory, report_exc)
+                raise
+            _write_error_file(
+                state.directory,
+                report_exc,
+                append=True,
+                note="--- while writing the report ---\n",
+            )
+            raise pending from None
     finally:
         try:
             _close(state)
@@ -220,6 +261,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bootstrap", default=None)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--vocabulary", default=None, help="registry file for this run")
+    parser.add_argument("--freeze", default=None, help="theory or diagnoser")
+    parser.add_argument("--hunter", default="value", help="value or random")
+    parser.add_argument("--theory-from", default=None, dest="theory_from", help="RUN_DIR@GEN")
+    parser.add_argument("--select-from", default=None, dest="select_from", help="RUN_DIR@GEN")
     parser.add_argument(
         "--llm",
         action="append",
@@ -251,6 +296,10 @@ def main(argv: list[str] | None = None) -> int:
             echo=True,
             llm=_llm_from_args(args),
             vocabulary=args.vocabulary,
+            freeze=args.freeze,
+            hunter=args.hunter,
+            theory_from=args.theory_from,
+            select_from=args.select_from,
         )
     except UsageError as exc:
         print(f"error: {_ascii(exc)}", file=sys.stderr)
@@ -285,6 +334,12 @@ class _State:
         echo: bool,
         llm: dict[str, Any] | None = None,
         vocabulary: str | None = None,
+        freeze: str | None = None,
+        hunter_mode: str = "value",
+        arm: dict[str, Any] | None = None,
+        source_theory=None,
+        select_theory=None,
+        select_run: Path | None = None,
     ) -> None:
         self.directory = directory
         self.seed = seed
@@ -299,6 +354,13 @@ class _State:
         self.echo = echo
         self.llm = llm
         self.vocabulary = vocabulary
+        self.freeze = freeze
+        self.hunter_mode = hunter_mode
+        self.arm = arm
+        self.source_theory = source_theory
+        self.select_theory = select_theory
+        self.select_run = select_run
+        self.select_wb = None
         self.registry = None
         self.roles = None
         self._library_armed = False
@@ -361,6 +423,7 @@ class _Step:
         self.adjacent = adjacent
         self.probes = probes
         self.pool = pool
+        self.select_p = None
 
 
 def _prepare(state: _State) -> None:
@@ -389,6 +452,7 @@ def _prepare(state: _State) -> None:
         "beta": state.beta,
         "extractor": state.extractor,
         "sources": sources,
+        "select": state.hunter_mode,
     }
     if loaded is not None:
         hunter_kwargs["registry"] = loaded
@@ -401,10 +465,17 @@ def _prepare(state: _State) -> None:
     state.hunter = Hunter(**hunter_kwargs)
     if loaded is None:
         state.diagnoser = Diagnoser(phi=state.hunter.phi, registry=default_registry())
-        state.wb = _open_workbench(state.directory / "theory")
+        state.wb = _open_workbench(state.directory / "theory", theory=state.source_theory)
     else:
         state.diagnoser = Diagnoser(phi=state.hunter.phi, registry=loaded)
-        state.wb = _open_workbench(state.directory / "theory", loaded)
+        state.wb = _open_workbench(state.directory / "theory", loaded, theory=state.source_theory)
+    if state.select_theory is not None:
+        select_root = state.directory / "select_theory"
+        if loaded is None:
+            state.select_wb = _open_workbench(select_root, theory=state.select_theory)
+        else:
+            state.select_wb = _open_workbench(select_root, loaded, theory=state.select_theory)
+        _remember_source_cases(state)
     state.ledger = Ledger(state.directory / "ledger.sqlite")
     manifest = extend_manifest(build_manifest(state.run_id))
     manifest["hunter"] = {
@@ -412,6 +483,8 @@ def _prepare(state: _State) -> None:
         "diagnoser": diagnoser_constants.as_dict(),
         "code": code_digests(),
     }
+    if state.arm is not None:
+        manifest["hunter"]["arm"] = state.arm
     if state.roles is not None:
         manifest["llm"] = state.roles.manifest()
     if loaded is not None:
@@ -433,12 +506,16 @@ def _open_extractor(registry_path: str | None = None):
     return PhiExtractor(registry_path=registry_path)
 
 
-def _open_workbench(root: Path, registry: Registry | None = None):
+def _open_workbench(root: Path, registry: Registry | None = None, theory=None):
     from surprise.theory import Workbench
 
-    if registry is None:
+    if registry is None and theory is None:
         return Workbench.create(root)
-    return Workbench.create(root, registry=registry)
+    if theory is None:
+        return Workbench.create(root, registry=registry)
+    if registry is None:
+        return Workbench.create(root, theory=theory)
+    return Workbench.create(root, registry=registry, theory=theory)
 
 
 def _arm_library(state: _State) -> None:
@@ -472,12 +549,17 @@ def _drive(state: _State) -> None:
         if state.max_minutes is not None and _wall_s(state) >= state.max_minutes * 60.0:
             state.status = "budget_minutes"
             return
-        choice = state.hunter.choose(state.wb)
+        target = state.select_wb if state.select_wb is not None else state.wb
+        choice = state.hunter.choose(target)
         if choice is None:
             state.status = "exhausted"
             return
         state.choices += 1
-        _execute(state, _choice_step(choice))
+        step = _choice_step(choice)
+        if state.select_wb is not None:
+            step.select_p = choice.scored.prediction.p_fail_valid
+            step.prediction = state.wb.predict(step.phi, step.oracle)
+        _execute(state, step)
 
 
 def _bootstrap_step(state: _State, item: dict) -> _Step:
@@ -486,7 +568,7 @@ def _bootstrap_step(state: _State, item: dict) -> _Step:
     rule = item["rule"]
     example = state.hunter.phi(case)
     prediction = state.wb.predict(example, oracle)
-    return _Step(
+    step = _Step(
         case=case,
         oracle=oracle,
         rule=rule,
@@ -506,6 +588,9 @@ def _bootstrap_step(state: _State, item: dict) -> _Step:
         probes=None,
         pool={},
     )
+    if state.select_wb is not None:
+        step.select_p = state.select_wb.predict(example, oracle).p_fail_valid
+    return step
 
 
 def _choice_step(choice) -> _Step:
@@ -570,14 +655,24 @@ def _execute(state: _State, step: _Step) -> None:
         rewrite_rule=step.rule,
         **options,
     )
-    outcome = state.wb.observe(step.phi, record.label, record.record_id, prediction=step.prediction)
-    state.hunter.record(record, rule=step.rule, prediction=step.prediction)
-    edits = state.diagnoser.after(state.wb, record, outcome) + state.diagnoser.periodic(
-        state.wb, state.done
-    )
-    # Roles see the experiment only after the Diagnoser has revised.
-    if state.roles is not None:
-        _notify_roles(state, step, record, outcome)
+    if state.freeze == "theory":
+        state.hunter.record(record, rule=step.rule, prediction=step.prediction)
+        edits = ()
+        outcome = None
+        if state.roles is not None:
+            _notify_roles(state, step, record, _unobserved_outcome(step, record))
+    else:
+        outcome = state.wb.observe(step.phi, record.label, record.record_id, prediction=step.prediction)
+        state.hunter.record(record, rule=step.rule, prediction=step.prediction)
+        if state.freeze == "diagnoser":
+            edits = state.diagnoser.checkpoint_only(state.wb, state.done)
+        else:
+            edits = state.diagnoser.after(state.wb, record, outcome) + state.diagnoser.periodic(
+                state.wb, state.done
+            )
+        # Roles see the experiment only after the Diagnoser has revised.
+        if state.roles is not None:
+            _notify_roles(state, step, record, outcome)
     row = _progress_row(state, step, record, outcome, edits)
     state.rows.append(row)
     state.progress.write(json.dumps(row, ensure_ascii=True, separators=(",", ":")) + "\n")
@@ -594,6 +689,33 @@ def _progress_row(state: _State, step: _Step, record, outcome, edits) -> dict[st
         kind = label.invalid_reason
     else:
         kind = None
+    if outcome is None:
+        from surprise.theory.predict import surprise_bits
+
+        surprise = surprise_bits(step.prediction.p_fail_valid, label.y)
+        triage_value = None
+        opened = None
+        owner = None
+        rolled_back: list[Any] = []
+        bets: list[Any] = []
+        edit_rows: list[Any] = []
+    else:
+        surprise = outcome.observation.surprise
+        triage_value = outcome.observation.triage
+        opened = outcome.observation.opened
+        owner = outcome.owner
+        rolled_back = list(outcome.rolled_back)
+        bets = [list(item) for item in outcome.bets]
+        edit_rows = [
+            {
+                "edit_id": edit.edit_id,
+                "kind": edit.kind,
+                "proposer": edit.proposer,
+                "decision": edit.decision,
+                "reason": edit.payload.get("reason"),
+            }
+            for edit in edits
+        ]
     row = {
         "seq": record.seq,
         "record_id": record.record_id,
@@ -618,22 +740,13 @@ def _progress_row(state: _State, step: _Step, record, outcome, edits) -> dict[st
         "value": step.value,
         "y": label.y,
         "kind": kind,
-        "surprise": outcome.observation.surprise,
-        "triage": outcome.observation.triage,
-        "opened": outcome.observation.opened,
-        "owner": outcome.owner,
-        "rolled_back": list(outcome.rolled_back),
-        "bets": [list(item) for item in outcome.bets],
-        "edits": [
-            {
-                "edit_id": edit.edit_id,
-                "kind": edit.kind,
-                "proposer": edit.proposer,
-                "decision": edit.decision,
-                "reason": edit.payload.get("reason"),
-            }
-            for edit in edits
-        ],
+        "surprise": surprise,
+        "triage": triage_value,
+        "opened": opened,
+        "owner": owner,
+        "rolled_back": rolled_back,
+        "bets": bets,
+        "edits": edit_rows,
         "pool": step.pool,
         "theory_version": state.wb.theory.version,
         "elapsed_s": float(f"{_wall_s(state):.2f}"),
@@ -642,6 +755,8 @@ def _progress_row(state: _State, step: _Step, record, outcome, edits) -> dict[st
         raise RuntimeError("progress row keys drifted from the loop contract")
     if state.roles is not None:
         row["llm"] = state.roles.step()
+    if state.select_wb is not None:
+        row["select_p"] = step.select_p
     return row
 
 
@@ -675,6 +790,8 @@ def _write_report(state: _State) -> dict[str, Any]:
         "new_families": _new_family_count(state),
         "extractor": {} if state.extractor is None else state.extractor.stats,
     }
+    if state.arm is not None:
+        report["arm"] = state.arm
     if state.status == "error":
         exc = state.exc
         report["error"] = {
@@ -746,6 +863,8 @@ def _config(state: _State) -> dict[str, Any]:
         payload["vocabulary"] = state.vocabulary
     if state.llm is not None:
         payload["llm"] = _llm_public(state.llm)
+    if state.arm is not None:
+        payload["arm"] = state.arm
     return payload
 
 
@@ -810,6 +929,23 @@ def _print_saved_summary(out) -> None:
         return
     if "status" in report and "experiments" in report:
         print(f"{report['status']} {report['experiments']}", flush=True)
+
+
+def _write_error_file(
+    directory: Path,
+    exc: BaseException,
+    *,
+    append: bool = False,
+    note: str | None = None,
+) -> None:
+    """Write ``exc``'s traceback to ``<directory>/error.txt``."""
+    text = "".join(traceback.format_exception(exc))
+    if note is not None:
+        text = note + text
+    path = directory / "error.txt"
+    if append and path.is_file():
+        text = path.read_text(encoding="utf-8") + text
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -1041,6 +1177,147 @@ def _normalise_bootstrap(bootstrap: object) -> tuple[dict, ...]:
             raise UsageError(f"bootstrap[{index}]: rule must be a string or null")
         items.append({"case": case.to_dict(), "oracle": oracle, "rule": rule})
     return tuple(items)
+
+
+_FREEZE_VALUES = ("theory", "diagnoser")
+_HUNTER_VALUES = ("value", "random")
+_FROZEN_ROLES = ("implementer", "prior")
+
+
+def _normalise_freeze(freeze: object) -> str | None:
+    if freeze is None:
+        return None
+    if not isinstance(freeze, str) or freeze not in _FREEZE_VALUES:
+        raise UsageError(f"freeze: expected one of {list(_FREEZE_VALUES)} or null, got {freeze!r}")
+    return freeze
+
+
+def _normalise_hunter(hunter: object) -> str:
+    if not isinstance(hunter, str) or hunter not in _HUNTER_VALUES:
+        raise UsageError(f"hunter: expected one of {list(_HUNTER_VALUES)}, got {hunter!r}")
+    return hunter
+
+
+def _refuse_frozen_roles(freeze: str | None, llm: dict[str, Any] | None) -> None:
+    if freeze is None or llm is None:
+        return
+    refused = [role for role in llm["roles"] if role not in _FROZEN_ROLES]
+    if refused:
+        raise UsageError(
+            "freeze: only implementer and prior may run while the theory or the diagnoser is frozen, "
+            f"got {list(llm['roles'])!r}"
+        )
+
+
+def _split_theory_ref(spec: object, name: str) -> tuple[Path, int | str]:
+    if not isinstance(spec, str) or spec.count("@") != 1:
+        raise UsageError(f"{name}: expected RUN_DIR@GEN, got {spec!r}")
+    run_text, gen_text = spec.split("@", 1)
+    if run_text == "" or gen_text == "":
+        raise UsageError(f"{name}: expected RUN_DIR@GEN, got {spec!r}")
+    if gen_text == "head":
+        generation: int | str = "head"
+    elif gen_text.isdigit():
+        generation = int(gen_text)
+    else:
+        raise UsageError(f"{name}: generation must be an integer or 'head', got {gen_text!r}")
+    path = Path(run_text)
+    if not (path / "theory" / "head.json").is_file():
+        raise UsageError(f"{name}: {path} has no theory")
+    return path, generation
+
+
+def _load_theory_ref(spec: object, name: str, registry: Registry) -> tuple[Path, int | str, Any]:
+    """The theory at ``RUN_DIR@GEN``. Vocabulary mismatches and missing generations are usage errors."""
+    path, generation = _split_theory_ref(spec, name)
+    root = path / "theory"
+    from surprise.theory import StoreError, TheoryStore, Workbench
+
+    try:
+        if generation == "head":
+            theory = Workbench.open(root, registry=registry).theory
+        else:
+            store = TheoryStore.open(root, registry=registry)
+            opened = store.head()["generation"]
+            if generation >= opened:
+                raise UsageError(
+                    f"{name}: generation {generation} is not closed in {path} (open generation is {opened})"
+                )
+            theory = store.load_generation(generation)
+    except UsageError:
+        raise
+    except (StoreError, OSError, ValueError) as exc:
+        raise UsageError(f"{name}: {exc}") from exc
+    return path.resolve(), generation, theory
+
+
+def _public_ref(loaded: tuple[Path, int | str, Any]) -> dict[str, Any]:
+    path, generation, theory = loaded
+    return {"run": str(path), "generation": generation, "version": theory.version}
+
+
+def _arm_record(freeze, hunter, source, selected) -> dict[str, Any] | None:
+    if freeze is None and hunter == "value" and source is None and selected is None:
+        return None
+    return {
+        "freeze": freeze,
+        "hunter": hunter,
+        "theory_from": None if source is None else _public_ref(source),
+        "select_from": None if selected is None else _public_ref(selected),
+    }
+
+
+def _remember_source_cases(state: _State) -> None:
+    """Give the hunter the source run's parent SQL, without copying its journal.
+
+    Refine and generalize need the case behind each positive. Those cases live
+    in the source ledger, not in the theory. Remembering them does not mark
+    them done and does not draw from the hunter's rng.
+    """
+    if state.select_wb is None or state.select_run is None:
+        return
+    wanted: set[str] = set()
+    for hypothesis in state.select_wb.theory.hypotheses:
+        wanted.update(hypothesis.positives)
+    if not wanted:
+        return
+    ledger_path = state.select_run / "ledger.sqlite"
+    if not ledger_path.is_file():
+        return
+    ledger = Ledger(ledger_path)
+    try:
+        records = ledger.records()
+    finally:
+        ledger.close()
+    for record in records:
+        if record.record_id not in wanted:
+            continue
+        rule = None
+        spec = record.spec
+        if isinstance(spec, dict):
+            found = spec.get("rule")
+            if isinstance(found, str) and found != "":
+                rule = found
+        state.hunter.remember_case(record.record_id, record.case, record.label.oracle, rule)
+
+
+def _unobserved_outcome(step: _Step, record):
+    """An outcome the roles can read when the theory itself is not updated."""
+    from surprise.theory import Observation, Outcome
+    from surprise.theory.predict import surprise_bits, triage
+
+    y = record.label.y
+    bits = surprise_bits(step.prediction.p_fail_valid, y)
+    observation = Observation(
+        prediction=step.prediction,
+        y=y,
+        surprise=bits,
+        triage=triage(y, bits),
+        effects=(),
+        opened=None,
+        unexplained=False,
+    )
+    return Outcome(observation=observation, seq=0, owner=None, bets=(), rolled_back=())
 
 
 def _read_bootstrap_file(path: str) -> list:

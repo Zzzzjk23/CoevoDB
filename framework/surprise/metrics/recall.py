@@ -10,11 +10,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from surprise.features.registry import Registry
 from surprise.harness.contracts import SqlCase
 from surprise.harness.cve.certify import certify
 from surprise.harness.cve.shape import behavior_shape
 
-from .dups import identity_key, new_families
+from .dups import identity_key, new_families, run_registry
 
 
 def _engine_versions() -> dict[str, str]:
@@ -62,12 +63,16 @@ def known_bugs(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return {"engines": _engine_versions(), "items": certified}
 
 
-def score(known: Mapping[str, Any], store_dir: str | Path) -> dict[str, Any]:
+def score(
+    known: Mapping[str, Any],
+    store_dir: str | Path,
+    registry: Registry | None = None,
+) -> dict[str, Any]:
     """Which profiled failures in ``known`` share an identity with a family in ``store_dir``.
 
     The same inputs produce the same dict, including key order.
     """
-    families = new_families(store_dir)
+    families = new_families(store_dir, registry=registry)
     present = [item for item in known["items"] if item["y"] == "fail" and item["key"] is not None]
     recalled: list[str] = []
     missed: list[str] = []
@@ -111,7 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "known":
         payload = known_bugs(_read_json(args.cases))
     else:
-        payload = score(_read_json(args.known), Path(args.run) / "theory")
+        payload = score(
+            _read_json(args.known),
+            Path(args.run) / "theory",
+            registry=run_registry(args.run),
+        )
     Path(args.out).write_text(_json(payload), encoding="utf-8", newline="\n")
     return 0
 

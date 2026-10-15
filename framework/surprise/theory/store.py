@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,9 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _HEAD_KEYS = {"schema", "vocab", "generation", "next_id", "hypotheses", "version"}
 _SNAPSHOT_KEYS = {"schema", "generation", "cause", "journal_seq", "version", "theory"}
 _LOGS = ("journal.jsonl", "edits.jsonl", "negative.jsonl")
+# os.replace on Windows can fail while another process still has the file open.
+_REPLACE_ATTEMPTS = 6
+_REPLACE_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
 
 
 class StoreError(ValueError):
@@ -104,7 +108,14 @@ def _write_text(path: Path, text: str) -> None:
     try:
         with temporary.open("w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
-        os.replace(temporary, path)
+        for attempt in range(_REPLACE_ATTEMPTS):
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                if attempt == _REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(_REPLACE_DELAYS[attempt])
     finally:
         if temporary.exists():
             temporary.unlink()

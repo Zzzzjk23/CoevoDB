@@ -1,0 +1,42 @@
+{
+  "run_id": "pure-s0",
+  "seed": 0,
+  "engine": "duckdb",
+  "oracles": [
+    "tlp",
+    "norec",
+    "plan_variant",
+    "index_presence",
+    "equivalent_query",
+    "version_differential",
+    "cross_dbms"
+  ],
+  "status": "budget_experiments",
+  "experiments": 16,
+  "calls": 4,
+  "started_at": "2026-10-15T19:48:43.728502+00:00",
+  "finished_at": "2026-10-15T19:51:03.267400+00:00",
+  "wall_s": 139.538898,
+  "labels": {
+    "pass": 15,
+    "invalid": 1
+  },
+  "llm": {
+    "by_role": {
+      "pure_llm": {
+        "calls": 4,
+        "network": 4,
+        "cache": 0,
+        "ok": 4,
+        "rejected": 0,
+        "blocked": 0,
+        "miss": 0,
+        "error": 0,
+        "input_tokens": 1460,
+        "output_tokens": 24041
+      }
+    },
+    "network": 4,
+    "max_calls": 6
+  }
+}

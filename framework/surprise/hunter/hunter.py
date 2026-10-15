@@ -141,6 +141,7 @@ class Hunter:
         prior=None,
         extra_rules=None,
         registry=None,
+        select: str = "value",
     ) -> None:
         self.engines = _names(engines, "engines")
         self.oracles = _names(oracles, "oracles")
@@ -162,6 +163,14 @@ class Hunter:
         self._bad_setups: set[tuple[str, ...]] = set()
         self._probes: dict[str, int] = {}
         self.sources = tuple(sources)
+        if select not in ("value", "random"):
+            raise ValueError(f"select: expected 'value' or 'random', got {select!r}")
+        # "value" keeps the historical max-value tie break. "random" draws once
+        # from the same scope, after the novelty lottery has used this rng.
+        self._select = select
+        # Cases executed in another run. A remembered id wins over this run's
+        # own record of the same id, so a borrowed theory still refines its parents.
+        self._borrowed: dict[str, tuple[SqlCase, str, str | None]] = {}
 
     def phi(self, case: SqlCase) -> Phi:
         return self._extractor.extract(case)
@@ -190,6 +199,13 @@ class Hunter:
         if prediction is not None and prediction.hypothesis_id is not None:
             hid = prediction.hypothesis_id
             self._probes[hid] = self._probes.get(hid, 0) + 1
+
+    def remember_case(self, record_id: str, case: SqlCase, oracle: str, rule: str | None) -> None:
+        """Remember a case from another run so its id can parent a refinement.
+
+        The case is not marked done, and ``self.rng`` is not drawn.
+        """
+        self._borrowed[record_id] = (case, oracle, rule)
 
     def candidates(self, wb, *, round: int = 1) -> list[Candidate]:
         found: list[Candidate] = []
@@ -275,9 +291,12 @@ class Hunter:
             return None
         pool["scored"] = len(kept)
         pool["rounds"] = rounds
-        best = max(item.value for item in scope)
-        ties = [item for item in scope if item.value >= best - 1e-12]
-        chosen = ties[0] if len(ties) == 1 else self.rng.choice(ties)
+        if self._select == "random":
+            chosen = self.rng.choice(scope)
+        else:
+            best = max(item.value for item in scope)
+            ties = [item for item in scope if item.value >= best - 1e-12]
+            chosen = ties[0] if len(ties) == 1 else self.rng.choice(ties)
         return Choice(
             index=self._index,
             slot=slot,
@@ -316,8 +335,18 @@ class Hunter:
                 found.append(unit)
         return found
 
+    def _case_of(self, record_id: str) -> tuple[SqlCase, str, str | None]:
+        borrowed = self._borrowed.get(record_id)
+        if borrowed is not None:
+            return borrowed
+        return self._by_id[record_id]
+
     def _parents(self, hypothesis) -> list[str]:
-        known = [record_id for record_id in hypothesis.positives if record_id in self._by_id]
+        known = [
+            record_id
+            for record_id in hypothesis.positives
+            if record_id in self._borrowed or record_id in self._by_id
+        ]
         return known[-PARENTS_PER_HYPOTHESIS:]
 
     def _refine_generalize(self, wb) -> list[Candidate]:
@@ -335,7 +364,7 @@ class Hunter:
         for hypothesis, parents in eligible:
             pool: list[tuple[SqlCase, str, str]] = []
             for parent_id in parents:
-                parent_case, parent_oracle, parent_rule = self._by_id[parent_id]
+                parent_case, parent_oracle, parent_rule = self._case_of(parent_id)
                 for mutant, op in mutants(parent_case):
                     pool.append((mutant, op, parent_id))
             if len(pool) > quota:
@@ -367,7 +396,7 @@ class Hunter:
                     required=required,
                     forbidden=tuple(sorted(missing)),
                 )
-                _, parent_oracle, parent_rule = self._by_id[parent_id]
+                _, parent_oracle, parent_rule = self._case_of(parent_id)
                 rule = parent_rule if parent_oracle == "equivalent_query" else None
                 found.append(
                     Candidate(
@@ -392,7 +421,7 @@ class Hunter:
             if hypothesis.oracle is None:
                 continue
             for parent_id in self._parents(hypothesis):
-                parent_case, _parent_oracle, parent_rule = self._by_id[parent_id]
+                parent_case, _parent_oracle, parent_rule = self._case_of(parent_id)
                 for engine in self.engines:
                     if engine == hypothesis.engine:
                         continue

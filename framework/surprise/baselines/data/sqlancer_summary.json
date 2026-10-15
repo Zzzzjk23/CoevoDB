@@ -1,0 +1,16 @@
+{
+ "schema": 1,
+ "transcribed": true,
+ "source": "docs/FINAL_REPORT.md, section 'Baseline comparison (SQLancer)' (strong baseline); raw results/sqlancer_strong/ is not on this machine",
+ "tool": "SQLancer 2.0.0 @9eb1db82",
+ "runs": 35,
+ "total_checks": 90300000,
+ "total_bugs": 0,
+ "approximate_checks": true,
+ "engines": {
+  "duckdb": {"version": "1.5.5", "oracles": 6, "checks": 7300000, "bugs": 0},
+  "postgres": {"version": "16.2", "oracles": 5, "checks": 10100000, "bugs": 0},
+  "sqlite3": {"version": "3.49.1", "oracles": 5, "checks": 72900000, "bugs": 0}
+ },
+ "note": "checks = SQLancer 'queries' (oracle checks); 7 raw flags triaged as 6 false positives and 1 unconfirmed candidate (sqlite FTS5+SUM)"
+}
