@@ -20,7 +20,7 @@ ROLE_CONSTANTS = {"REQUEST_DEADLINE_S": 600.0}
 PURE_LLM_CONSTANTS = {
     "PURE_LLM_TIER": "fast",
     "PURE_LLM_TEMPERATURE": 0.8,
-    "PURE_LLM_MAX_TOKENS": 16000,
+    "PURE_LLM_MAX_TOKENS": 32000,   # the reframed prompt still reasons ~15000 tokens before answering (S11 probes)
     "PURE_LLM_CASES_PER_CALL": 4,   # 8 cases left no room in 16000 tokens: 3 of 4 recorded replies were cut (S11)
 }
 PURE_LLM_MIN_TOPICS = 8
