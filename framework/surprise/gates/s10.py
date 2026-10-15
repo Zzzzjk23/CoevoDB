@@ -513,7 +513,10 @@ def oracle_reply(rules: list[dict[str, Any]] | None = None) -> dict[str, Any]:
 
 
 def scripted_all() -> Script:
-    conj = {"mechanism": "EXCEPT ALL is planned as an anti join", "trigger": ["ast:set_op:except_all"],
+    # The trigger does not cover the DF-A failure, so the conjecture is registered (its bet feeds the
+    # implementer) but proposes no revise: h1 keeps its two positives and two contradictions, which is
+    # what the vocabulary inventor waits for (measured with every role off).
+    conj = {"mechanism": "EXCEPT ALL is planned as an anti join", "trigger": ["ast:set_op:intersect_all"],
             "prediction": [{"required": ["ast:set_op:intersect_all", "data:setop:left_has_dups"], "forbidden": [],
                             "data_properties": [], "expect": "fail", "why": "scripted"}]}
     from . import s04 as G4
