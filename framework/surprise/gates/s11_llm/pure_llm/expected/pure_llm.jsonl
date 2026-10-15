@@ -1,0 +1,4 @@
+{"batch":0,"topic":"type casts and numeric edge values","status":"ok","cases":4,"skipped":0,"reasons":{}}
+{"batch":1,"topic":"type casts and numeric edge values","status":"ok","cases":4,"skipped":0,"reasons":{}}
+{"batch":2,"topic":"set operations with ALL","status":"ok","cases":4,"skipped":0,"reasons":{}}
+{"batch":3,"topic":"GROUP BY with aggregates and HAVING","status":"ok","cases":4,"skipped":0,"reasons":{}}

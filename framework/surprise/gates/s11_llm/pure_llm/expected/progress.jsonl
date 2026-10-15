@@ -1,0 +1,16 @@
+{"seq":1,"record_id":"pure-s0:1","batch":0,"index":0,"topic":"type casts and numeric edge values","oracle":"tlp","y":"pass","kind":null,"expect":"pass","elapsed_s":24.8}
+{"seq":2,"record_id":"pure-s0:2","batch":0,"index":1,"topic":"type casts and numeric edge values","oracle":"norec","y":"pass","kind":null,"expect":"pass","elapsed_s":25.09}
+{"seq":3,"record_id":"pure-s0:3","batch":0,"index":2,"topic":"type casts and numeric edge values","oracle":"equivalent_query","y":"pass","kind":null,"expect":"pass","elapsed_s":25.36}
+{"seq":4,"record_id":"pure-s0:4","batch":0,"index":3,"topic":"type casts and numeric edge values","oracle":"plan_variant","y":"pass","kind":null,"expect":"pass","elapsed_s":25.7}
+{"seq":5,"record_id":"pure-s0:5","batch":1,"index":0,"topic":"type casts and numeric edge values","oracle":"tlp","y":"pass","kind":null,"expect":"fail","elapsed_s":66.46}
+{"seq":6,"record_id":"pure-s0:6","batch":1,"index":1,"topic":"type casts and numeric edge values","oracle":"norec","y":"pass","kind":null,"expect":"fail","elapsed_s":66.73}
+{"seq":7,"record_id":"pure-s0:7","batch":1,"index":2,"topic":"type casts and numeric edge values","oracle":"equivalent_query","y":"pass","kind":null,"expect":"fail","elapsed_s":67.04}
+{"seq":8,"record_id":"pure-s0:8","batch":1,"index":3,"topic":"type casts and numeric edge values","oracle":"cross_dbms","y":"pass","kind":null,"expect":"fail","elapsed_s":67.91}
+{"seq":9,"record_id":"pure-s0:9","batch":2,"index":0,"topic":"set operations with ALL","oracle":"version_differential","y":"pass","kind":null,"expect":"pass","elapsed_s":102.76}
+{"seq":10,"record_id":"pure-s0:10","batch":2,"index":1,"topic":"set operations with ALL","oracle":"version_differential","y":"pass","kind":null,"expect":"pass","elapsed_s":103.14}
+{"seq":11,"record_id":"pure-s0:11","batch":2,"index":2,"topic":"set operations with ALL","oracle":"version_differential","y":"pass","kind":null,"expect":"pass","elapsed_s":103.52}
+{"seq":12,"record_id":"pure-s0:12","batch":2,"index":3,"topic":"set operations with ALL","oracle":"version_differential","y":"pass","kind":null,"expect":"pass","elapsed_s":103.91}
+{"seq":13,"record_id":"pure-s0:13","batch":3,"index":0,"topic":"GROUP BY with aggregates and HAVING","oracle":"equivalent_query","y":"invalid","kind":"not_applicable","expect":"pass","elapsed_s":137.9}
+{"seq":14,"record_id":"pure-s0:14","batch":3,"index":1,"topic":"GROUP BY with aggregates and HAVING","oracle":"cross_dbms","y":"pass","kind":null,"expect":"pass","elapsed_s":138.77}
+{"seq":15,"record_id":"pure-s0:15","batch":3,"index":2,"topic":"GROUP BY with aggregates and HAVING","oracle":"version_differential","y":"pass","kind":null,"expect":"pass","elapsed_s":139.16}
+{"seq":16,"record_id":"pure-s0:16","batch":3,"index":3,"topic":"GROUP BY with aggregates and HAVING","oracle":"plan_variant","y":"pass","kind":null,"expect":"pass","elapsed_s":139.54}

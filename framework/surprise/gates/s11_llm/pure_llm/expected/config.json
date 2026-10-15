@@ -1,0 +1,21 @@
+{
+  "seed": 0,
+  "engine": "duckdb",
+  "oracles": [
+    "tlp",
+    "norec",
+    "plan_variant",
+    "index_presence",
+    "equivalent_query",
+    "version_differential",
+    "cross_dbms"
+  ],
+  "max_experiments": 16,
+  "max_minutes": null,
+  "run_id": "pure-s0",
+  "llm": {
+    "cache": "D:\\CoevoDB\\framework\\surprise\\gates\\s11_llm\\pure_llm\\cache",
+    "max_calls": 6,
+    "network": true
+  }
+}
