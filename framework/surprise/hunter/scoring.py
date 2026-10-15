@@ -32,15 +32,26 @@ def binary_entropy(p: float) -> float:
     return float(-(p * math.log2(p) + (1.0 - p) * math.log2(1.0 - p)))
 
 
-def optimistic_rate(tested: int, unexplained: int) -> float:
+def optimistic_rate(
+    tested: int,
+    unexplained: int,
+    prior_fails: float = RESIDUAL_PRIOR_FAILS,
+    prior_tests: float = RESIDUAL_PRIOR_TESTS,
+) -> float:
     """Upper residual rate: prior mean plus one standard error, capped at 0.5."""
-    rho = (unexplained + RESIDUAL_PRIOR_FAILS) / (tested + RESIDUAL_PRIOR_TESTS)
+    rho = (unexplained + prior_fails) / (tested + prior_tests)
     return float(min(0.5, rho + math.sqrt(rho * (1.0 - rho) / (tested + 1))))
 
 
-def uncertainty(tested: int, unexplained: int, adjacent: bool) -> float:
+def uncertainty(
+    tested: int,
+    unexplained: int,
+    adjacent: bool,
+    prior_fails: float = RESIDUAL_PRIOR_FAILS,
+    prior_tests: float = RESIDUAL_PRIOR_TESTS,
+) -> float:
     """Residual uncertainty U, with an optimistic bump for a neighbouring unit."""
-    rate = optimistic_rate(tested, unexplained)
+    rate = optimistic_rate(tested, unexplained, prior_fails, prior_tests)
     if adjacent:
         rate = min(0.5, ADJACENT_FACTOR * rate)
     return binary_entropy(rate)
@@ -127,14 +138,32 @@ def hypothesis_units(wb, registry=None) -> frozenset[str]:
     return frozenset(found)
 
 
-def score(wb, phi, oracle, *, beta: float, probes: Mapping[str, int], units: Collection[str]) -> Score:
-    """Score one (phi, oracle) pair. U is computed only in the unexplored zone."""
+def score(
+    wb,
+    phi,
+    oracle,
+    *,
+    beta: float,
+    probes: Mapping[str, int],
+    units: Collection[str],
+    prior=None,
+) -> Score:
+    """Score one (phi, oracle) pair. U is computed only in the unexplored zone.
+
+    ``prior.pseudo(unit)`` may replace the residual prior in that zone. Other
+    zones, and a prior that has no counts for the unit, keep the default.
+    """
     prediction = wb.predict(phi, oracle)
     d_bits = disagreement(prediction.zone)
     if prediction.zone == "unexplored":
         tested, unexplained = wb.theory.residual.counts(prediction.unit)
         is_adj = adjacent(prediction.unit, units)
-        u_bits = uncertainty(tested, unexplained, is_adj)
+        pseudo = None if prior is None else prior.pseudo(prediction.unit)
+        if pseudo is None:
+            u_bits = uncertainty(tested, unexplained, is_adj)
+        else:
+            fails, tests = pseudo
+            u_bits = uncertainty(tested, unexplained, is_adj, prior_fails=fails, prior_tests=tests)
     else:
         is_adj = False
         u_bits = 0.0
