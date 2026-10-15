@@ -13,7 +13,7 @@
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
-| S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
+| S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
@@ -24,7 +24,16 @@
 
 Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"现在是不是可以进入S9了"。开工前问了 LLM 密钥怎么给工作包，用户选了"给需要的包，加调用上限"，之后告知"密钥已经设好了"。会话分支 `session/s09` 从 `s08-done-r2`（804ec1c）建立；起点独立复跑 613 passed / 3 skipped，GATES PASS 8/8。
 
-四个包全部合并。真实调用的录制、LLM 全关的 3 小时长跑由编排者自己做。收尾合并回 main，tag `s09-done`。
+四个包全部合并。真实调用的录制、LLM 全关的 3 小时长跑由编排者自己做。收尾合并回 main，tag `s09-done`。用户验收后另打 `s09-done-r2`（只多了验收记录，代码与门槛相同）；S10 从 `s09-done-r2` 起。
+
+**用户验收（2026-10-15）：** 用户的答复是"全部没有问题，一切都按照你的建议"。收尾消息里的五项人工检查都按编排者的建议定下，逐项见 DECISIONS 的 S9 验收一条：
+- 两个角色都用 fast 档；S11 做模型强度比较之前，先在 `roles/transport.py` 加每个请求的总时限；
+- 真实回复的缓存留在 `gates/s09_llm/` 入库；
+- S8 长跑按重跑的产物重钉；旧长跑 `results/s08/longrun-s8code` 不入库，备份由用户自己做；
+- S10 把短跑里"从 DF-A 走到 INTERSECT ALL"当 M3 的起点参考，"复现 DF-B"要经身份裁判核对；
+- S10 照用 `spawn --llm-key N`，只给要录真实调用的包。
+
+下面"PI 已自行核查并定下的选择"八条也随之由用户确认。
 
 ### 交付与门槛
 
@@ -182,7 +191,9 @@ S10 的四个角色接进来的位置：
 - 由 `build_roles` 的 `roles` 列表加开关。
 - 需要给 Hunter 候选的，走 `sources` 钩子；需要提编辑的，走 `wb.propose`。
 
-### PI 已自行核查并定下的选择（用户可以推翻）
+### PI 已自行核查并定下的选择（用户已验收）
+
+**用户验收（2026-10-15）：下面八条，用户答复"全部没有问题，一切都按照你的建议"。** 它们从此是用户确认过的决定。
 
 1. **模型名**：两档改为 `deepseek-flash` / `deepseek-v4-pro`。开工时定的 `deepseek-chat` / `deepseek-reasoner` 不在 DeepSeek 的 `/models` 列表里。
 2. **猜想者默认用 fast 档**：
@@ -985,7 +996,7 @@ S9 发现、留后续会话：
 - **传输没有每个请求的总时限**：
   - `DeepSeekTransport` 用的是旧 `BaseAgent` 的 httpx 客户端，`timeout=300` 管的是两次读之间的间隔。
   - DeepSeek 排队时会一直发 keep-alive，所以这个超时不会触发。冒烟时一次 strong 档调用 900 秒没有任何内容。
-  - 要在长 run 里用 strong 档，先在 `roles/transport.py` 里加每个请求的总时限（旧的 `agents/base_agent.py` 不改）。
+  - 要在长 run 里用 strong 档，先在 `roles/transport.py` 里加每个请求的总时限（旧的 `agents/base_agent.py` 不改）。用户验收时定下：最晚在 S11 做模型强度比较之前加上。
 - **`deepseek-v4-pro` 时好时坏**：一次排队 15 分钟，一小时后 1.8 秒就开始输出。两个角色现在都用 fast 档，见 S9 一节"PI 已自行核查"第 2 条。
 - **缓存键不含温度与 token 上限**（PLAN 定的是"提示哈希 + 模型 + 种子"）：
   - 只改温度或 `*_MAX_TOKENS` 时，旧缓存照样命中，拿到的是旧设置下的回答。
@@ -1207,7 +1218,7 @@ S2、S3 踩到的，仍然有效：
 
 S10 要等用户指示再开工。
 
-- **分支**：从 main 的 `s09-done` 建分支 `session/s10`；用户验收后若另打 `s09-done-r2`，就从它起。
+- **分支**：从 main 的 `s09-done-r2` 建分支 `session/s10`。
 - **开工前检查**：
   - 主分支、tag、工作区；
   - PG 状态：服务器停着时按 S3 一节的恢复命令启动，不重新 initdb；
@@ -1224,7 +1235,7 @@ S10 要等用户指示再开工。
 - **S10 的范围**（见 SESSIONS.md 的 S10 一节）：
   - 探索先验、迁移翻译者、词汇发明者、oracle 发明者，每个角色一个开关。
   - M3 门槛：每个角色能单独开关、关掉时零调用；DataFusion 54.0.0 上从 DF-A 出发闭环复现 DF-B，固定缓存后可以重放。
-  - S9 的开着角色的短跑在第 13 条就从 DF-A 走到了 INTERSECT ALL 的失败（见 S9 一节），可以当起点参考；但"复现 DF-B"要用身份裁判核对，不能只凭判读。
+  - S9 的开着角色的短跑在第 13 条就从 DF-A 走到了 INTERSECT ALL 的失败（见 S9 一节），可以当起点参考；但"复现 DF-B"要用身份裁判核对，不能只凭判读（用户验收时确认）。
 - **四个角色怎么接**：照 `roles/` 的写法，都经同一个网关，由 `build_roles` 的 `roles` 列表加开关。
   - 给 Hunter 出候选的走 `sources` 钩子，提编辑的走 `wb.propose`。
   - LLM 永不打标签。
@@ -1234,7 +1245,7 @@ S10 要等用户指示再开工。
   - S9 的常数十九项由门槛 `constants` 组钉住；改模型名、档位或上限先记 DECISIONS，与 PLAN 冲突的先问用户。
   - 改 `hunter/`、`diagnoser/`、`experiments/` 就要再重跑 3 小时长跑（S8 验收的办法），排期里算进去。
 - **派发与审查**：
-  - 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；要真实调用的包加 `--llm-key N`。worktree 里直接用 `python`，跑测试用 `python -m pytest`。
+  - 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；要录真实调用的包加 `--llm-key N`，别的包不给密钥（用户验收时确认）。worktree 里直接用 `python`，跑测试用 `python -m pytest`。
   - 审查测试通过数至少 692；完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。
   - 默认两轮返工上限。
 - **恢复工作时**：
