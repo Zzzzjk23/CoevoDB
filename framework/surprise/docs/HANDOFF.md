@@ -14,11 +14,30 @@
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
 | S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done；s08-done-r2（用户验收之后，S9 从这里起） | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
-| S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
+| S10 | Phase 5b 其余四个 LLM 角色（M3） | 进行中 | | |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
 | S12 | Phase 7 收尾 | 未开始 | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中会话：S10（2026-10-15 开工）
+
+用户的指示是"读取当前项目进度，然后开始完成S10"。会话分支 `session/s10` 从 `s09-done-r2`（1637287）建立；起点独立复跑 692 passed / 3 skipped，GATES PASS 9/9。
+
+**用户在开工时的决定**：同意小范围解冻 harness（只改 `harness/oracles/rewrites.py` 与 `equivalent_query.py`，给改写规则库加第二层"已验收的改写模板"），细节见 DECISIONS 的 S10 各条。
+
+门槛 `gates/s10.py`（十二组）与 `s10_cases.py` 在派发前提交。拆包与进度：
+
+| 波 | 包 | 内容 | 允许路径（摘要） | 状态 |
+|---|---|---|---|---|
+| 1 | s10-frame | `roles/base.py` 插件协议、`runtime.py` 六个角色懒加载、S10 常数、Hunter 的 `prior` / `extra_rules` / `registry`、主循环的开关 / 事件 / 库变量 / `--vocabulary` | `roles/{base,runtime,constants,__init__}.py`、`hunter/` 五个文件、`experiments/loop.py` | 待派发 |
+| 1 | s10-harness | 第二层改写规则库：模板、库文件、参照引擎前提 | `harness/oracles/{rewrites,equivalent_query}.py` | 待派发 |
+| 2 | s10-prior | 探索先验与 Brier 校准 | `roles/prior.py` | 未开始 |
+| 2 | s10-oracle | oracle 发明者：模板提议、多引擎验收、写库 | `roles/oracle_inventor.py` | 未开始 |
+| 3 | s10-translator | 迁移翻译者 | `roles/translator.py` | 未开始 |
+| 3 | s10-vocab | 词汇发明者与留出验收 | `roles/vocab_inventor.py`、`features/registry.py` | 未开始 |
+
+之后编排者做：合并 harness 包后重新生成 `gates/s04_frozen.json`；Hunter 与主循环定稿后重跑 S8 的 3 小时长跑（角色全关）并重钉；录 `gates/s10_llm/translator`（F2 从 DuckDB 翻到 DataFusion）与 `gates/s10_llm/m3`（六个角色全开的 DataFusion 短跑）。
 
 ## 最近完成会话：S9（2026-10-15）
 
