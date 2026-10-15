@@ -173,6 +173,9 @@ ORACLE_ACCEPT_INSTANCES = 5
 # Statements the oracle inventor may scan for those instances.
 ORACLE_SCAN_MAX = 200
 
+# Total time from sending the request to finishing the reply, covering keep-alive while queued.
+REQUEST_DEADLINE_S = 600.0
+
 
 def as_dict() -> dict[str, Any]:
     """Every public uppercase constant in this module, as a detached JSON object."""
