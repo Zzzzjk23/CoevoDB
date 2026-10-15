@@ -241,19 +241,36 @@ def test_protocol_defaults_and_plugin_table() -> None:
 
 
 def test_build_roles_knows_six_names_and_loads_only_the_ones_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.util
+
     with pytest.raises(ValueError, match="unknown role"):
         _roles(tmp_path / "bad", ("diagnoser",))
     with pytest.raises(ValueError, match="non-empty"):
         _roles(tmp_path / "empty", ())
     for name in ("prior", "translator", "vocab_inventor", "oracle_inventor"):
-        with pytest.raises(ValueError, match="not available") as caught:
-            _roles(tmp_path / name, (name,))
-        assert "unknown role" not in str(caught.value)
-        assert PLUGINS[name] not in sys.modules
+        missing = f"surprise.roles._s10_missing_{name}"
+        assert missing not in sys.modules
+        assert importlib.util.find_spec(missing) is None
+        with monkeypatch.context() as patch:
+            patch.setitem(base.PLUGINS, name, missing)
+            with pytest.raises(ValueError, match="not available") as caught:
+                _roles(tmp_path / name, (name,))
+            assert "unknown role" not in str(caught.value)
+            assert missing not in sys.modules
 
     log: list[str] = []
     prior = _install(monkeypatch, "prior", log)
     translator = _install(monkeypatch, "translator", log)
+    for module_name in (
+        "surprise.roles.vocab_inventor",
+        "surprise.roles.oracle_inventor",
+        "surprise.roles._s10_fake_vocab_inventor",
+        "surprise.roles._s10_missing_prior",
+        "surprise.roles._s10_missing_translator",
+        "surprise.roles._s10_missing_vocab_inventor",
+        "surprise.roles._s10_missing_oracle_inventor",
+    ):
+        monkeypatch.delitem(sys.modules, module_name, raising=False)
     made = _roles(tmp_path / "on", ("translator", "prior", "prior"), oracles=("plan_variant", "tlp"))
     try:
         assert list(made.plugins) == ["prior", "translator"]
