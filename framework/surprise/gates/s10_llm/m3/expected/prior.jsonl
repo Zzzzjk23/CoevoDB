@@ -1,0 +1,18 @@
+{"type": "call", "units": ["datafusion|cross_dbms|set_op_all|join|dups", "datafusion|cross_dbms|set_op_all|join|nulls"], "status": "ok", "reason": null, "key": "e64bb8bad587f81057850d81a498726cba3724503050dabacb5567b8a372cfcb"}
+{"type": "price", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "p": 0.08, "why": "UNION ALL/set_op_all has repeated DataFusion changelog issues around schema errors, filter pushdown, and aliasing; join plus duplicate data raises risk above the 1% baseline."}
+{"type": "price", "unit": "datafusion|cross_dbms|set_op_all|join|nulls", "p": 0.1, "why": "UNION ALL is historically defect-prone in DataFusion, and NULLs add join/set-op semantic edge cases, making failure somewhat more likely than baseline."}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|nulls", "y": "pass", "record_id": "loop-s0:4"}
+{"type": "call", "units": ["datafusion|cross_dbms|set_op_all|join|empty"], "status": "ok", "reason": null, "key": "1d3f86146be7beadc8bdda4932c8f344dcccee5d1c7477cd4bbd2a960d6507ad"}
+{"type": "price", "unit": "datafusion|cross_dbms|set_op_all|join|empty", "p": 0.05, "why": "DataFusion has multiple historical UNION ALL defects (FilterPushDown schema errors, aliasing), so set_op_all tests with join and empty data carry elevated risk versus the 1% reference rate."}
+{"type": "call", "units": ["datafusion|cross_dbms|set_op_all|join|plain"], "status": "ok", "reason": null, "key": "b269dbc063cb951f8d1da28c2266d7a8c0312378afd0694a2e0efe51d081abf4"}
+{"type": "price", "unit": "datafusion|cross_dbms|set_op_all|join|plain", "p": 0.05, "why": "DataFusion has multiple historical UNION ALL schema and alias defects, so set_op_all is riskier than the 1% baseline; join adds some complexity, but plain data and cross-DBMS oracle keep the estimate moderate."}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|plain", "y": "pass", "record_id": "loop-s0:9"}
+{"type": "call", "units": ["datafusion|cross_dbms|set_op_all|union|dups"], "status": "ok", "reason": null, "key": "0035aa87f9b501076e2dcdde3970afb9a922ffe0740a979b5c44e04d298ab8df"}
+{"type": "price", "unit": "datafusion|cross_dbms|set_op_all|union|dups", "p": 0.1, "why": "Multiple DataFusion UNION ALL fixes/improvements and cross-DBMS duplicate semantics raise risk above baseline."}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "y": "pass", "record_id": "loop-s0:15"}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|union|dups", "y": "pass", "record_id": "loop-s0:16"}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "y": "pass", "record_id": "loop-s0:25"}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "y": "pass", "record_id": "loop-s0:28"}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "y": "pass", "record_id": "loop-s0:30"}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "y": "pass", "record_id": "loop-s0:31"}
+{"type": "settle", "unit": "datafusion|cross_dbms|set_op_all|join|dups", "y": "pass", "record_id": "loop-s0:32"}

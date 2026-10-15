@@ -1,0 +1,171 @@
+{
+ "schema": 1,
+ "rules": [
+  {
+   "rule_id": "llm:subquery_wrap",
+   "kind": "query_wrap",
+   "template": "SELECT * FROM ({q}) AS llm_sub",
+   "argument": "Wrapping the entire statement as a derived table preserves all rows and columns, including duplicates, because SELECT * projects every column from the subquery without filtering, aggregation, or changing bag semantics.",
+   "proposer": "oracle_inventor",
+   "acceptance": {
+    "accepted": true,
+    "reason": null,
+    "instances": [
+     {
+      "seed": 3,
+      "query_sha256": "81f7e498fa78e55676e48c63d5bdd4d62e3c813408938b703f8fd90b74fd6c54",
+      "agree": [
+       "duckdb",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": [
+       "datafusion"
+      ]
+     },
+     {
+      "seed": 4,
+      "query_sha256": "a1e068212f3d6d1fd709c41978545ab9a585aa38f2a4af65452786592b00ec62",
+      "agree": [
+       "duckdb",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": [
+       "datafusion"
+      ]
+     },
+     {
+      "seed": 5,
+      "query_sha256": "b58b0eef6fcc64ff7e3f1280626f1f0529f584f51aad88347ce77542f3fc57b5",
+      "agree": [
+       "duckdb",
+       "datafusion",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": []
+     },
+     {
+      "seed": 6,
+      "query_sha256": "fc4edc7f09021dcc2f1fb9b96e3b4cc1efa99a573983df24ab3c19010576ff51",
+      "agree": [
+       "duckdb",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": [
+       "datafusion"
+      ]
+     },
+     {
+      "seed": 7,
+      "query_sha256": "5cc236dfb104064210a0e683a7524e5fc9715df2c087c3314351117467e5e68c",
+      "agree": [
+       "duckdb",
+       "datafusion",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": []
+     }
+    ],
+    "engines": [
+     "duckdb",
+     "datafusion",
+     "sqlite",
+     "postgres"
+    ],
+    "scanned": 8
+   }
+  },
+  {
+   "rule_id": "llm:cte_wrap",
+   "kind": "query_wrap",
+   "template": "WITH llm_cte AS ({q}) SELECT * FROM llm_cte",
+   "argument": "Defining the entire statement as a common table expression and selecting all its rows preserves the multiset of rows and columns; the CTE is evaluated once and SELECT * returns every row including duplicates.",
+   "proposer": "oracle_inventor",
+   "acceptance": {
+    "accepted": true,
+    "reason": null,
+    "instances": [
+     {
+      "seed": 3,
+      "query_sha256": "81f7e498fa78e55676e48c63d5bdd4d62e3c813408938b703f8fd90b74fd6c54",
+      "agree": [
+       "duckdb",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": [
+       "datafusion"
+      ]
+     },
+     {
+      "seed": 4,
+      "query_sha256": "a1e068212f3d6d1fd709c41978545ab9a585aa38f2a4af65452786592b00ec62",
+      "agree": [
+       "duckdb",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": [
+       "datafusion"
+      ]
+     },
+     {
+      "seed": 5,
+      "query_sha256": "b58b0eef6fcc64ff7e3f1280626f1f0529f584f51aad88347ce77542f3fc57b5",
+      "agree": [
+       "duckdb",
+       "datafusion",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": []
+     },
+     {
+      "seed": 6,
+      "query_sha256": "fc4edc7f09021dcc2f1fb9b96e3b4cc1efa99a573983df24ab3c19010576ff51",
+      "agree": [
+       "duckdb",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": [
+       "datafusion"
+      ]
+     },
+     {
+      "seed": 7,
+      "query_sha256": "5cc236dfb104064210a0e683a7524e5fc9715df2c087c3314351117467e5e68c",
+      "agree": [
+       "duckdb",
+       "datafusion",
+       "sqlite",
+       "postgres"
+      ],
+      "error": [],
+      "skipped": []
+     }
+    ],
+    "engines": [
+     "duckdb",
+     "datafusion",
+     "sqlite",
+     "postgres"
+    ],
+    "scanned": 8
+   }
+  }
+ ]
+}
