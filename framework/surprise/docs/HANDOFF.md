@@ -12,7 +12,7 @@
 | S5 | Phase 2 共同语言 φ | 完成 | s05-done | S05 9/9；pytest 367 passed, 3 skipped；GATES PASS 5/5 |
 | S6 | Phase 3a 理论 T 核心 | 完成 | s06-done；s06-done-r2（用户验收之后，S7 从这里起） | S06 12/12；pytest 514 passed, 3 skipped；GATES PASS 6/6 |
 | S7 | Phase 3b 理论存储与接受规则 | 完成 | s07-done；s07-done-r2（用户验收之后，S8 从这里起） | S07 15/15；pytest 550 passed, 3 skipped；GATES PASS 7/7 |
-| S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 进行中 | | |
+| S8 | Phase 4 Hunter 与无 LLM 闭环（M2） | 完成 | s08-done | S08 11/11；pytest 613 passed, 3 skipped；GATES PASS 8/8 |
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 未开始 | | |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 未开始 | | |
 | S11 | Phase 6 评估管线（M4 冒烟） | 未开始 | | |
@@ -20,32 +20,201 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 进行中会话：S8（2026-10-15 开工）
+## 最近完成会话：S8（2026-10-15）
 
-用户验收 S7 时指示"然后开始S8"。会话分支 `session/s08` 从 `s07-done-r2`（f762a66）建立；PG 服务器原先停着，按 S3 一节的命令启动（没有重新 initdb）。起点独立复跑：pytest 550 passed, 3 skipped；GATES PASS 7/7。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"确认S7中的新常数和编排规则，然后开始S8"。会话分支 `session/s08` 从 `s07-done-r2`（f762a66）建立；PG 服务器原先停着，按 S3 一节的命令启动（没有重新 initdb）。起点独立复跑：550 passed, 3 skipped；GATES PASS 7/7。四个包全部合并，长跑等产物由编排者自己跑；收尾合并回 main，tag `s08-done`。
 
-派发前的探测（不入库，`.orch/scratch/s8/`）：
-- 旧系统 no_llm 跑 10 分钟（`main.py --mode no_llm --seed 0`，到点强杀）：39 轮，其中两段各卡了约 3.5 分钟；报了 5 条 bug，按 fix set 只有两个机制（F1 的 `deliminator, filter_pushdown` 三条、`join_order` 两条），另有 122 条被 DCE 判为已有家族的成员。σ 把 plan diff 算进键里，同一个 fix set 被报成几条。
-- 原型主循环（`proto.py`，只作可行性探测，不是规格）80 步约 3.3 分钟：每步约 2.5 秒（取 φ 约 0.7 秒、`evaluate_final` 约 1.7 秒）；第 11 步开出一个家族（plan variant，fix set `join_order`，`error_mismatch`），之后 6 条失败都落在它的待定区并被归属测试吸收；冷启动的无效率高（TLP / NoREC 拿到没有谓词的种子判 `not_applicable`，种子 setup 在 1.5.5 上报错）；DCE 的算子几乎改不动只剩三个字面量的 S，细化 / 泛化车道没有产出候选。
-- 旧系统会在某些种子上长时间占满 CPU（`DuckDBRunner.setup` 没有超时）；新框架的 φ 提取同样会执行 setup，所以候选的 φ 由常驻子进程提取并加超时。
-- 建了 `.venvs/duckdb-1.1.3-full`（uv，继承 anaconda base；duckdb 1.1.3、datafusion 54.0.0、psycopg2-binary 2.9.13、sqlglot 30.21.0、pyarrow 21.0.0、pyyaml、pytest），在 DuckDB 1.1.3 上跑整个新框架用；harness 在它下面导入正常，manifest 里引擎版本记为 1.1.3。
+**用户在开工后确认的三件事（2026-10-15）：** 用户答复"由你定、可以推翻的几件事都确认"。三件事是：重复率用同一个身份裁判、按同样的墙钟预算比；β 预实验的方案；误吸收的规则不改。
 
-拆包（进行中，合并一个更新一次）：
+### 交付与门槛
 
-| 包 | 内容 | 允许路径（相对 `framework/`） | 依赖 | 状态 |
+无 LLM 的闭环，全部在 `framework/surprise/` 的新目录里；`harness/`、`features/`、冻结清单没有动，S6 / S7 的规则没有动。
+
+- **Hunter**（`hunter/`）：
+  - 四条车道的候选：细化、泛化、迁移、探索。
+  - 打分 `value = P_valid × (D + β·U)`。
+  - 每第 5 次选择是探索保底位。
+  - 按"负责预测的假设"做过的探针数降权。
+  - 按 φ 做新颖性拒绝。
+  - 一次选择最多重抽 20 轮。
+  - 候选的 φ 由常驻子进程提取，限时 30 秒。
+  - 常数 12 项，见 `hunter/constants.py`。
+- **β**：`theory/constants.py` 加了 `BETA = 1.0`，进 `theory_manifest()`。
+- **Diagnoser**（`diagnoser/`，无 LLM）：
+  - 新家族开出、且第 3 档给出仍能复现的最小化用例时，提议一条 `revise`，把 S 换成原 S 与最小化用例 φ 的共同部分。
+  - 每 100 条实验跑一次 `compress()`，并切一代。
+- **主循环**（`experiments/loop.py`）：Hunter → `evaluate_final` → `Workbench.observe` → Diagnoser。产物见下面"当前接口"。
+- **指标**（`metrics/`）：
+  - 惊讶曲线与齿；
+  - 家族身份与重复率；
+  - 已知 bug 召回。
+- **旧系统基线**（`baselines/old_no_llm.py`）：按墙钟跑旧 `main.py --mode no_llm`，到点强杀。
+
+门槛 `gates/s08.py` 共十一组：
+
+- 七组短跑与规则检查：`no_llm`、`constants`、`scoring`、`operators`、`candidates`、`lanes`、`determinism`。这些在门槛里现跑。
+- 四组核对编排者跑出来的产物：`longrun`、`sawtooth`、`duplicates`、`recall`。
+  - 产物不入库，哈希钉在 `gates/s08_runs.json`。
+  - `longrun` 还核对 manifest 里的代码摘要等于当前代码；改了 `hunter/`、`diagnoser/`、`experiments/` 的任何一行，这组就要重跑长跑。
+
+与 SESSIONS 的对应：
+
+| SESSIONS 的要求 | 门槛组 |
+|---|---|
+| 数小时 run 不崩 | `longrun`，并逐行核对来源 |
+| 惊讶曲线呈锯齿 | `sawtooth` |
+| 同执行预算下重复率低于旧 no_llm | `duplicates` |
+| DuckDB 1.1.3 上的召回报告 | `recall`（只报告，不设线） |
+| 同种子重跑一致 | `determinism` |
+
+最终复跑（四包合并、门槛修正之后，在 `session/s08` 主检出区独立运行，在 `framework/` 下）：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 613 passed, 3 skipped，退出码 0（起点 550，新增 63，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11；GATES: PASS (8/8 passed)，退出码 0 |
+
+### 实机运行的数字
+
+产物在 `framework/results/s08/`（不入库）；第一次的三个运行作废，移到 `aborted-1/`，原因见下面"PI 已自行核查并定下的选择"第 3 条。
+
+**β 预实验**
+- 设置：DuckDB 1.5.5、七类 oracle、每次 300 条、种子 9001–9003。
+- 不同身份的家族数：
+
+  | β | 三个种子上的家族数 |
+  |---|---|
+  | 0.5 | 1, 3, 3 |
+  | 1 | 3, 3, 3 |
+  | 2 | 3, 3, 3 |
+  | 4 | 3, 5, 1 |
+
+- 四个 β 的中位数都是 3；1、2、4 的合计都是 9。按事先定的规则取较小的，β = 1.0。
+
+**长跑**（`results/s08/longrun`，DuckDB 1.5.5、七类 oracle、种子 0、180 分钟，与基线和召回 run 同时跑）
+- 以 `budget_minutes` 结束：8900 条实验，0 条 harness_error。
+- 标签：fail 89、pass 4197、invalid 4614（52%）。
+- 车道：探索 8804、泛化 60、细化 36、迁移 0。迁移只在两个引擎以上才有候选；短跑的 `lanes` 组在两个引擎上覆盖了它。
+- 分诊：新家族 26、边界移动 162、重复 23、意外通过 2、无信息 4073。
+- 理论：26 个假设，12 个家族，6 个不同身份。
+- 编辑：Diagnoser 提了 2 条 `revise`，都因 `no_gain` 被拒，接受 0 条；MDL 的 `compress()` 没有接受任何编辑。
+- φ 提取：调用 88 万次、缓存命中 98.5%，超时、重启、出错都是 0。
+- 吞吐：每千条平均 0.73–1.66 秒一条，没有随长度变慢的趋势。
+- 慢在第 3 档：最慢的五次崩溃 / 超时复核各用了 2–7 分钟，合计约 19 分钟。
+- 存储体积：理论存储 152 MB（`journal.jsonl` 9.9 MB），账本 79 MB。
+
+**锯齿**
+- 89 个窗口，齿在第 3、9、17、40 窗口。
+- 曲线前半段起伏，后 40 个窗口多在 0.01–0.05 比特。理论把常见的失败都预测到了；新的起伏来自偶尔开出的家族。
+
+**重复率**（同一个身份裁判，各 180 分钟）
+
+| 系统 | 报告 | 不同身份 | 重复率 |
+|---|---|---|---|
+| 新框架 | 12 个家族 | 6 | 0.500 |
+| 旧系统 no_llm | 11 条 | 2 | 0.818 |
+
+- 旧系统：872 轮；报告是 `deliminator,filter_pushdown` 6 条、`join_order` 5 条。
+- 新框架的 6 条重复全来自没有 fix set 的家族：有 6 个家族的形状键都是 `wrong_result|-|both`，2 个是 `error_mismatch|InvalidInputException`。形状键很粗，这些家族之间是不是同一个缺陷，裁判分不出来，一律算重复，对新框架不利。
+- 有 fix set 的家族没有重复，13 个跨 oracle 的 `deliminator,filter_pushdown` 假设被 S7 的规则归成了一个家族。
+
+**召回**（`results/s08/recall113`，`.venvs/duckdb-1.1.3-full`，六类 oracle、不用 Version、种子 0、60 分钟）
+- 已知集：M1 表里 DuckDB 的 9 条已知复现，在 1.1.3 上经 certify 判 fail 的有 6 条（F1、F7、F7_file、F9、F6、F6_predicate），属于 3 个身份。F2、F2_file 判 pass，F11 判 invalid。
+- run：3395 条，以 `budget_minutes` 结束。
+- 结果：召回 F1、F6、F6_predicate，第 35 条实验就开出了它们共同的家族；漏了 F7、F7_file（`common_subexpressions,expression_rewriter`）与 F9（`wrong_result|-|both`）。
+- 按条算召回 0.5，按身份是 3 个里 1 个。
+- 另开了已知表里没有的身份：`deliminator`、`filter_pushdown`、`join_order`、`statistics_propagation`、`unnest_rewriter` 各一，`InternalException` 崩溃两个。
+
+**新发现的缺陷候选：DuckDB 1.5.5 的 `window_self_join`**
+- 长跑第 874 条开出，fix set 是 `window_self_join`；plan variant、Version、Cross 三个 oracle 都见证，归成一个家族。
+- 复现：
+
+  ```sql
+  CREATE TABLE src(a INTEGER, b INTEGER, v INTEGER);
+  INSERT INTO src VALUES (1, 1, 10), (1, 2, 20);
+  SELECT SUM(v) OVER (PARTITION BY a, b) AS w_ab, SUM(v) OVER (PARTITION BY a, a) AS w_aa FROM src ORDER BY b;
+  ```
+
+- 默认设置返回 (10, 10)、(20, 20)；`SET disabled_optimizers='window_self_join'` 之后是正确的 (10, 30)、(20, 30)。编排者在主环境里直接复现过。
+- 没有对外报告，要不要报、怎么报由用户定。
+
+**误吸收**（规则没有改）
+- 长跑里 85 条进了假设正例的失败中，3 条同时是两个假设的正例：h23 与 h25，都是 cross_dbms、都没有 fix set、形状相同。
+- 有 fix set 的失败被无开关假设顺带吸收：0 条。
+
+### 拆包清单与结论（全部已合并）
+
+| 包 | 内容 | 轮数 | 合并 | 审查 |
 |---|---|---|---|---|
-| s08-hunter | Hunter：四条车道的候选、打分 `value = P_valid × (D + β·U)`、探索保底、降权、新颖性拒绝、常驻 φ 提取子进程；`theory/constants.py` 加 `BETA`（暂定 1.0） | `surprise/hunter/**`、`surprise/theory/constants.py`、`tests/test_surprise_s08_hunter*.py` | s07-done-r2 | 已合并（6bd08d9，返工 1 轮，三处都是编排者的错；575 passed / 3 skipped） |
-| s08-eval | 指标与基线：惊讶曲线与锯齿、家族重复率（统一的身份键）、已知 bug 召回、旧系统 no_llm 按墙钟预算跑 | `surprise/metrics/**`、`surprise/baselines/**`、`tests/test_surprise_s08_eval*.py` | s07-done-r2 | 已合并（8a60a37，首轮通过，返工 0 轮；572 passed / 3 skipped） |
-| s08-loop | 无 LLM 的 Diagnoser 与主循环命令行（账本、存储、进度、报告） | `surprise/diagnoser/**`、`surprise/experiments/**`、`tests/test_surprise_s08_loop*.py` | 前两包 | 已合并（fc17952，首轮通过，返工 0 轮；610 passed / 3 skipped） |
-| s08-resample | Hunter 一轮抽空时重抽（`EMPTY_ROUNDS = 20`），探索只抽 setup 没坏过的种子 | `surprise/hunter/hunter.py`、`hunter/constants.py`、`tests/test_surprise_s08_hunter*.py` | 三包 | 已合并（287683a，首轮通过；613 passed / 3 skipped） |
+| s08-hunter | Hunter 的打分、车道、候选、选择、常驻 φ 提取；`BETA` | 返工 1 轮，三处都是编排者的错（见 DECISIONS） | 6bd08d9 | 独立复跑 575 passed / 3 skipped；引导 F1、DF-A 后真实执行 25 次选择核对车道与保底；约 2.83 美元（两轮） |
+| s08-eval | 曲线与齿、身份与重复率、召回、旧系统基线 | 首轮通过 | 8a60a37 | 独立复跑 572 passed / 3 skipped；用派发前的旧系统探测与原型 run 核对；约 1.40 美元 |
+| s08-loop | 无 LLM 的 Diagnoser 与主循环命令行 | 首轮通过 | fc17952 | 独立复跑 610 passed / 3 skipped，短跑六组 6/6，同种子两个进程 26 行逐行相同；约 1.68 美元 |
+| s08-resample | 一次选择最多重抽 20 轮；探索不再抽 setup 坏过的种子 | 首轮通过 | 287683a | 独立复跑 613 passed / 3 skipped，短跑七组 7/7；约 1.06 美元 |
 
-三包都已合并（2026-10-15）。编排者自己跑（进行中，产物在 `framework/results/s08/`，不入库）：
+说明、报告、审查包归档在 `docs/orch/s08/`。grok 成本合计约 6.97 美元。第四个包是计划外的：第一次召回 run 暴露了"一轮抽空就停"的语义错误。
 
-- β 预实验已做完：每组 300 条、约 3–7 分钟；不同身份的家族数 β=0.5 → 1,3,3；1 → 3,3,3；2 → 3,3,3；4 → 3,5,1，按规则取 1.0（就是暂定值，不用另派包），已钉进 `gates/s08_runs.json`（121adc9）。
-- 2026-10-15 07:37 同时启动三个运行（编排者的后台任务）：`results/s08/longrun`（DuckDB 1.5.5，种子 0，180 分钟）、`results/s08/old_no_llm`（旧系统 no_llm，种子 0，180 分钟到点强杀）、`results/s08/recall113/run`（`.venvs/duckdb-1.1.3-full`，种子 0，60 分钟，不用 Version differential）。`results/s08/recall113/known.json` 已在 1.1.3 上算好（F1、F7、F7_file、F9、F6、F6_predicate 判 fail，三个身份；F2 pass、F11 invalid）。
-- 第一次的三个运行作废（产物移到 `results/s08/aborted-1/`）：1.1.3 的召回 run 7.7 分钟、326 条就以 `exhausted` 停了，原因是某一轮抽到的候选全被过滤掉、Hunter 返回空、主循环当作"无可再测"；长跑 8.5 分钟 448 条时同样的问题已有苗头（一轮 78 个探索候选里 71 个因坏 setup 被丢）。长跑与基线随即停掉。派了修复包 `s08-resample`（一次选择最多重抽 20 轮；探索只从 setup 没坏过的种子里抽），合并后三个运行重跑。
-- 修复包合并后三个运行 08:35 重启（第二次，产物路径同上）。召回 run 已跑完：`budget_minutes`，60 分钟 3395 条，召回 F1、F6、F6_predicate（0.5），漏了 F7、F7_file、F9；`recall.json` 已写、哈希已钉（`--only recall` 通过）。长跑与基线约 11:35 结束。
-- 中断了的话：三个目录要整个删掉重跑（`loop` 不支持续跑，要求输出目录为空）；跑完之后用 `.orch/scratch/s8/pin.py longrun old recall` 写哈希，`recall score` 先写出 `recall.json`。β 预实验（独立种子）→ 定 `BETA`（与暂定值不同时另派一个只改常数的小包）→ DuckDB 1.5.5 上 3 小时长跑与同墙钟的旧系统基线（并行）→ DuckDB 1.1.3 上的召回 run → 把产物的哈希钉进 `gates/s08_runs.json` → 收尾。门槛 `gates/s08.py` 的定义与理由见 DECISIONS 的 S8 条目。
+### 当前接口
+
+命令（在 `framework/` 下；跑长任务时去掉密钥：`env -u DEEPSEEK_API_KEY`）：
+
+- `python -m surprise.experiments.loop --out <空目录> --seed N [--engine E]... [--oracle O]... [--max-experiments N] [--max-minutes M] [--beta B] [--bootstrap 文件] [--run-id ID]`
+  - 不支持续跑，输出目录必须为空。
+  - 默认引擎是 duckdb，默认七类 oracle。
+  - 在 DuckDB 1.1.3 上跑，换成 `.venvs/duckdb-1.1.3-full` 的解释器，并且不传 `version_differential`。
+- `python -m surprise.baselines.old_no_llm --out <目录> --minutes M --seed N`：写 `old_run.json`，旧系统的 run 目录在它的 `run_dir` 里。
+- `python -m surprise.metrics.dups --new <run 目录> --old <基线目录>`
+- `python -m surprise.metrics.recall known --cases <cases.json> --out <known.json>`：要用目标引擎版本的解释器跑。
+- `python -m surprise.metrics.recall score --known <known.json> --run <run 目录> --out <recall.json>`
+
+run 目录：
+- `config.json`；
+- `ledger.sqlite`：一个 run，manifest 带 `hunter` 一节，有常数、β、引擎、oracle、种子、代码摘要；
+- `theory/`：S7 的存储；
+- `progress.jsonl`：每次实验一行，键见 `experiments/loop.py`，包括车道、父本、目标规格、预测区、D / U / value、选择计数 `pool`（含 `rounds`）、分诊、编辑；
+- `report.json`：
+  - 状态：`budget_experiments` / `budget_minutes` / `exhausted` / `interrupted` / `error`；
+  - 标签、车道、分诊；
+  - 曲线与齿；
+  - 家族数、φ 提取统计。
+
+Python 接口：
+- `surprise.hunter`：`Hunter(*, engines, oracles, seed, beta=None, corpus_path=None, extractor=None)`，方法有 `.candidates(wb)`、`.choose(wb) -> Choice | None`、`.record(record, *, rule=None, prediction=None)`、`.phi(case)`、`.manifest()`、`.close()`；另有 `Candidate`、`Scored`、`Choice`、`LANES`、`PhiExtractor`、`scoring`、`operators`、`constants`。
+- `surprise.diagnoser.Diagnoser(*, phi, registry)`：`.after(wb, record, outcome)` 与 `.periodic(wb, done)`，两者都返回工作台记下的编辑（含被拒的）。
+- `surprise.metrics.curve`：`surprise_curve`、`teeth`。
+- `surprise.metrics.dups`：`identity_key`、`new_families`、`old_reports`、`duplicate_rate`。
+- `surprise.metrics.recall`：`score`。
+
+S9 的 LLM 角色接进来的位置：
+- 猜想者与 Diagnoser 并列，在 `loop._drive` 里新家族开出之后调用，提议照样走 `wb.propose`。
+- 实现器给 Hunter 加候选来源，产出照样是 `Candidate`，带目标规格，用 `check_spec` 核对。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+开工时的三件事已由用户确认（见本节开头）。下面五条是之后编排者没有先问就定下的。
+
+1. **长跑跑完之后改了门槛的两处逐行检查**（798c7c4）。两处都是门槛比说明里定的规则严，长跑 8900 行里各碰到 1 行：
+   - 细化 / 泛化：说明定的是"变异体落在**生成它的假设**的待定区"（`candidates` 组也是这么查的），逐行检查却查了整个理论预测的区。两个假设重叠时，理论会把变异体归给另一个假设的确认区。改为只多放行这一种情形：预测的假设不是生成它的假设，且目标规格的 forbidden 非空，也就是不在生成它的假设的确认区里。第 6927、7455 行属于这种情形。
+   - 保底位：说明定的是"保底位上没有探索候选留下时在全部候选里选"，逐行检查却要求保底位一定是探索车道。改为要求最终的打分数不多于非探索候选的个数。这是选择计数能给出的必要条件。第 7455 行是这种情形：58 个探索候选全被拒，只剩一个泛化候选。
+   - 其余条件都没有动，SESSIONS 的五项要求本身没有放宽。
+2. **β = 1.0**：按预实验事先定的规则（中位数、合计、取小）选出，与暂定值相同。三组种子上差别很小，β 在 0.5–4 之间不敏感。
+3. **第一次的三个运行作废、加派 `s08-resample`**：召回 run 7.7 分钟就以 `exhausted` 停了，"一轮抽空就当无可再测"是编排者说明里定错的语义。β 没有重做预实验，因为预实验的 12 次运行都以预算结束、没有遇到抽空，而且 PLAN 决策 8 说 β 只调一次。
+4. **三个运行同时跑**，共用这台 16 核机器。新旧两边承受同样的负载、同样的 180 分钟墙钟，预算仍然可比；代价是绝对吞吐比单独跑低。
+5. **召回的已知集**：取 M1 表里 DuckDB 的 9 条复现中在 1.1.3 上判 fail 的 6 条，按条计召回（0.5）。按身份计是 3 个里 1 个，两种数字都写进了报告。
+
+### 与计划的偏差
+
+- 拆了四个包，比开工时定的三个多一个修复包 `s08-resample`。
+- 门槛 `gates/s08.py` 在派发后改了三次，都是编排者写门槛时的疏漏，期望没有放宽：
+  - e2d9a5b：两行相同的用例；泛化判定写宽了；
+  - 3110d6e：为修复包加常数与 `rounds` 键；
+  - 798c7c4：上面第 1 条。
+- "同执行预算"按墙钟时间落地：新框架每次判定起隔离进程，SQL 条数不可比。
+- 召回 run 不用 Version differential，因为旧版就是被测引擎本身。
+- 长跑只在 DuckDB 上跑，迁移车道在长跑里没有候选，由短跑在两个引擎上覆盖。
+- 长跑里 Diagnoser 与 MDL 的编辑都没有被接受（召回 run 里接受 1 条）：闭环在规则层面是通的，"提议 → 接受"这一环在实机上几乎没有发生。
+- 没有与 PLAN 冲突的实现选择；没有调用任何 LLM；没有改冻结区与 S6 / S7 的规则。
+
+S8 留下的未决问题在文末"未决问题"一节的"S8 发现"一组里。
 
 ## 最近完成会话：S7（2026-10-09）
 
@@ -615,7 +784,29 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S8 及之后需要知道的）
+### 未决问题（S9 及之后需要知道的）
+
+S8 发现、留后续会话：
+- **DuckDB 1.5.5 的 `window_self_join` 错误结果**（复现与数字见 S8 一节）：没有对外报告，也没有写进 `duckdb/` 复现目录或 M1 表；要不要报告、要不要把它加进已知集，由用户定。
+- **无效率高**：长跑 52%，召回 run 47%。
+  - 按原因：`query_error` 1892、`not_applicable` 1765、`nondeterministic` 413、`insufficient_engines` 382，其余合计 162。
+  - 按 oracle：Equivalent query 1779/2053（87%）最差，其中 1537 条是 `not_applicable`（选中的改写规则套不上这条语句）；Cross 735/1077，主要是 `insufficient_engines` 382（参照引擎跑不了 DuckDB 方言）与 `query_error` 228。
+  - Hunter 的 `P_valid` 来自理论的 `p_invalid`（S6 的 Kᵛ）。学得太慢的话，要给 oracle 与用例形态加一个更直接的有效性先验，可以由 S10 的"探索先验"接管。
+- **探索车道占了 99%**（8804/8900），边界探针只有 96 条。原因有三：
+  - 变异算子对已知家族的父本能改出的变体很少，一个父本 19 个上下，很快就做过了；第 6927 次那一轮有 36 个候选因为"已做过"被拒。
+  - 新颖性抽签又拒掉一批。
+  - 待定区之外的变体直接丢弃。
+  - 后果：长跑后半段的曲线贴着 0.01 比特，新家族全靠探索撞上。S9 的实现器（spec → SQL）就是来补这一块的。
+- **细化 / 泛化候选可能落在别的假设的确认区**：车道按生成它的假设定，打分按整个理论，这时 D = 0、value = 0。只有它一个候选时仍会被选上（长跑 2 次）。Hunter 可以在生成时就按理论的预测区过滤，这属于改车道规则，没有做。
+- **没有 fix set 的家族太多、身份太粗**：长跑 12 个家族里 9 个没有 fix set，其中 6 个的形状键都是 `wrong_result|-|both`、2 个都是 `error_mismatch|InvalidInputException`。重复率裁判把它们算作重复，对新框架不利；它们是不是同一个缺陷没人知道。S7 记的"无开关的身份太粗"仍是根子。
+- **误吸收**：长跑 3 条失败同时挂在两个无 fix set、形状相同的 cross_dbms 假设下（h23、h25）。规则没有改，见 S7 发现的第一条。
+- **Diagnoser 的 revise 在实机上几乎不被接受**：长跑提了 2 条、拒 2 条，召回 run 提了 4 条、接受 1 条。被拒的 5 条都是 `no_gain`、长度变化 0：最小化用例的 φ 仍盖住原 S 的全部字面量，共同部分就是原 S，提议等于没改；接受的那条把 S 缩了一个字面量（长度 −7.4 比特）。无 LLM 的 Diagnoser 只有这一招，S9 的猜想者要接上的就是这一环。
+- **召回漏了 F7 / F7_file**（`common_subexpressions,expression_rewriter`）**与 F9**：60 分钟的 run 里没有生成触发它们的构造。F9 的触发面很宽（S2 第 12 条：排序键唯一的普通窗口计数），漏掉说明种子语料与变异算子很少产出带 `OVER (ORDER BY ...)` 的窗口查询。
+- **旧系统基线是到点强杀的**（`ended: killed`，`returncode 1`）：`bugs.jsonl` 的最后一行可能是半截。`old_reports` 会忽略截断的最后一行，这次 11 条都完整。
+- **第 3 档里崩溃与超时的复核很慢**：长跑最慢的五次各用 2–7 分钟，都是 crash / timeout 的重跑与最小化，五次合计约 19 分钟，占墙钟的 11%。S4 记的"每次原始判定起一个进程"在长跑里实测平均每条 1.2 秒，没有成为瓶颈。
+- **`loop` 不支持续跑**，输出目录必须为空，中断了只能整个重跑。理论存储每 100 条切一代，可以从最近一代恢复，没有做。
+- **长跑门槛与代码摘要绑定**：`longrun` 组要求 manifest 里的代码摘要等于当前 `hunter/`、`diagnoser/`、`experiments/` 的代码。之后的会话只要改了这三个目录，S8 门槛的 `longrun` 组就会失败，得重跑 3 小时长跑再钉哈希；不想重跑，就要先问用户怎么处理旧门槛。`sawtooth`、`duplicates` 用同一份产物，不查代码摘要。
+- **产物不入库**：`framework/results/s08/` 被 gitignore，门槛只钉哈希。换机器或清了目录，四个产物组就会失败；要保留就另行备份这个目录（386 MB）。
 
 S7 发现、留后续会话：
 - 误吸收仍在（规则没有改）：没有 fix set 的假设按失败类别、错误类别、行为形状认正例，所以 (a) 一条已经被归属测试判给有 fix set 的假设的失败，只要落在某个无开关假设的确认区或待定区且三项相同，也会被它当成正例，把它的 S 泛化掉；(b) 作用域里通过还少、G 还松的时候，形状相同的另一种缺陷会被吸收进来而不是开新家族（实机例子：DF-F 进了 DF-D 的假设）。数字见 S7 一节"实机回放的数字"。可选的修法是在 `Theory._update_hypotheses` 里加一条"归属测试已经判给别的假设的失败，不再算其他假设的正例"，它改的是 S6 的规则，先问用户。MDL 的拆分只在"簇与簇之间"落了足够多的通过时才会把并错的假设拆开（三十五条以上）。
@@ -681,7 +872,7 @@ S5 发现、留后续会话：
 - sqlglot 把它不认识的语句（EXPLAIN、VACUUM、COPY 等）读成不透明的 Command：语句层状态是 `ok`，特征为空，不走兜底。作用域分析失败时（`ast.py` 里两处 `except Exception`）不记相关性、状态仍是 `ok`，没有任何标记；整份种子语料上没有触发过。
 - `ast:fn:<名>` 用的是 sqlglot 归一后的函数名（`substr` → `substring`，`date_trunc` → `timestamp_trunc`），不是原文里写的名字。S6 之后写规格、S7 的 LLM 提假设时要用归一后的名字；sqlglot 升级可能改这些名字，manifest 的 `packages.sqlglot` 记着版本。
 
-已解决（留作索引）：S6 留给 S7 的几件在 S7 定下并交付——理论状态的落盘、按代快照、编辑日志、回滚与负记忆；跨 oracle 的假设按 fix set 归并成家族；`contradictions` 由 MDL 的修复候选处理（收紧或拆分）；记住的通过随存储落盘（仍在内存里）；来路不明的状态由 `TheoryStore.load()` 严格拒收（`Theory.from_dict` 本身没有改）；误吸收与合取可表达的比例量过了，数字在 S7 一节。S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。S2 第 6 条（惊讶取到无穷大要先截断）在 S6 不再需要：ρ、Kᵛ 与 0.95 / 0.5 都严格在 0 与 1 之间，惊讶恒为有限值；S5 留的"`features/limits.py` 的三个上限要不要进 manifest"在 S6 定为进（run manifest 的 `theory` 一节里的 `features.limits`）；S4 记的"F9 每次都进第 3 档"：从没有 fix set 的画像建出的假设，确认区里的重复走第 2 档的画像比较（零执行）就能确认，DF-A 上实测如此，F9 本身留给 S8 的实机 run 核对。
+已解决（留作索引）：S6 留给 S7 的几件在 S7 定下并交付——理论状态的落盘、按代快照、编辑日志、回滚与负记忆；跨 oracle 的假设按 fix set 归并成家族；`contradictions` 由 MDL 的修复候选处理（收紧或拆分）；记住的通过随存储落盘（仍在内存里）；来路不明的状态由 `TheoryStore.load()` 严格拒收（`Theory.from_dict` 本身没有改）；误吸收与合取可表达的比例量过了，数字在 S7 一节。S3 记的"manifest 环境字段"与"Cross DATE 假候选"两条在 S4 解决（环境字段补齐；`incomparable_results` 前提）；S2 第 7 条（`Label.cve` 是占位）、第 11 条（没记间接依赖）在 S4 解决；S2 第 1、2 条（F10 与逐族期望）已由 `gates/s04.py` 落实。S2 第 6 条（惊讶取到无穷大要先截断）在 S6 不再需要：ρ、Kᵛ 与 0.95 / 0.5 都严格在 0 与 1 之间，惊讶恒为有限值；S5 留的"`features/limits.py` 的三个上限要不要进 manifest"在 S6 定为进（run manifest 的 `theory` 一节里的 `features.limits`）；S4 记的"F9 每次都进第 3 档"：从没有 fix set 的画像建出的假设，确认区里的重复走第 2 档的画像比较（零执行）就能确认，DF-A 上实测如此，F9 本身留给 S8 的实机 run 核对（S8 的 1.1.3 召回 run 没有撞上 F9，见"S8 发现"）。S7 留的"长 run 的吞吐先实测再定"在 S8 量过：长跑每条约 1.2 秒，没有随长度变慢；`Theory.version` / `store.save` 的线性开销与留在内存里的日志，在 8900 条的规模上都没有成为瓶颈，没有动。
 
 S2 新发现：
 1. `duckdb/F10_window_frame_underflow.sql`（2026-10-09 按实测改写）：直接用 duckdb 执行，前两条 ntile 语句都让解释器进程以 0xC0000094 退出，文件注释只把第二条描述成 INTERNAL 错误。经 `judge` 则不会崩：确定性筛查在执行之前就把它们判成 `invalid / nondeterministic`。所以这一族现在既拖不垮 harness，也抓不到，处理办法见上面一节的第 3 点。别的查询仍然可能让引擎进程崩溃，`evaluate()` 在进程内拦不住；S4 的新进程执行器和 S8 的运行循环要考虑这一点。
@@ -720,6 +911,15 @@ S2 新发现：
 - PLAN.md 决策表：第 5 条（φ 用 sqlglot、正则兜底）、第 4 条（单元先粗）、第 2 条（φ 一侧在 S5，版本空间一侧在 S6）已采用；第 8 条里 0.95 / 0.5 与分诊阈值在 S6 定值并由门槛钉住，β 留给 S8；第 7、9、10 条仍是建议，到对应会话开工时再定（第 6 条 S4 已采用）。
 
 ### 给下一个编排者的操作提醒
+
+S8 踩到的：
+
+- **核对产物的门槛，在长跑中途就拿半截产物跑一遍。** 这次长跑跑完 3 小时才发现门槛的两处逐行检查比说明严。短跑里假设不重叠、保底位总有探索候选，查不出来。中途把门槛模块的 `require` 换成只记录不抛异常，对半截目录调用 `check_rows`，就能一次列出全部不一致。中途算了曲线与重复率，却没有跑逐行检查，这是漏掉的一步。
+- **"返回 None 就停"这类语义，在说明里要写清是"真的无可再做"还是"这一轮没抽到"。** 第一次的召回 run 因此 7.7 分钟就停了，多花了一个修复包、一个小时。
+- **长任务一律用后台任务**：3 小时的 `loop` 与旧系统基线都活到了结束并发来通知。三个运行同时跑互不干扰。命令前加 `env -u DEEPSEEK_API_KEY`。
+- **产物的哈希用脚本钉**（`.orch/scratch/s8/pin.py longrun old recall`），钉完先跑 `--only longrun sawtooth duplicates recall` 再提交。`s08_runs.json` 提交时 git 会提示 LF→CRLF，不影响：门槛读的是 JSON 内容，哈希算的是产物文件。
+- **跑旧系统要设墙钟上限、到点强杀**：旧系统的 `DuckDBRunner.setup` 没有超时，某些种子会长时间占满 CPU（10 分钟的探测里卡过两段，各约 3.5 分钟）。
+- **`.venvs/duckdb-1.1.3-full`** 是在 DuckDB 1.1.3 上跑整个新框架用的；原有的 `.venvs/duckdb-1.1.3` 只装了 duckdb 与 psycopg2，跑不了新框架。
 
 S7 踩到的：
 
@@ -773,15 +973,24 @@ S2、S3 踩到的，仍然有效：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S8
+### 下一会话的起点：S9
 
-**用户验收 S7 时指示开始 S8（2026-10-15）。** β 的预实验与下面列的几件要定的事由编排者按推荐定下、记进 DECISIONS；改 S6 的规则、改冻结区仍要先问用户。
+S9 要等用户指示再开工。S9 开始调用 LLM，ORCHESTRATION 写明"S9 起需要 LLM 的工作包怎么给密钥，到时候问用户"，所以开工时先问这一件。
 
-- 从 main 的 `s07-done-r2` 建分支 `session/s08`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
-- 起点检查（在 `framework/` 下）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 550 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (7/7 passed)`（约 11 分钟）。
-- S8 做 Hunter 与无 LLM 闭环（范围见 SESSIONS.md 的 S8 一节，里程碑 M2）：四类候选、`value = P_valid × (D + β·U)`、探索保底、降权与新颖性拒绝采样；新主循环 Hunter → 执行与 CVE 标注 → 惊讶 → 分诊 → Diagnoser（无 LLM）→ 接受或回滚 → 更新 T。代码放 `framework/surprise/hunter/`、`diagnoser/` 等新目录，不碰 `harness/`。
-- S7 给 S8 的现成东西：主循环里用 `Workbench` 代替裸的 `Theory`，一次实验的调用顺序见 S7 一节"当前接口"；`wb.compress()` 是无 LLM 版 Diagnoser 的 MDL 一步，隔一段调用一次即可；`wb.checkpoint(note)` 按批切代，`wb.surprise_under(代号, 记录)` 给出 CIAO 的一格；`wb.partition()` 给出每条失败的家族，重复率、家族数都从它算；`P_valid = 1 − prediction.p_invalid`，`D` 取"落在某个假设待定区时为 1 比特"（`prediction.zone == "pending"`），`U` 取 `prediction.p_fail_valid` 在未探索区的值或它的熵。细化与泛化候选从假设的 S 与 G 之差生成：删一个 S 的字面量、换成同类取值（`registry.siblings`），规格用 `Spec`，核对用 `check_spec`；变异算子复用 `evolution/dce.py` 的 `mutate_query_text`、`mutate_setup`（门槛 `gates/s07.py` 的 `dce_probes` 是现成的调用样例）与 `seeds/mutate.py`。
-- S8 开工前要定的几件事（都在"未决问题"里）：β 的预实验怎么做、取值写进 `theory/constants.py`（PLAN 决策 8）；误吸收的规则要不要改（S7 发现第一条，改的是 S6 的规则，先问用户）；长 run 的吞吐——每次原始判定起一个进程（S4）、`Theory.version` 与 `store.save` 随记住的通过线性变慢（S7）、工作台把日志留在内存里（S7）——先实测再定要不要动；同种子重跑结果一致的要求意味着主循环里不能有墙钟、不能有无序集合的遍历次序泄漏。
-- **理论常数十三项已由 `gates/s06.py`、`gates/s07.py` 钉住取值**，改它们先问用户。S8 的 β 照样放进 `theory/constants.py`，会自动进 `theory_manifest()`；两个门槛都只要求自己那几项在且取值不变，不拦新增的。
-- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`，跑测试用 `python -m pytest`（直接敲 `pytest` 在 worktree 里会因为导入路径失败）。审查测试通过数至少 550，完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
-- S7 两个包都已合并并清理，`gw list` 应全部显示 cleaned。历史 brief / report / review 在 `docs/orch/s07/`；编排者的参考模型与探测脚本在 `.orch/scratch/s7/`（不入库：`ref/` 四个文件、`ref_shim.py`、`run_gate_ref.py`、`review_store.py`、`review_accept.py`、`replay_ref.py`、`explore1.py` / `explore2.py`）。恢复时看 git log、本文件和 gw list。
+- 从 main 的 `s08-done` 建分支 `session/s09`。先检查主分支、tag、工作区和 PG 状态；服务器停止时按 S3 一节的恢复命令启动，不重新 initdb。
+- 起点检查（在 `framework/` 下）：
+  - `../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 613 passed, 3 skipped；
+  - `../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (8/8 passed)`。
+  - S8 的四个产物组要求 `framework/results/s08/` 还在、且 `hunter/`、`diagnoser/`、`experiments/` 的代码与长跑时一致（见"S8 发现"倒数第二条）。
+- S9 做 LLM 网关、实现器、假设猜想者（范围见 SESSIONS.md 的 S9 一节）。
+  - 网关复用 `agents/base_agent.py`、`llm/ledger.py`：响应缓存的键为提示哈希 + 模型 + 种子；按角色记账；输出缺"预测"字段就拒收；每个会话设调用上限。
+  - 实现器：spec → SQL，用 `check_spec` 核对，产出作为 Hunter 的新候选来源。
+  - 猜想者：在新家族开出后与 Diagnoser 并列调用，提议走 `wb.propose`，押注就是它的可证伪预测。
+  - 接入位置见 S8 一节"当前接口"的最后一段。
+- **改 `hunter/`、`diagnoser/`、`experiments/` 会让 S8 门槛的 `longrun` 组失败**（代码摘要不符）。三种办法：新角色放进新目录、主循环只通过一个开关接入；或者重跑 3 小时长跑再钉；或者问用户怎么处理旧门槛。开工时就要定，最好在派发前定。
+- 理论常数十四项（S6 九项、S7 四项、`BETA`）与 Hunter 十二项、Diagnoser 两项常数由门槛钉住取值，改它们先问用户。
+- 派发一律在仓库根用 `.venv/Scripts/python.exe tools/orch/grok_worker.py …`；worktree 里直接用 `python`，跑测试用 `python -m pytest`。审查测试通过数至少 613；完整 diff、每条执行命令、分支当前 HEAD 上的独立复跑都不可省。默认两轮返工上限。
+- S8 四个包都已合并并清理，`gw list` 应全部显示 cleaned。
+  - 历史 brief / report / review 在 `docs/orch/s08/`。
+  - 编排者的探测与钉哈希脚本在 `.orch/scratch/s8/`，不入库：`proto.py`、`pre.py`、`pin.py`、各运行的控制台输出。
+  - 恢复时看 git log、本文件和 gw list。
