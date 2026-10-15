@@ -104,7 +104,7 @@ def test_constants_match_the_gate_table() -> None:
     detached["DEFAULT_MAX_CALLS"] = 0
     detached["TIERS"]["fast"] = "other"
     assert constants.as_dict() == have
-    assert constants.TIERS["fast"] == "deepseek-chat"
+    assert constants.TIERS["fast"] == "deepseek-flash"
     assert len(have["TIERS"]) >= 2
     assert len(set(have["TIERS"].values())) == len(have["TIERS"])
 
@@ -186,16 +186,20 @@ def test_gateway_cache_hit_replay_offline_ledger_and_totals(tmp_path: Path, no_c
     assert r1.text == r2.text
     assert r3.source == "network" and r4.source == "network"
     assert len(script.calls) == 3
-    assert [c["model"] for c in script.calls] == [C.TIERS["fast"], C.TIERS["fast"], C.TIERS["strong"]]
-    expected_key = _sha(f"{_sha(prompt)}\n{C.TIERS['fast']}\n0")
-    assert r1.key == expected_key == cache_key(prompt, C.TIERS["fast"], 0)
+    assert [c["model"] for c in script.calls] == [
+        constants.TIERS["fast"],
+        constants.TIERS["fast"],
+        constants.TIERS["strong"],
+    ]
+    expected_key = _sha(f"{_sha(prompt)}\n{constants.TIERS['fast']}\n0")
+    assert r1.key == expected_key == cache_key(prompt, constants.TIERS["fast"], 0)
     assert r1.key != r3.key != r4.key
     entry_path = tmp_path / "cache" / r1.key[:2] / f"{r1.key}.json"
     assert entry_path.is_file()
     entry = json.loads(entry_path.read_text(encoding="utf-8"))
     assert set(C.CACHE_ENTRY_KEYS) <= set(entry)
     assert entry["prompt"] == prompt and entry["text"] == r1.text
-    assert entry["model"] == C.TIERS["fast"] and entry["seed"] == 0
+    assert entry["model"] == constants.TIERS["fast"] and entry["seed"] == 0
     refuse = Refuse()
     gw2 = _gateway(tmp_path, refuse, ledger=False)
     again = [
@@ -232,8 +236,8 @@ def test_gateway_cache_hit_replay_offline_ledger_and_totals(tmp_path: Path, no_c
     assert totals["network"] == 3 == gw.network_calls
     blob = json.dumps(gw.manifest())
     assert json.loads(blob) == gw.manifest()
-    assert gw.manifest()["tiers"] == C.TIERS
-    assert gw.manifest()["constants"]["TIERS"] == C.TIERS
+    assert gw.manifest()["tiers"] == constants.TIERS
+    assert gw.manifest()["constants"]["TIERS"] == constants.TIERS
 
 
 def test_gateway_does_not_write_an_env_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_cap: None) -> None:
@@ -384,7 +388,7 @@ def test_transport_without_key_does_not_request(monkeypatch: pytest.MonkeyPatch)
     transport = DeepSeekTransport(base_url="http://127.0.0.1:9")
     with pytest.raises(TransportError, match="DEEPSEEK_API_KEY is not set"):
         transport.complete(
-            model="deepseek-chat",
+            model="deepseek-flash",
             prompt="hi",
             temperature=0.0,
             max_tokens=8,
@@ -403,7 +407,7 @@ def test_transport_error_hides_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = DeepSeekTransport(base_url="http://127.0.0.1:9")
     with pytest.raises(TransportError) as info:
         transport.complete(
-            model="deepseek-chat",
+            model="deepseek-flash",
             prompt="hi",
             temperature=0.0,
             max_tokens=8,

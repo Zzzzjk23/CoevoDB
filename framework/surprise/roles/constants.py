@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 # Mapping from a gateway tier name to the DeepSeek model that tier uses.
-TIERS = {"fast": "deepseek-chat", "strong": "deepseek-reasoner"}
+TIERS = {"fast": "deepseek-flash", "strong": "deepseek-v4-pro"}
 
 # Network calls one gateway (one run) may make when no constructor cap is given.
 DEFAULT_MAX_CALLS = 200
@@ -44,7 +44,7 @@ IMPLEMENTER_MAX_TOKENS = 2000
 # Times the implementer may call the gateway for one spec.
 IMPLEMENTER_ATTEMPTS = 2
 
-# Completions requested per implementer attempt.
+# New targets the implementer source may implement per Hunter choice.
 IMPLEMENTER_PER_CHOICE = 1
 
 # Model tier the conjecturer uses for every call.
