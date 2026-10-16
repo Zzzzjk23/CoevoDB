@@ -16,7 +16,7 @@
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
-| S12 | Phase 7 收尾 | 未开始 | | |
+| S12 | Phase 7 收尾 | 未开始（用户已选定共用原语按方案 A，见文末"下一会话的起点"） | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -1583,7 +1583,7 @@ S2、S3 踩到的，仍然有效：
 
 S12 要等用户指示再开工。
 
-- **分支**：从 main 的 `s11-done-r2` 建分支 `session/s12`。
+- **分支**：从 main 的最新提交建分支 `session/s12`（main 在 `s11-done-r2` 之后只多一个文档提交：记下用户为 S12 选定的方案 A，代码与门槛不变）。
 - **开工前检查**：
   - 主分支、tag、工作区；
   - PG 状态：服务器停着时按 S3 一节的恢复命令启动，不重新 initdb；
@@ -1597,6 +1597,17 @@ S12 要等用户指示再开工。
   - S10 的 `library`、`oracle_inventor`、`switches`、`m3` 要 PostgreSQL 参照在跑。
   - S11 的 `coverage` 要 `.venvs/duckdb-1.1.3-full`；`grid` 起原 CoevoDB 的旧主循环，`dedup` 导入旧 `diagnosis/signature.py`。
 - **S12 的范围**（见 SESSIONS.md 的 S12 一节）：旧主循环移入 `framework/surprise/baselines/coevodb_v1/` 并保持可运行；与新包共用的原语只保留一份；`coevo/` 与 `repair_bench/` 归档；README、架构文档、`framework/AGENTS.md` 更新。门槛：原 CoevoDB 臂在新位置可跑；S01–S11 的全部门槛仍通过。
+- **用户决定（2026-10-16）：共用原语按方案 A 处理，S12 不重跑长跑。** 新框架直接或间接导入的旧文件算"共用原语"，留在原位，只保留这一份；旧主循环只把它独用的部分移进 `baselines/coevodb_v1/`，从原位置导入共用原语。`evolution/`、`agents/` 因此被拆开，和 SESSIONS 字面的"整个目录移入"不同，用户已确认。
+  - 原因：S8 门槛核对钉住的长跑的两份指纹，一份是 `surprise/hunter/`、`diagnoser/`、`experiments/` 的代码摘要（`gates/s08.py` 的 `CODE_DIRS`），一份是 harness 的 `HASHED_PATHS`（`harness/manifest.py`，含 `agents/bug_fixer.py`）。整目录搬走要改 `hunter/operators.py` 的导入，还要改冻结的 `harness/cve/tier3.py` 与 `HASHED_PATHS`；钉住的长跑与召回跑随之失效，要重跑 3 小时长跑和 60 分钟召回跑再重钉。这是方案 B，多约 4–4.5 小时，未选。
+  - 共用原语清单（开工时用 grep 复核，连传递依赖一起查）：
+    - `evolution/dce.py`：`surprise/hunter/operators.py` 第 11 行导入，门槛 `s07.py`、`s08.py` 也导入；
+    - `agents/bug_fixer.py`：冻结的 `surprise/harness/cve/tier3.py` 导入，并在 `HASHED_PATHS` 里；它又导入 `agents/base_agent.py`、`agents/json_utils.py`；
+    - `agents/base_agent.py`、`llm/ledger.py`：`surprise/roles/transport.py` 导入；`agents/__init__.py` 也导入 `base_agent`；
+    - 本来就共用、不搬的：`oracles/`、`targets/`、`diagnosis/bisect.py`、`diagnosis/signature.py`、`scripts/cross_engine.py`、`seeds/`。
+  - 旧主循环独用、要搬的（开工时复核）：`main.py`；`evolution/` 的 `bandit.py`、`co_evolution.py`、`coverage.py`、`playbook.py`；`agents/bug_hunter.py`；`guidelines/` 等。
+  - 要先处理的连带：`evolution/__init__.py` 导入 `coevo.controller`，所以 Hunter 导入 `evolution.dce` 时会连带导入整个 `coevo/`。归档 `coevo/` 时这条链不能断：只改导入路径能解决就照做；要删掉这行导入（算改逻辑）或让 `coevo/` 不能再导入，先问用户。`tests/test_verified_loop.py` 也依赖 `coevo/`（PLAN 第 5 节 Phase 0）。
+  - 底线：S12 不改 `surprise/hunter/`、`diagnoser/`、`experiments/`、`harness/`，也不改 `HASHED_PATHS` 列出的文件。改动后若 S08 的 `longrun` 等组报代码摘要或 harness 指纹不符，说明碰到了不该碰的文件：停下查原因，不要重钉。
+  - 粗估墙钟 3.5–5 小时：起点复跑 30–45 分钟，写门槛约 30 分钟，3–4 个包串行 1.5–2.5 小时，收尾 45 分钟–1 小时。不需要真实调用。
 - **S12 要留意的**：
   - 移动旧代码之后，`baselines/old_no_llm.py`、`metrics/dedup.py` 的路径跟着改（见"S11 发现"）；S01 的门槛也核对旧代码的位置与导入，移动前先读一遍 `gates/s01.py` 查了什么。
   - "S12 之前旧代码只做移动、不改逻辑"：S12 的移动仍只允许改导入路径；"共用原语只保留一份"若要改逻辑，先问用户。
