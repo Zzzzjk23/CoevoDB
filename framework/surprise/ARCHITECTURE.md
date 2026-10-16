@@ -72,7 +72,7 @@ This package has been frozen since S4. Changing it requires asking first.
 - Residual, validity, prediction, triage: `surprise/theory/residual.py`, `surprise/theory/validity.py`, `surprise/theory/predict.py` (`surprise_bits`, `triage`, `Prediction`).
 - In-memory theory: `surprise/theory/theory.py` (`Theory.predict`, `Theory.observe`).
 - Store, per-generation snapshots, edit log, rollback, negative memory: `surprise/theory/store.py` (`TheoryStore`).
-- Acceptance and MDL: `surprise/theory/edits.py`, `surprise/theory/length.py`. An edit is accepted only when surprise does not rise on the trigger or hold-out records and (surprise change + length change) is strictly negative. A broken bet rolls the theory back to the snapshot before that edit and replays later observations.
+- Acceptance and MDL: `surprise/theory/edits.py`, `surprise/theory/length.py`. Acceptance is in this order: reject if the fingerprint is in negative memory; reject if there are no bets; reject if surprise on the trigger records rises; reject if surprise on the hold-out records rises; reject if (trigger change + hold-out change + length change) is not strictly negative; otherwise accept. A rejection on trigger or hold-out goes into negative memory. A broken bet rolls the theory back to the snapshot before that edit and replays later observations.
 - Workbench: `surprise/theory/workbench.py` (`Workbench.create` / `open`, `predict`, `observe`, `propose`, `assess`, `rollback`, `compress`). This is what the loop holds.
 - Constants of \(T\) are written into the run manifest by `surprise/theory/manifest.py` and pinned by the session gates. Command: `python -m surprise.theory`.
 
@@ -113,7 +113,12 @@ Six roles, each independently switchable (`surprise/roles/runtime.py`, `build_ro
 Every metric is computed from the ledger (passes and invalids included). Nothing in this package labels.
 
 - RQ1–RQ6 of one run: `surprise/metrics/rq.py` (`run_metrics`).
-- CIAO: `surprise/metrics/rq.py` reads the theory store; pairing helpers live in `surprise/metrics/partition.py`.
+- CIAO: `surprise/metrics/rq.py` (`ciao(wb)`), generation snapshots of the theory scored on generation batches of records.
+- RQ6 family partitions vs human labels: `surprise/metrics/partition.py` (`pair_agreement`).
+- RQ6 hypothesis boundary vs upstream fix (`match` / `too_wide` / `too_narrow` / `mixed`): `surprise/metrics/boundary.py`; fix conditions in `surprise/metrics/data/fix_conditions.json`.
+- RQ6 known-bug recall: `surprise/metrics/recall.py`.
+- Duplicate rate and family counts: `surprise/metrics/dups.py`.
+- One-run directory: `surprise/metrics/rundata.py` (`RunData`).
 - Surprise curve: `surprise/metrics/curve.py`. Statistical tests (median, Mann–Whitney U, Vargha–Delaney \(\hat{A}_{12}\)): `surprise/metrics/stats.py`.
 - Report and figures: `python -m surprise.metrics.report GRID_DIR`.
 - Offline \(\sigma\) vs membership-test dedup: `surprise/metrics/dedup.py`. Coverage of upstream regression tests: `surprise/metrics/coverage.py` (measurement only; it does not write labels).

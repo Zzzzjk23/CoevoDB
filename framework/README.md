@@ -40,6 +40,7 @@ python -m surprise.experiments.grid status DIR
 python -m surprise.metrics.report GRID_DIR
 
 # Baseline arms
+# pure_llm calls the LLM and needs DEEPSEEK_API_KEY; --llm-offline answers from the cache only
 python -m surprise.baselines.pure_llm --out DIR --seed 0
 python -m surprise.baselines.old_no_llm --out DIR --minutes M --seed N
 ```

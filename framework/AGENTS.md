@@ -9,7 +9,7 @@
 - Check availability without revealing the value: `[[ -n ${DEEPSEEK_API_KEY:-} ]]`.
 - The project configuration must reference `${DEEPSEEK_API_KEY}`; never copy the credential into source code, YAML, prompts, tests, command-line arguments, result archives, or logs.
 - Never display the secret file or print the variable. Do not enable shell tracing (`set -x`) while it is loaded. Redact `Authorization` headers and API keys from errors and diagnostics.
-- Run the existing DeepSeek-backed campaign from this directory with, for example: `python main.py --engine duckdb --mode full --rounds 3 --population-size 5 --queries-per-test 10`. That command is the old main loop (now at `surprise/baselines/coevodb_v1/main.py`; `main.py` forwards).
+- Run the existing DeepSeek-backed campaign from this directory with, for example: `python main.py --engine duckdb --mode full --iterations 3 --queries-per-iter 10`. That command is the old main loop (now at `surprise/baselines/coevodb_v1/main.py`; `main.py` forwards).
 - Surprise-framework LLM roles read the same variable through `surprise/roles/transport.py`. Roles are off by default; the loop turns one on with `--llm ROLE`.
 - If authentication needs checking, make a minimal request using the environment variable and report only the HTTP status or a boolean result, never response headers or the credential.
 
