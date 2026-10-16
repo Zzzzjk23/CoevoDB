@@ -16,20 +16,77 @@
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
-| S12 | Phase 7 收尾 | 进行中（见下一节） | | |
+| S12 | Phase 7 收尾 | 完成 | s12-done | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 进行中：S12（2026-10-16 开工）
+## 最近完成会话：S12（2026-10-16）
 
-用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main（0dae74d，`s11-done-r2` 之后只多一个文档提交）建立；起点复跑（去掉密钥）pytest 935 passed / 3 skipped，GATES PASS 11/11（S01 7/7 … S11 17/17）。门槛 `gates/s12.py`（六组：`layout`、`moves`、`imports`、`isolation`、`old_arm`、`docs`）先写好，并在一个不入库的参考移动（`.orch/scratch/s12/ref_move.py`）上验证过能通过、对六种故意的违规都报失败。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main 的 0dae74d 建立（`s11-done-r2` 之后只多一个记下方案 A 的文档提交）；起点独立复跑 935 passed / 3 skipped，GATES PASS 11/11。两个包都合并；不需要真实调用，没有重跑长跑。收尾合并回 main，tag `s12-done`。这是 SESSIONS 里的最后一个会话。
 
-拆包（两个包并行，文件不重叠）：
+### 交付与门槛
 
-| 包 | 目标 | 允许路径 | 状态 |
-|---|---|---|---|
-| s12-move | 旧主循环独用部分移入 `surprise/baselines/coevodb_v1/`，`coevo/`、`repair_bench/` 归档到 `archive/`，`framework/main.py` 留转发入口，导入路径跟着改 | 被移动的文件、`archive/**`、`coevodb_v1/**`、11 个只改导入的旧文件、`tests/test_surprise_s11_grid.py` 一处路径、`.gitignore` | 运行中 |
-| s12-docs | 根 README 的 Framework 一节、`framework/README.md`、`framework/AGENTS.md`、新写 `framework/surprise/ARCHITECTURE.md` | 这四个文件 | 返工 1 轮后合并（42a831e），已清理 |
+按用户选定的方案 A（DECISIONS"S12 准备"一条）：
+
+- **旧主循环**的独用部分移入 `framework/surprise/baselines/coevodb_v1/`，子目录结构与原路径一一对应：`main.py`；`evolution/` 的 `bandit.py`、`co_evolution.py`、`coverage.py`、`playbook.py`；`agents/bug_hunter.py`；`guidelines/`；`coverage/`。新加三个只含 docstring 的 `__init__.py`（包本身、`evolution/`、`agents/`）。
+- **`framework/main.py`** 现在只是转发入口（`runpy.run_module("surprise.baselines.coevodb_v1.main", run_name="__main__", alter_sys=True)`），`python main.py …` 照旧可用，`--help` 与 `s11-done-r2` 逐字相同；`python -m surprise.baselines.coevodb_v1.main …` 等价。`surprise/baselines/old_no_llm.py` 一行没改，经转发跑新位置的代码。
+- **共用原语**留在原位、只有一份：`evolution/__init__.py`、`evolution/dce.py`、`agents/__init__.py`、`agents/base_agent.py`、`agents/bug_fixer.py`、`agents/json_utils.py`、`llm/`、`oracles/`、`targets/`、`diagnosis/`、`seeds/`、`util/`、`scripts/cross_engine.py`。harness 指纹（`HASHED_PATHS`）与 S8 长跑钉住的代码摘要都没动，长跑与召回跑不用重跑。
+- **归档**：`coevo/` → `framework/archive/coevo/`，`repair_bench/` → `framework/archive/repair_bench/`；`archive/` 带只含 docstring 的 `__init__.py` 与 `README.md`，仍可导入。`evolution/__init__.py` 那一行改成 `from archive.coevo.controller import CoEvolutionController`，所以 Hunter 导入 `evolution.dce` 时仍会连带导入归档的原型（与移动前相同）。
+- **只改导入路径的旧文件**（11 个）：`evolution/__init__.py`、`campaigns/pg_coldstart.py`、`scripts/` 下 `corpus_hunt`、`flaky_mine`、`llm_rule_gen`、`make_playbook_seed`、`make_playbook_seed_v2`、`testing/test_new_components.py`、`tests/test_diagnosis_dce.py`、`tests/test_verified_loop.py`、`framework/test_simple.py`。另有三处位置锚点改成指向原目录（`coevodb_v1/main.py` 的 `PROJECT_DIR`，`archive/repair_bench/` 两个脚本的 `sys.path`），`tests/test_surprise_s11_grid.py` 一处读 `main.py` 取值表的路径，仓库根 `.gitignore` 一行。
+- **文档**：根 `README.md` 只改 Framework 一节；`framework/README.md` 改写成新框架的 README（目录表、命令、测试与门槛、原 CoevoDB 对照组、本机路径）；`framework/AGENTS.md` 保留全部规则，补 Windows 上的密钥与 LLM 角色默认全关，加 "Repository layout" 一节，PostgreSQL 脚本路径改到 `campaigns/`，示例命令改成 `main.py` 真有的参数；新写 `framework/surprise/ARCHITECTURE.md`（数据流、十个子包、不变式、与旧系统的关系、文档索引）。
+
+门槛 `gates/s12.py` 共六组：
+
+- `layout`：两棵新树的文件集合精确比对、旧路径清空、转发器的形状、共用原语在原位且没有第二份、`.gitignore`。
+- `moves`：`s11-done-r2` 的每个旧代码 `.py`（`surprise/` 以外，不含 `test_surprise_*`）与现在对应位置的文件比较：导入一律换成绝对的、移动前的模块名，再套用 `ANCHORS` 表，AST 必须相同；留在原位又不在 `IMPORT_EDITED` 表里的逐字节相同；移动的非 Python 文件逐字节相同。
+- `imports`：全仓库没有导入旧位置的语句，第一方导入都能解析，移动的模块能导入，三个脚本答 `--help`，coevo 冒烟从归档跑通。
+- `isolation`：S8 / S9 门槛的无 LLM 检查按旧模块名列（`agents.bug_hunter`、`evolution.co_evolution`、`guidelines`），移动之后这几个名字不会再出现；这一组按新名字补上，并查 harness 不导入 `archive` 与 `coevodb_v1`。
+- `old_arm`（SESSIONS 的"原 CoevoDB 臂在新位置可跑"）：`--help` 三处逐字相同；从 `s11-done-r2` 导出旧代码，2 轮 `no_llm` 运行的 9 个产物去掉时间与路径字段后与新位置相同（含 3992 次 SQL 执行数与覆盖单元集合）；`old_no_llm` 跑 1 分钟、指标能读。
+- `docs`：四个文档里反引号与链接中的仓库路径全部存在，各自要提到的内容都在。
+
+"S01–S11 的全部门槛仍通过"由 `gates.all` 保证。门槛派发前在一个不入库的参考移动上验证过（`.orch/scratch/s12/ref_move.py`），并对六种故意的违规都报失败。
+
+最终复跑（全部合并之后，在 `session/s12` 主检出区独立运行，在 `framework/` 下，去掉密钥）：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 935 passed, 3 skipped，退出码 0（与起点相同，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17、S12 6/6；GATES: PASS (12/12 passed)，退出码 0 |
+
+### 拆包清单与结论（全部已合并）
+
+| 包 | 内容 | 轮数 | 合并 | 审查 |
+|---|---|---|---|---|
+| s12-move | 移动、归档、转发入口、导入路径 | 首轮通过 | d9826e6 | 与参考移动逐文件比对树：代码、测试、脚本逐字相同，只有 6 个新文件的措辞不同；约 0.97 美元 |
+| s12-docs | 两份 README、AGENTS.md、架构文档 | 返工 1 轮：示例命令的参数不存在、`partition.py` 说错、接受规则漏两步、`pure_llm` 没注明会调用 LLM | 42a831e | 点名的 36 个接口逐个核对；约 0.94 美元（两轮） |
+
+- 说明、报告、审查包归档在 `docs/orch/s12/`；grok 成本合计约 1.91 美元；编排者没有做真实调用。
+
+### 当前接口（S12 之后的布局）
+
+- 原 CoevoDB：`python main.py …`（转发）或 `python -m surprise.baselines.coevodb_v1.main …`；作为对照组照旧是 `python -m surprise.baselines.old_no_llm --out DIR --minutes M --seed N [--mode no_llm]`。
+- 旧模块的新名字：`surprise.baselines.coevodb_v1.{main, evolution.bandit, evolution.co_evolution, evolution.coverage, evolution.playbook, agents.bug_hunter, guidelines, coverage}`；`archive.coevo`、`archive.repair_bench`。旧名字（`coevo`、`guidelines`、`coverage`、`repair_bench`、`evolution.bandit` 等）都已导入不到。
+- 新框架的命令与 Python 接口没有变化，见 S11 一节"当前接口"；总览在 `framework/surprise/ARCHITECTURE.md`。
+
+### PI 已自行核查并定下的选择（用户可以推翻）
+
+用户的指示是"现在开始完成S12"，下面几条没有另行提问，按 CLAUDE.md"小的实现选择自己定"处理，每条在 DECISIONS 里有理由：
+
+1. **`framework/main.py` 留转发入口**：S01 门槛、`old_no_llm` 的 `no_llm` 命令（S11 测试钉着"不变"）、两个旧脚本与 README 都用 `python main.py`；改 S01 门槛要先问用户。
+2. **三处位置锚点**算作移动允许的改动（`PROJECT_DIR`、两个 `sys.path.insert`），行为不变；不改的话移动后的入口找不到 `config.yml` 与种子。
+3. **归档到 `framework/archive/`、保持可导入**；`evolution/__init__.py` 只改那一行的路径，不删（删它算改逻辑）。
+4. **`coverage/` 与 `evolution/coverage.py` 算旧主循环独用**，一起移入；`scripts/`、`campaigns/` 不搬，只改导入；`test_simple.py` 留在原位。
+5. **不做之前标着"留给 S12"的小修**（见未决问题"S12 发现"）：不在 SESSIONS 的 S12 范围里，其中三处在 `HASHED_PATHS` 里。
+
+### 与计划的偏差
+
+- `evolution/`、`agents/` 被拆开，与 SESSIONS 字面的"整个目录移入"不同：用户开工前选定的方案 A。
+- SESSIONS 说 `main.py` 移入新位置；原路径上另留了一个转发文件（上面第 1 条）。
+- 架构文档是新写的 `framework/surprise/ARCHITECTURE.md`（原来没有单独的架构文档，`framework/README.md` 里只有一段旧系统的目录图）。
+- `s12-docs` 返工一轮。
+- `s12-move` 的说明没写明 S08 的四个产物组只能在主检出区跑（`framework/results/s08/` 不在 worktree 里），执行者如实报了失败；合并后在会话分支上通过。
+- 门槛在派发 `s12-docs` 之后改了一处（938aee0，`old_arm` 的时间字段匹配，比较更多、不是放宽），`s12-move` 派发时已包含。
+- 没有改 harness、`HASHED_PATHS` 列出的文件、`surprise/hunter/`、`diagnoser/`、`experiments/`；没有重跑长跑；旧代码只改了导入路径与三处锚点；LLM 没有打任何标签。
 
 ## 最近完成会话：S11（2026-10-16）
 
@@ -1312,7 +1369,17 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 这张表与 SESSIONS.md 的字面要求有两处出入，都是事实逼出来的：F10 不判 fail（上面第 3 点）；F5 归到 invalid 一侧而不是 confirmed 一侧（上面第 4 点）。
 
-### 未决问题（S12 及之后需要知道的）
+### 未决问题（之后的工作需要知道的）
+
+S12 发现、留之后的工作：
+- **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
+- **`evolution/__init__.py` 仍从 `archive.coevo.controller` 再导出 `CoEvolutionController`**：Hunter 导入 `evolution.dce` 时会连带导入整个归档的原型（移动前就如此）。仓库里没有任何地方用 `from evolution import CoEvolutionController`；删掉这一行能断开这条链，但算改旧代码的逻辑，要先问用户。
+- **旧门槛与旧测试里按旧模块名列的检查已失去作用**：S08 / S09 门槛的 `LLM_MODULES` 里的 `agents.bug_hunter`、`evolution.co_evolution`、`guidelines`，S04 / S06 门槛 `FORBIDDEN_IMPORTS` 里的 `coevo`，`tests/test_surprise_s08_eval_baseline.py`、`test_surprise_s08_loop.py` 里的同类名单，移动之后这些名字不可能再出现在 `sys.modules` 里。S12 门槛的 `isolation` 组按新名字补上了同样的检查；旧门槛与旧测试没有改。
+- **`framework/` 下的历史文档仍是旧路径**：`RESEARCH_PLAN.md`、`BRIEF_coevo_framework.md`、`STATUS_AND_ROADMAP.md`、各份 PG 计划等描述的是迁移之前的系统，S12 只更新了两份 README、`AGENTS.md` 与新写的架构文档。
+- **`framework/AGENTS.md` 里 zsh 与 `~/.config/coevo/secrets.env` 的说明是原 Linux 开发机的**，保留未删；本机（Windows）的说法另加了一行。
+- **原 CoevoDB 对照组在 Windows 上 Version differential 恒为 disabled**（旧代码写死 `bin/python`，见第一条）：作为对照组的 `no_llm` 臂一直如此，S8 以来的基线都是在这个条件下跑的。
+
+已解决（留作索引）：S11 发现的"S12 移动旧代码时要一起改的"——方案 A 下 `diagnosis/` 不搬，`metrics/dedup.py` 不用改；`old_no_llm.py` 经 `framework/main.py` 转发，也不用改；S11 的 `grid`、`dedup` 两组在会话分支上通过。S4 发现的"S12 移动旧代码时 harness 的 import 与 `HASHED_PATHS` 都要改"——方案 A 下 `agents/bug_fixer.py` 留在原位，没有解冻。S1 沿用第 5 条（文档里的 `scripts/pg_*.py` 旧路径）在 `framework/AGENTS.md` 里改到了 `campaigns/`。沿用自 S0 与规划会话的"`coevo/` 被 `tests/test_verified_loop.py` 依赖，S12 再归档"——已归档到 `framework/archive/coevo/`，测试改了导入、照旧通过。
 
 S11 发现、留后续会话：
 - **M4 冒烟的数字不能拿来比较**：每格 1 分钟、每臂 2 个样本，新框架与原 CoevoDB 每小时都是约 30 个家族（MWU p = 1.0）。正式比较要长得多的格子与更多种子；SESSIONS 把 24 小时正式实验排除在 S11 之外，S12 的范围里也没有它，什么时候跑、跑多大，要用户定。
@@ -1493,6 +1560,14 @@ S2 新发现：
 
 ### 给下一个编排者的操作提醒
 
+S12 踩到的：
+
+- **纯移动的会话，先做一份不入库的参考移动**（`.orch/scratch/s12/ref_move.py`，在一个临时 worktree 里跑）：门槛在它上面先跑通、再拿几种故意的违规测一遍；审查时用 `git diff <参考提交> grok/<包号>` 对整棵树，几分钟就能确认执行者的改动与参考逐字相同，只剩措辞要读。
+- **验收命令里，依赖主检出区产物的门槛组要单独标出来**：S8 的 `longrun`、`sawtooth`、`duplicates`、`recall` 读 `framework/results/s08/`，在 worktree 里必然失败。这次说明里让执行者跑整个 `gates.s08`，执行者如实报了 4 组失败；应当写 `--only no_llm constants scoring operators candidates lanes determinism`，产物组留给编排者合并后跑。
+- **门槛里按键名清掉时间字段，用下划线分段匹配，不用子串**：`total_candidates` 含 "dates"，子串匹配把它当成了时间字段。
+- **`git mv` 之后，主检出区的旧目录里会留下只含 `__pycache__` 的空壳**（worktree 里则是空目录，执行者删不掉——递归删除被 deny 规则拦下）。合并后在主检出区核对只剩缓存，再删；不删的话 `import coevo` 之类会以命名空间包的形式"导入成功"。
+- **文档包可以与代码移动并行**：说明里写清"按移动之后的布局写"，并列出哪些路径在文档包的 worktree 里必然报"不存在"；合并两个包之后在会话分支上复核 `docs` 组。
+
 S11 踩到的：
 
 - **对照组或新角色的提示，派发前先用一两次真实调用试**：推理模型（`deepseek-flash`）对"规则很密、开放式生成"的提示会一直推理到上限，正文为空；提高上限、降温都不管用。纯 LLM 对照组因此作废两次录制、多开两个修正包。试出来能用的提示原文写进说明，由执行者逐字照用（`s11-purellm3` 一次就过）。探测脚本 `.orch/scratch/s11/probe_pure_prompt.py`、录制脚本 `record_pure.py`（不入库，密钥从注册表读、不打印）。
@@ -1590,39 +1665,12 @@ S2、S3 踩到的，仍然有效：
 - 并行的包合并之前，各自 worktree 里的门槛都会因为缺另一个包而报"门槛未通过"，这是预期的红旗；用 `--only` 跑它自己的那几组。编排者补了门槛之后，可以用主检出区的门槛文件去跑分支上的代码来复核（本会话的做法记在 `orch/s02/s02-oracles.review.md` 的结论里）。
 - 编排者自己的审查辅助脚本放在 `.orch/scratch/`（不入库）：列出执行者跑过的全部命令、种子语料差分核对、用主检出区的门槛跑别的检出。会话的临时目录中途可能失效，不要把还要用的脚本放在那里。
 
-### 下一会话的起点：S12
+### S12 之后
 
-S12 要等用户指示再开工。
+SESSIONS 的十二个会话到此全部完成。没有排定的 S13；接下来做什么由用户定。
 
-- **分支**：从 main 的最新提交建分支 `session/s12`（main 在 `s11-done-r2` 之后只多一个文档提交：记下用户为 S12 选定的方案 A，代码与门槛不变）。
-- **开工前检查**：
-  - 主分支、tag、工作区；
-  - PG 状态：服务器停着时按 S3 一节的恢复命令启动，不重新 initdb；
-  - `DEEPSEEK_API_KEY` 仍在 Windows 用户环境变量里。
-- **起点复跑**（在 `framework/` 下，去掉密钥）：
-  - `../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 935 passed, 3 skipped；
-  - `../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (11/11 passed)`（S11 一组约 8 分钟，最慢的是 `grid`）。
-- **门槛依赖仓库外的东西**：
-  - S8 的四个产物组与 S11 的 `ciao` 要求 `framework/results/s08/`（`longrun`、`old_no_llm`、`recall113`、`pre`）还在，且 harness、理论、特征、`hunter/`、`diagnoser/`、`experiments/` 的代码与重跑的长跑一致。
-  - S09、S10 的 `source`、`conjecturer`、`dfa`、`replay`、`prior`、`translator_real`、`m3` 等组要求 `.src/` 下两份源码检出还在（恢复命令见 S9 一节）。
-  - S10 的 `library`、`oracle_inventor`、`switches`、`m3` 要 PostgreSQL 参照在跑。
-  - S11 的 `coverage` 要 `.venvs/duckdb-1.1.3-full`；`grid` 起原 CoevoDB 的旧主循环，`dedup` 导入旧 `diagnosis/signature.py`。
-- **S12 的范围**（见 SESSIONS.md 的 S12 一节）：旧主循环移入 `framework/surprise/baselines/coevodb_v1/` 并保持可运行；与新包共用的原语只保留一份；`coevo/` 与 `repair_bench/` 归档；README、架构文档、`framework/AGENTS.md` 更新。门槛：原 CoevoDB 臂在新位置可跑；S01–S11 的全部门槛仍通过。
-- **用户决定（2026-10-16）：共用原语按方案 A 处理，S12 不重跑长跑。** 新框架直接或间接导入的旧文件算"共用原语"，留在原位，只保留这一份；旧主循环只把它独用的部分移进 `baselines/coevodb_v1/`，从原位置导入共用原语。`evolution/`、`agents/` 因此被拆开，和 SESSIONS 字面的"整个目录移入"不同，用户已确认。
-  - 原因：S8 门槛核对钉住的长跑的两份指纹，一份是 `surprise/hunter/`、`diagnoser/`、`experiments/` 的代码摘要（`gates/s08.py` 的 `CODE_DIRS`），一份是 harness 的 `HASHED_PATHS`（`harness/manifest.py`，含 `agents/bug_fixer.py`）。整目录搬走要改 `hunter/operators.py` 的导入，还要改冻结的 `harness/cve/tier3.py` 与 `HASHED_PATHS`；钉住的长跑与召回跑随之失效，要重跑 3 小时长跑和 60 分钟召回跑再重钉。这是方案 B，多约 4–4.5 小时，未选。
-  - 共用原语清单（开工时用 grep 复核，连传递依赖一起查）：
-    - `evolution/dce.py`：`surprise/hunter/operators.py` 第 11 行导入，门槛 `s07.py`、`s08.py` 也导入；
-    - `agents/bug_fixer.py`：冻结的 `surprise/harness/cve/tier3.py` 导入，并在 `HASHED_PATHS` 里；它又导入 `agents/base_agent.py`、`agents/json_utils.py`；
-    - `agents/base_agent.py`、`llm/ledger.py`：`surprise/roles/transport.py` 导入；`agents/__init__.py` 也导入 `base_agent`；
-    - 本来就共用、不搬的：`oracles/`、`targets/`、`diagnosis/bisect.py`、`diagnosis/signature.py`、`scripts/cross_engine.py`、`seeds/`。
-  - 旧主循环独用、要搬的（开工时复核）：`main.py`；`evolution/` 的 `bandit.py`、`co_evolution.py`、`coverage.py`、`playbook.py`；`agents/bug_hunter.py`；`guidelines/` 等。
-  - 要先处理的连带：`evolution/__init__.py` 导入 `coevo.controller`，所以 Hunter 导入 `evolution.dce` 时会连带导入整个 `coevo/`。归档 `coevo/` 时这条链不能断：只改导入路径能解决就照做；要删掉这行导入（算改逻辑）或让 `coevo/` 不能再导入，先问用户。`tests/test_verified_loop.py` 也依赖 `coevo/`（PLAN 第 5 节 Phase 0）。
-  - 底线：S12 不改 `surprise/hunter/`、`diagnoser/`、`experiments/`、`harness/`，也不改 `HASHED_PATHS` 列出的文件。改动后若 S08 的 `longrun` 等组报代码摘要或 harness 指纹不符，说明碰到了不该碰的文件：停下查原因，不要重钉。
-  - 粗估墙钟 3.5–5 小时：起点复跑 30–45 分钟，写门槛约 30 分钟，3–4 个包串行 1.5–2.5 小时，收尾 45 分钟–1 小时。不需要真实调用。
-- **S12 要留意的**：
-  - 移动旧代码之后，`baselines/old_no_llm.py`、`metrics/dedup.py` 的路径跟着改（见"S11 发现"）；S01 的门槛也核对旧代码的位置与导入，移动前先读一遍 `gates/s01.py` 查了什么。
-  - "S12 之前旧代码只做移动、不改逻辑"：S12 的移动仍只允许改导入路径；"共用原语只保留一份"若要改逻辑，先问用户。
-  - 不做新功能；S11 留下的问题（流式读账本、结果行数上限等）记着，不在 S12 里修。
-- **常数**：S11 的指标常数、纯 LLM 常数与 `REQUEST_DEADLINE_S` 由门槛 `constants` 组钉住。
-- **派发与审查**：照旧；S12 不需要真实调用，所有包都不给密钥。
-- **恢复工作时**：S11 九个包都已合并并清理，`gw list` 应全部显示 cleaned；历史 brief / report / review 在 `docs/orch/s11/`；编排者的录制与探测脚本在 `.orch/scratch/s11/`（不入库）；钉长跑哈希仍用 `.orch/scratch/s8/pin.py longrun`。
+- **起点**：main 的最新提交（`s12-done`；用户验收之后若另打 `s12-done-r2`，从那里起）。开工检查照旧：主分支、tag、工作区；PG 参照（服务器停着时按 S3 一节的恢复命令启动，不重新 initdb）；`DEEPSEEK_API_KEY` 在 Windows 用户环境变量里。
+- **复跑**（在 `framework/` 下，去掉密钥）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 935 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (12/12 passed)`。
+- **门槛依赖仓库外的东西**（与 S11 相同）：`framework/results/s08/`（S8 的四个产物组与 S11 的 `ciao`）、`.src/` 两份源码检出（S9、S10 的若干组）、PostgreSQL 参照（S10 的若干组）、`.venvs/duckdb-1.1.3-full`（S11 `coverage`）。S12 自己的 `old_arm` 组从 git 导出 `s11-done-r2` 的旧代码来对照，不依赖仓库外的产物。
+- **正式实验之前要定的**（都在上面的未决问题里，摘要）：网格的规模与时长（24 小时正式实验不在任何会话的范围里）；SQLancer 的原始结果拷回 `results/sqlancer_strong/`（用户验收 S11 时定下）；价格表；harness 要不要加结果行数上限（冻结区，用户验收 S11 时定下"规划正式实验时再定"）；`RunData` 改流式读；网格的 `surprise` 格加墙钟强杀。
+- **冻结与改动规则照旧**：harness 与 manifest 里的常数冻结；改 `surprise/hunter/`、`diagnoser/`、`experiments/`、`harness/`、`theory/`、`features/` 的任何一行，都要按 S8 验收的办法重跑长跑、重钉，再跑 S8 的四个产物组与 S11 的 `ciao`；旧代码（`surprise/` 以外与 `coevodb_v1/`、`archive/`）由 S12 的 `moves` 组钉着与 `s11-done-r2` 只差导入路径，要改它们就得同时改这一组的表，先问用户。
