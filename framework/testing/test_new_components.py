@@ -11,9 +11,9 @@ import pytest
 from oracles.db_runner import DuckDBRunner
 from oracles.norec import NoRECOracle, norec_applicable
 from oracles.plan_variant import PlanVariantOracle
-from evolution.bandit import CategoryBandit
-from coverage.features import extract_cells
-from coverage.store import CoverageStore
+from surprise.baselines.coevodb_v1.evolution.bandit import CategoryBandit
+from surprise.baselines.coevodb_v1.coverage.features import extract_cells
+from surprise.baselines.coevodb_v1.coverage.store import CoverageStore
 from seeds.parse import parse_duckdb_test, parse_pg_regress
 from seeds.mutate import SeedMutator
 from seeds.store import Seed

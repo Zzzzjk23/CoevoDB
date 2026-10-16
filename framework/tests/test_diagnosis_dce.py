@@ -154,7 +154,7 @@ def test_signature_key_splits_same_fix_set_disjoint_plan_diff():
 def test_bandit_reward_does_not_charge_tries():
     """Outcome rewards attach to already-charged instantiation tries —
     reward() must not inflate tries (review C5)."""
-    from evolution.bandit import CategoryBandit
+    from surprise.baselines.coevodb_v1.evolution.bandit import CategoryBandit
 
     b = CategoryBandit()
     b.update("join", novel_cells=2)          # one instantiation

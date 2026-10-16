@@ -1,9 +1,9 @@
 """Small offline smoke test; retained as a directly executable example."""
 
-from coevo.archive import BugArchive
-from coevo.controller import CoEvolutionController
-from coevo.executor import DuckDBOptimizerOracle
-from coevo.generator import SeedCandidateGenerator
+from archive.coevo.archive import BugArchive
+from archive.coevo.controller import CoEvolutionController
+from archive.coevo.executor import DuckDBOptimizerOracle
+from archive.coevo.generator import SeedCandidateGenerator
 
 
 def main() -> int:
