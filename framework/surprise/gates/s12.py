@@ -459,12 +459,18 @@ def _run_dir(results: Path) -> Path:
     return runs[0]
 
 
-_VOLATILE = re.compile(r"(time|elapsed|_s$|_ms$|stamp|date|duration|wall|started|finished|ended|pid|dir|path)", re.I)
+_VOLATILE = frozenset(("s", "ms", "sec", "seconds", "time", "times", "elapsed", "stamp", "timestamp", "ts",
+                       "date", "duration", "wall", "started", "finished", "ended", "pid", "dir", "path"))
+
+
+def _volatile(key: str) -> bool:
+    """Timing and location fields: some ``_``-separated part of the key names one."""
+    return any(part in _VOLATILE for part in key.lower().split("_"))
 
 
 def _scrub(value: Any) -> Any:
     if isinstance(value, dict):
-        return {k: ("<volatile>" if _VOLATILE.search(k) else _scrub(v)) for k, v in value.items()}
+        return {k: ("<volatile>" if _volatile(k) else _scrub(v)) for k, v in value.items()}
     if isinstance(value, list):
         return [_scrub(v) for v in value]
     return value
