@@ -23,7 +23,7 @@ from util.paths import OLD_VENV  # noqa: E402
 
 from agents.bug_fixer import BugFixer  # noqa: E402
 from diagnosis.signature import SignatureEngine  # noqa: E402
-from evolution.co_evolution import CoEvolution  # noqa: E402
+from surprise.baselines.coevodb_v1.evolution.co_evolution import CoEvolution  # noqa: E402
 from evolution.dce import FamilyExpander  # noqa: E402
 from llm.ledger import ledger  # noqa: E402
 from oracles.db_runner import DuckDBRunner  # noqa: E402

@@ -25,8 +25,8 @@ from oracles.norec import NoRECOracle, norec_applicable
 from oracles.plan_variant import PlanVariantOracle
 from oracles.tlp import TLPOracle, inject_predicate
 
-from .base_agent import BaseAgent
-from .json_utils import call_llm_json
+from agents.base_agent import BaseAgent
+from agents.json_utils import call_llm_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -355,7 +355,7 @@ Input queries:
         if self.coverage is None:
             return 0
         try:
-            from coverage.features import extract_cells
+            from surprise.baselines.coevodb_v1.coverage.features import extract_cells
 
             novel = self.coverage.observe(extract_cells(runner, sql, setup_sqls))
         except Exception:  # noqa: BLE001 - coverage must never break a round

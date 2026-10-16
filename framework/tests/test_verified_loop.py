@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from coevo.archive import BugArchive
-from coevo.controller import CoEvolutionController
-from coevo.executor import DuckDBOptimizerOracle
-from coevo.generator import DEFAULT_SETUP, LLMCandidateGenerator, SeedCandidateGenerator
-from coevo.models import Candidate, OracleObservation, QueryOutcome, RepairResult
+from archive.coevo.archive import BugArchive
+from archive.coevo.controller import CoEvolutionController
+from archive.coevo.executor import DuckDBOptimizerOracle
+from archive.coevo.generator import DEFAULT_SETUP, LLMCandidateGenerator, SeedCandidateGenerator
+from archive.coevo.models import Candidate, OracleObservation, QueryOutcome, RepairResult
 
 
 def test_real_duckdb_oracle_executes_both_modes():
