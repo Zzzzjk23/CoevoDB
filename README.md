@@ -45,15 +45,18 @@ plus standalone verifier scripts where applicable.
 
 ## Framework (`framework/`)
 
-The code that found these bugs — the CoevoDB LLM Hunter/Fixer
-co-evolution testing framework — lives in
-[framework/](framework/README.md). It is a working snapshot of the
-research codebase: multi-oracle testing (TLP, NoREC, plan-variant,
-cross-engine, crash), coverage-guided generation, σ-signature family
-dedup, and per-engine drivers (DuckDB, PostgreSQL, SQLite, DataFusion,
-TiDB), plus the repair_bench patch/localization benchmark.
+The code that found these bugs is the original CoevoDB LLM Hunter/Fixer
+co-evolution testing framework. It is kept as a baseline arm at
+`framework/surprise/baselines/coevodb_v1/`. The research codebase has
+moved to the surprise-driven framework in `framework/surprise/`: a
+falsifiable theory predicts a failure probability for every experiment,
+Hunter selects experiments by information value, and labels come only
+from seven oracles plus CVE (the LLM never labels). See
+[framework/surprise/ARCHITECTURE.md](framework/surprise/ARCHITECTURE.md).
+The patch/localization benchmark `repair_bench` is archived under
+`framework/archive/`.
 
-Run artifacts (`results/`, `repair_bench/runs/`) are gitignored — the
+Run artifacts (`results/`, `framework/archive/repair_bench/runs/`) are gitignored — the
 published bugs above are the curated outcome of ~200k executions.
 Machine-local paths (PG build prefixes, old venvs, the LLM key file)
 resolve through environment variables via `framework/util/paths.py` —
@@ -63,8 +66,9 @@ Secrets stay in the environment (`DEEPSEEK_API_KEY`), never in source.
 ```bash
 cd framework && pip install -r requirements.txt
 export DEEPSEEK_API_KEY=...
+python -m surprise.experiments.loop --out DIR --seed 0 --engine duckdb --max-minutes 10
 python main.py --engine duckdb --mode full --iterations 8
-pytest testing/ -q        # no API key required
+python -m pytest -q testing tests
 ```
 
 ## Running the reproducers
