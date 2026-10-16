@@ -22,14 +22,14 @@
 
 ## 进行中：S12（2026-10-16 开工）
 
-用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main（0dae74d，`s11-done-r2` 之后只多一个文档提交）建立；起点复跑 pytest 935 passed / 3 skipped。门槛 `gates/s12.py`（六组：`layout`、`moves`、`imports`、`isolation`、`old_arm`、`docs`）先写好，并在一个不入库的参考移动（`.orch/scratch/s12/ref_move.py`）上验证过能通过、对六种故意的违规都报失败。
+用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main（0dae74d，`s11-done-r2` 之后只多一个文档提交）建立；起点复跑（去掉密钥）pytest 935 passed / 3 skipped，GATES PASS 11/11（S01 7/7 … S11 17/17）。门槛 `gates/s12.py`（六组：`layout`、`moves`、`imports`、`isolation`、`old_arm`、`docs`）先写好，并在一个不入库的参考移动（`.orch/scratch/s12/ref_move.py`）上验证过能通过、对六种故意的违规都报失败。
 
 拆包（两个包并行，文件不重叠）：
 
 | 包 | 目标 | 允许路径 | 状态 |
 |---|---|---|---|
-| s12-move | 旧主循环独用部分移入 `surprise/baselines/coevodb_v1/`，`coevo/`、`repair_bench/` 归档到 `archive/`，`framework/main.py` 留转发入口，导入路径跟着改 | 被移动的文件、`archive/**`、`coevodb_v1/**`、11 个只改导入的旧文件、`tests/test_surprise_s11_grid.py` 一处路径、`.gitignore` | 待派发 |
-| s12-docs | 根 README 的 Framework 一节、`framework/README.md`、`framework/AGENTS.md`、新写 `framework/surprise/ARCHITECTURE.md` | 这四个文件 | 待派发 |
+| s12-move | 旧主循环独用部分移入 `surprise/baselines/coevodb_v1/`，`coevo/`、`repair_bench/` 归档到 `archive/`，`framework/main.py` 留转发入口，导入路径跟着改 | 被移动的文件、`archive/**`、`coevodb_v1/**`、11 个只改导入的旧文件、`tests/test_surprise_s11_grid.py` 一处路径、`.gitignore` | 运行中 |
+| s12-docs | 根 README 的 Framework 一节、`framework/README.md`、`framework/AGENTS.md`、新写 `framework/surprise/ARCHITECTURE.md` | 这四个文件 | 返工 1 轮后合并（42a831e），已清理 |
 
 ## 最近完成会话：S11（2026-10-16）
 
