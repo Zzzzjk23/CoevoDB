@@ -4,12 +4,24 @@
 
 - The DeepSeek credential is supplied only through `DEEPSEEK_API_KEY`.
 - Interactive and new zsh shells load it from `~/.config/coevo/secrets.env` via `~/.zshenv`.
+- On this Windows machine the key is a user-level environment variable `DEEPSEEK_API_KEY`.
 - For a process that did not inherit the environment, run `source ~/.config/coevo/secrets.env` first.
 - Check availability without revealing the value: `[[ -n ${DEEPSEEK_API_KEY:-} ]]`.
 - The project configuration must reference `${DEEPSEEK_API_KEY}`; never copy the credential into source code, YAML, prompts, tests, command-line arguments, result archives, or logs.
 - Never display the secret file or print the variable. Do not enable shell tracing (`set -x`) while it is loaded. Redact `Authorization` headers and API keys from errors and diagnostics.
-- Run the existing DeepSeek-backed campaign from this directory with, for example: `python main.py --engine duckdb --mode full --rounds 3 --population-size 5 --queries-per-test 10`.
+- Run the existing DeepSeek-backed campaign from this directory with, for example: `python main.py --engine duckdb --mode full --iterations 3 --queries-per-iter 10`. That command is the old main loop (now at `surprise/baselines/coevodb_v1/main.py`; `main.py` forwards).
+- Surprise-framework LLM roles read the same variable through `surprise/roles/transport.py`. Roles are off by default; the loop turns one on with `--llm ROLE`.
 - If authentication needs checking, make a minimal request using the environment variable and report only the HTTP status or a boolean result, never response headers or the credential.
+
+## Repository layout
+
+The surprise-driven framework lives in `surprise/`. Start with
+`surprise/ARCHITECTURE.md`. Migration plan, session handoff, and
+decisions are in `surprise/docs/`. Two rules that apply everywhere:
+
+- Labels come only from the seven oracles plus CVE. The LLM never labels.
+- `surprise/harness/` and the constants in the run manifest are frozen.
+  Changing them requires asking the user first.
 
 ## PostgreSQL build harness
 
@@ -57,14 +69,14 @@
   (OldCommittedSxact summarization observed at ~800 committed txns even
   with `max_connections=10`; check `pg_locks` for `SIReadLock` with
   vxid `-1/0` to confirm summarization actually happened).
-- `scripts/pg_fdw_selfloop.py` diffs a foreign table looped back to the
+- `campaigns/pg_fdw_selfloop.py` diffs a foreign table looped back to the
   same server over postgres_fdw (host=<socket dir>, port=<port>, user
   mapping = current_user); deparse/remote-exec blind spot, clean baseline
   on all builds.
-- `scripts/pg_plan_cache.py --param-seeds seeds/pg_param_seeds.py` is the
+- `campaigns/pg_plan_cache.py --param-seeds seeds/pg_param_seeds.py` is the
   only way the generic-vs-custom plan differential is non-vacuous (the
   corpus carries no $n params).
-- `scripts/pg_eager_agg.py` is the 20devel-only eager-aggregation
+- `campaigns/pg_eager_agg.py` is the 20devel-only eager-aggregation
   differential: same-build `enable_eager_aggregate` on/off bag-equality,
   gated on EXPLAIN FORMAT JSON showing a `Partial Mode=Partial` aggregate
   below a Join node (run with `max_parallel_workers_per_gather=0` so a
@@ -73,17 +85,17 @@
   eager refuses groupingSets, DISTINCT/ORDER-BY aggs, non-partial aggs,
   SRFs, volatile args, queries where every baserel feeds an aggregate, and
   nullable-side pushes — those arms are logged `not_fired` by design.
-- `scripts/pg_am_diff.py` is the non-btree AM differential (GIN/GiST/
+- `campaigns/pg_am_diff.py` is the non-btree AM differential (GIN/GiST/
   SP-GiST/BRIN/hash/bloom index-scan bag ≡ seqscan bag; EXPLAIN gate for
-  the target AM). `scripts/pg_transform_probes.py` + `seeds/pg_transform_
-  probes.py` are the 52-case planner-transform suite (ece nullability
+  the target AM). `campaigns/pg_transform_probes.py` + `seeds/pg_transform_probes.py`
+  are the 52-case planner-transform suite (ece nullability
   folds, NOT IN→anti, outer-join reductions, SJE, RTE_RESULT, restart
-  loop). `scripts/pg_logical_loop.py` is the 3-tier logical-replication
+  loop). `campaigns/pg_logical_loop.py` is the 3-tier logical-replication
   oracle (test_decoding journal / pgoutput row-filter binary / real
-  2-datadir subscription). `scripts/pg_upgrade_mxact.py` tortures the
-  18.6→20devel multixact 32→64-bit rewrite. `scripts/pg_inject_sweep.py`
+  2-datadir subscription). `campaigns/pg_upgrade_mxact.py` tortures the
+  18.6→20devel multixact 32→64-bit rewrite. `campaigns/pg_inject_sweep.py`
   sweeps mid-mutation injection points on `pgmaster_inject`.
-- `scripts/pg_belief_audit.py` + `oracles/pg_plan_beliefs.py` +
+- `campaigns/pg_belief_audit.py` + `oracles/pg_plan_beliefs.py` +
   `seeds/pg_belief_cases.py` are the optimizer-belief auditor: EXPLAIN
   (VERBOSE + FORMAT JSON) extracts asserted planner beliefs (dropped
   quals, oj reduction, Inner Unique, Run Condition, partition pruning,
@@ -94,7 +106,7 @@
   ROWS (empty = belief holds). Recall gate: #19412/#19533/SAOP-inlining
   fire only on pre-fix builds; the memoize verbatim arm is a known live
   bug (asserted, wrong result on all builds).
-- `scripts/pg_belief_sweep.py --corpus <json>` runs discover_beliefs
+- `campaigns/pg_belief_sweep.py --corpus <json>` runs discover_beliefs
   over a whole corpus (auto-generates audits for inner_unique /
   partition_pruned / simple oj_reduced). Gotchas: Inner Unique claims
   uniqueness of the inner SUBPLAN output — skip the base-rel audit when
@@ -102,7 +114,7 @@
   inner subtree; partition audits must use ONE scanned sibling's quals +
   alias (siblings can carry different aliases); oj audits need a NOT
   NULL sentinel col (attnotnull) to spot null-extended rows.
-- `scripts/pg_belief_gen.py --prefix <p> --cases N --seed S` is the
+- `campaigns/pg_belief_gen.py --prefix <p> --cases N --seed S` is the
   belief-directed generator: 8 families (runcond/ojr/ojr2/lat/inline/
   iu/part/memoize) each carrying a plan-assertion predicate + an
   independent python evaluator (never trust a second SQL query — the
@@ -115,7 +127,7 @@
   about PARAM identity — two Params sharing one outer column is the
   BUG #17213-ext precondition, not two columns; memoize SETs need the
   `teardown` list or GUCs leak into the next case's plans.
-- `scripts/pg_execdiff.py --build <b> --cases N --seed S` is the
+- `campaigns/pg_execdiff.py --build <b> --cases N --seed S` is the
   executor-driver invariance oracle: same query through different
   executor driving modes (direct / work_mem=64kB spill / forced parallel
   / FETCH-1 portal / SCROLL+MOVE positioning / PREPARE generic-custom /
