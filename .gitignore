@@ -9,7 +9,7 @@ __pycache__/
 # Run artifacts (large, regenerated per campaign)
 /results/
 framework/results/
-framework/repair_bench/runs/
+framework/archive/repair_bench/runs/
 framework/artifacts/
 *.log
 .worktrees/

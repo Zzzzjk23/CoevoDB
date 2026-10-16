@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from util.paths import DUCKDB_SRC, KEYS_YML  # noqa: E402
 
 HERE = Path(__file__).resolve().parent

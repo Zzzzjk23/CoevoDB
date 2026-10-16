@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from evolution.playbook import Playbook, Rule  # noqa: E402
-from repair_bench.run_bench import call_llm, load_key  # noqa: E402
+from surprise.baselines.coevodb_v1.evolution.playbook import Playbook, Rule  # noqa: E402
+from archive.repair_bench.run_bench import call_llm, load_key  # noqa: E402
 
 FINDINGS = Path("results/manual_findings.jsonl")
 OUT = Path("results/playbook_seed_xeng.jsonl")

@@ -673,7 +673,7 @@ def test_no_llm_command_is_unchanged(tmp_path: Path) -> None:
     ]
     with pytest.raises(ValueError, match="mode"):
         baseline.command(out, seed=0, python=None, mode="nope")
-    text = (FRAMEWORK / "main.py").read_text(encoding="utf-8")
+    text = (FRAMEWORK / "surprise" / "baselines" / "coevodb_v1" / "main.py").read_text(encoding="utf-8")
     start = text.index('["full", "random_category", "no_llm"')
     end = text.index("]", start) + 1
     assert json.loads(text[start:end]) == list(baseline.OLD_MODES)

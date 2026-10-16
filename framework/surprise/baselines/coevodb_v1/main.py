@@ -20,19 +20,19 @@ from pathlib import Path
 import yaml
 
 from agents.bug_fixer import BugFixer
-from agents.bug_hunter import BugHunter
-from coverage.store import CoverageStore
+from surprise.baselines.coevodb_v1.agents.bug_hunter import BugHunter
+from surprise.baselines.coevodb_v1.coverage.store import CoverageStore
 from diagnosis.signature import SignatureEngine
-from evolution.bandit import CategoryBandit
-from evolution.co_evolution import CoEvolution
+from surprise.baselines.coevodb_v1.evolution.bandit import CategoryBandit
+from surprise.baselines.coevodb_v1.evolution.co_evolution import CoEvolution
 from evolution.dce import FamilyExpander
-from guidelines.llm_guideline import GuidelineGenerator
+from surprise.baselines.coevodb_v1.guidelines.llm_guideline import GuidelineGenerator
 from llm.ledger import ledger
 from oracles.cross_engine import CrossEngineOracle
 from oracles.db_runner import DuckDBRunner
 from oracles.differential import DifferentialOracle
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parents[3]
 
 
 def parse_args() -> argparse.Namespace:
@@ -266,7 +266,7 @@ def main() -> int:
     # iterations (and optionally across runs via --playbook-seed).
     playbook = None
     if args.mode.startswith("coevo"):
-        from evolution.playbook import Playbook
+        from surprise.baselines.coevodb_v1.evolution.playbook import Playbook
         if args.playbook_seed and args.playbook_seed.exists():
             playbook = Playbook.load(args.playbook_seed, max_rules=20)
             logger.info("playbook seeded with %d rules from %s",

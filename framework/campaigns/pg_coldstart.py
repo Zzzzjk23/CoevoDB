@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataclasses import asdict, is_dataclass
 
-from evolution.coverage import CoverageTracker, feature_tags, plan_ops
+from surprise.baselines.coevodb_v1.evolution.coverage import CoverageTracker, feature_tags, plan_ops
 from oracles.db_runner import QueryResult
 from oracles.plan_variant import PlanVariantOracle, POSTGRES_VARIANTS
 from oracles.tlp import TLPOracle, tlp_applicable
