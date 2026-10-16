@@ -16,13 +16,22 @@
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
-| S12 | Phase 7 收尾 | 完成 | s12-done | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
+| S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
 ## 最近完成会话：S12（2026-10-16）
 
-Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main 的 0dae74d 建立（`s11-done-r2` 之后只多一个记下方案 A 的文档提交）；起点独立复跑 935 passed / 3 skipped，GATES PASS 11/11。两个包都合并；不需要真实调用，没有重跑长跑。收尾合并回 main，tag `s12-done`。这是 SESSIONS 里的最后一个会话。
+Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main 的 0dae74d 建立（`s11-done-r2` 之后只多一个记下方案 A 的文档提交）；起点独立复跑 935 passed / 3 skipped，GATES PASS 11/11。两个包都合并；不需要真实调用，没有重跑长跑。收尾合并回 main，tag `s12-done`。这是 SESSIONS 里的最后一个会话。用户验收后另打 `s12-done-r2`（只多了验收记录，代码与门槛相同）；之后的工作从 `s12-done-r2` 起。
+
+**用户验收（2026-10-16）：** 用户的答复是"全部确认"。收尾消息里的五项人工检查都按编排者的建议定下，逐项见 DECISIONS 的 S12 验收一条：
+- `framework/main.py` 的转发入口保留；
+- 三处位置锚点（`PROJECT_DIR` 与两处 `sys.path`）算作移动允许的改动；
+- `evolution/__init__.py` 从 `archive.coevo.controller` 的再导出现在不动（删它算改逻辑，要断开这条链时另开小修）；
+- `framework/surprise/ARCHITECTURE.md` 照现在的样子接受，包括"Relation to the old system"一节的口径；
+- 下一步是规划正式实验，要定的事见文末"S12 之后"。
+
+下面"PI 已自行核查并定下的选择"五条也随之由用户确认。
 
 ### 交付与门槛
 
@@ -68,7 +77,9 @@ Claude Code 担任编排者，全部实现来自 grok 工作包。用户的指�
 - 旧模块的新名字：`surprise.baselines.coevodb_v1.{main, evolution.bandit, evolution.co_evolution, evolution.coverage, evolution.playbook, agents.bug_hunter, guidelines, coverage}`；`archive.coevo`、`archive.repair_bench`。旧名字（`coevo`、`guidelines`、`coverage`、`repair_bench`、`evolution.bandit` 等）都已导入不到。
 - 新框架的命令与 Python 接口没有变化，见 S11 一节"当前接口"；总览在 `framework/surprise/ARCHITECTURE.md`。
 
-### PI 已自行核查并定下的选择（用户可以推翻）
+### PI 已自行核查并定下的选择（用户已验收）
+
+**用户验收（2026-10-16）：下面五条，用户答复"全部确认"。** 它们从此是用户确认过的决定。
 
 用户的指示是"现在开始完成S12"，下面几条没有另行提问，按 CLAUDE.md"小的实现选择自己定"处理，每条在 DECISIONS 里有理由：
 
@@ -1373,7 +1384,7 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
-- **`evolution/__init__.py` 仍从 `archive.coevo.controller` 再导出 `CoEvolutionController`**：Hunter 导入 `evolution.dce` 时会连带导入整个归档的原型（移动前就如此）。仓库里没有任何地方用 `from evolution import CoEvolutionController`；删掉这一行能断开这条链，但算改旧代码的逻辑，要先问用户。
+- **`evolution/__init__.py` 仍从 `archive.coevo.controller` 再导出 `CoEvolutionController`**：Hunter 导入 `evolution.dce` 时会连带导入整个归档的原型（移动前就如此）。仓库里没有任何地方用 `from evolution import CoEvolutionController`；删掉这一行能断开这条链，但算改旧代码的逻辑，要先问用户。用户验收 S12 时定下：现在不动，要断开时另开小修。
 - **旧门槛与旧测试里按旧模块名列的检查已失去作用**：S08 / S09 门槛的 `LLM_MODULES` 里的 `agents.bug_hunter`、`evolution.co_evolution`、`guidelines`，S04 / S06 门槛 `FORBIDDEN_IMPORTS` 里的 `coevo`，`tests/test_surprise_s08_eval_baseline.py`、`test_surprise_s08_loop.py` 里的同类名单，移动之后这些名字不可能再出现在 `sys.modules` 里。S12 门槛的 `isolation` 组按新名字补上了同样的检查；旧门槛与旧测试没有改。
 - **`framework/` 下的历史文档仍是旧路径**：`RESEARCH_PLAN.md`、`BRIEF_coevo_framework.md`、`STATUS_AND_ROADMAP.md`、各份 PG 计划等描述的是迁移之前的系统，S12 只更新了两份 README、`AGENTS.md` 与新写的架构文档。
 - **`framework/AGENTS.md` 里 zsh 与 `~/.config/coevo/secrets.env` 的说明是原 Linux 开发机的**，保留未删；本机（Windows）的说法另加了一行。
@@ -1669,7 +1680,7 @@ S2、S3 踩到的，仍然有效：
 
 SESSIONS 的十二个会话到此全部完成。没有排定的 S13；接下来做什么由用户定。
 
-- **起点**：main 的最新提交（`s12-done`；用户验收之后若另打 `s12-done-r2`，从那里起）。开工检查照旧：主分支、tag、工作区；PG 参照（服务器停着时按 S3 一节的恢复命令启动，不重新 initdb）；`DEEPSEEK_API_KEY` 在 Windows 用户环境变量里。
+- **起点**：`s12-done-r2`（用户验收之后的 main；与 `s12-done` 相比只多了验收记录）。用户验收时确认的下一步是规划正式实验。开工检查照旧：主分支、tag、工作区；PG 参照（服务器停着时按 S3 一节的恢复命令启动，不重新 initdb）；`DEEPSEEK_API_KEY` 在 Windows 用户环境变量里。
 - **复跑**（在 `framework/` 下，去掉密钥）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 935 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (12/12 passed)`。
 - **门槛依赖仓库外的东西**（与 S11 相同）：`framework/results/s08/`（S8 的四个产物组与 S11 的 `ciao`）、`.src/` 两份源码检出（S9、S10 的若干组）、PostgreSQL 参照（S10 的若干组）、`.venvs/duckdb-1.1.3-full`（S11 `coverage`）。S12 自己的 `old_arm` 组从 git 导出 `s11-done-r2` 的旧代码来对照，不依赖仓库外的产物。
 - **正式实验之前要定的**（都在上面的未决问题里，摘要）：网格的规模与时长（24 小时正式实验不在任何会话的范围里）；SQLancer 的原始结果拷回 `results/sqlancer_strong/`（用户验收 S11 时定下）；价格表；harness 要不要加结果行数上限（冻结区，用户验收 S11 时定下"规划正式实验时再定"）；`RunData` 改流式读；网格的 `surprise` 格加墙钟强杀。
