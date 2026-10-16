@@ -16,9 +16,20 @@
 | S9 | Phase 5a LLM 网关、实现器、猜想者 | 完成 | s09-done；s09-done-r2（用户验收之后，S10 从这里起） | S09 12/12；pytest 692 passed, 3 skipped；GATES PASS 9/9 |
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
-| S12 | Phase 7 收尾 | 未开始（用户已选定共用原语按方案 A，见文末"下一会话的起点"） | | |
+| S12 | Phase 7 收尾 | 进行中（见下一节） | | |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S12（2026-10-16 开工）
+
+用户的指示是"现在开始完成S12"。会话分支 `session/s12` 从 main（0dae74d，`s11-done-r2` 之后只多一个文档提交）建立；起点复跑 pytest 935 passed / 3 skipped。门槛 `gates/s12.py`（六组：`layout`、`moves`、`imports`、`isolation`、`old_arm`、`docs`）先写好，并在一个不入库的参考移动（`.orch/scratch/s12/ref_move.py`）上验证过能通过、对六种故意的违规都报失败。
+
+拆包（两个包并行，文件不重叠）：
+
+| 包 | 目标 | 允许路径 | 状态 |
+|---|---|---|---|
+| s12-move | 旧主循环独用部分移入 `surprise/baselines/coevodb_v1/`，`coevo/`、`repair_bench/` 归档到 `archive/`，`framework/main.py` 留转发入口，导入路径跟着改 | 被移动的文件、`archive/**`、`coevodb_v1/**`、11 个只改导入的旧文件、`tests/test_surprise_s11_grid.py` 一处路径、`.gitignore` | 待派发 |
+| s12-docs | 根 README 的 Framework 一节、`framework/README.md`、`framework/AGENTS.md`、新写 `framework/surprise/ARCHITECTURE.md` | 这四个文件 | 待派发 |
 
 ## 最近完成会话：S11（2026-10-16）
 
