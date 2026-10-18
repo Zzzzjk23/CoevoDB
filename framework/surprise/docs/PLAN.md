@@ -5,14 +5,14 @@ Claude Doc 版本（含架构图与路线图）：https://claude.ai/code/artifac
 
 ## 1. 目标与总原则
 
-一句话策略：把旧系统里确定性的部分（执行器、oracle、最小化、干预二分、版本梯）冻结成环外评估器，在其上先建成"无 LLM 版"的惊讶闭环，再逐个接入六个 LLM 角色；旧主循环整体保留为"原 CoevoDB"对照组。
+一句话策略：把旧系统里确定性的部分（执行器、oracle、最小化、干预二分、版本梯）冻结成环外评估器，在其上先建成"无 LLM 版"的惊讶闭环，再逐个接入六个 LLM 角色；旧主循环整体保留为"原 CoevoDB"对照组。（2026-10-19 起不再评估原 CoevoDB，见 §9。）
 
-1. 并行新建，不原地改写。旧的 bandit + playbook + DCE 循环冻结成对照组。
+1. 并行新建，不原地改写。旧的 bandit + playbook + DCE 循环冻结成对照组。（正式实验不再用它作对照，见 §9。）
 2. 判定代码只搬不改。oracle、φ 基础词表、惊讶公式、接受规则进 harness 并记录哈希；LLM 只能调用不能修改。
 3. 无 LLM 版是第一个可运行里程碑（消融下界 + 可复现基线 + 最便宜的调试环境）。
 4. LLM 角色一次接一个，每个都能开关，对上消融表。
 5. 每次执行都留账（含通过、无效、被拒绝的提议）；所有指标只从账本计算。
-6. 先窄后宽：首发只打 DuckDB 与 DataFusion。
+6. 先窄后宽：首发只打 DuckDB 与 DataFusion。（正式实验扩到六个引擎，见 §9。）
 
 ## 2. 原代码现状（2026-10 快照）
 
@@ -115,7 +115,7 @@ CVE 的另一半（测量 oracle 覆盖哪些缺陷：召回基准、上游回�
 - Phase 3 理论 T 与惊讶（无 LLM）：版本空间（正例泛化 S，反例特化 G，身份一致才算正例）；新家族由 fix set / plan diff / 版本梯确定性初始化；R、Kᵛ、P_T、六类分诊（阈值冻结）；按代快照、编辑日志、自动回滚、负记忆、MDL。出口：离线喂入已知复现与 DCE 探针，惊讶量级约 6.6/4.3/1.0/0.07/0.01 比特；执行前识别重复；家族划分与人工账本一致度不低于 σ。
 - Phase 4 Hunter 与无 LLM 闭环：四类候选、value = P_valid × (D + β·U)、探索保底、降权与新颖性拒绝采样；新主循环。出口 M2：DuckDB 长 run 跑通，惊讶曲线锯齿，重复率低于原 CoevoDB，DuckDB 1.1.3 召回。
 - Phase 5 六个 LLM 角色：先建网关（缓存、种子、模型版本、按角色记账；输出缺预测即拒收）。顺序：实现器 → 假设猜想者（需 DuckDB/DataFusion 源码与读源码工具）→ 探索先验（Brier 校准）→ 迁移翻译者 → 词汇发明者（留出验收）→ oracle 发明者（经证明器或多引擎一致才进入 Equivalent query 的改写规则库；oracle 判定代码不变）。先单次结构化调用，Diagnoser 按需升级为工具智能体。出口 M3：角色可单独开关，闭环复现 DF-A → DF-B。
-- Phase 6 评估管线：全部指标从账本算（惊讶曲线、CIAO、分层冻结、跨代配对、LLM 预测准确率、Brier、猜想存活率、重复率、无效率、理论长度、留入/留出差距、边界吻合度、召回、成本）；CVE 的覆盖度量部分（已知 bug 召回基准、重放 seeds/ 里的上游回归测试）放在这里，不参与打标签；实验网格 臂×种子×24h×5 次，中位数 + Mann-Whitney U + Â₁₂；对照组 SQLancer、原 CoevoDB、纯 LLM 生成、无 LLM 版；离线去重对比改为原 CoevoDB 的 σ 去重 vs 执行前成员检验（SQLancer++ 暂不纳入）。出口 M4：RQ1–RQ6 指标一键生成。
+- Phase 6 评估管线：全部指标从账本算（惊讶曲线、CIAO、分层冻结、跨代配对、LLM 预测准确率、Brier、猜想存活率、重复率、无效率、理论长度、留入/留出差距、边界吻合度、召回、成本）；CVE 的覆盖度量部分（已知 bug 召回基准、重放 seeds/ 里的上游回归测试）放在这里，不参与打标签；实验网格 臂×种子×24h×5 次，中位数 + Mann-Whitney U + Â₁₂；对照组 SQLancer、原 CoevoDB、纯 LLM 生成、无 LLM 版；离线去重对比改为原 CoevoDB 的 σ 去重 vs 执行前成员检验（SQLancer++ 暂不纳入）。出口 M4：RQ1–RQ6 指标一键生成。（正式实验的设计见 §9 与 `EXPERIMENT.md`：不再评估原 CoevoDB，SQLancer 在服务器上重跑。）
 - Phase 7 收尾：旧循环移入 baselines/coevodb_v1/，共用原语只留一份；更新 README、架构文档、AGENTS.md。
 
 ## 6. 关键设计决策（建议）
@@ -139,16 +139,28 @@ CVE 的另一半（测量 oracle 覆盖哪些缺陷：召回基准、上游回�
 - 数据性质特征成本：按表缓存，只在规格涉及时计算。
 - CIAO 计算量：只在接受编辑时快照，重算按批抽样。
 - 旧代码隐性状态（PG autocommit、GUC 泄漏等，见 AGENTS.md）：保留 teardown/RESET 并写回归测试。
-- 范围蔓延：首发只做 DuckDB + DataFusion。
+- 范围蔓延：首发只做 DuckDB + DataFusion。（正式实验扩到六个引擎，见 §9。）
 - 调参自由度：预实验用独立种子，正式实验前冻结。
 
 ## 8. 已确认事项（2026-10-08）
 
 - 七类 oracle = TLP、NoREC、Plan variant、Index presence、Equivalent query、Version differential、Cross-DBMS differential，原代码都有实现，见 §3 逐项表。
 - "CVE 验证" = 原论文的 Contract-Verified Evidence，见 §3 标签流程；成本分层已定。
-- 首发引擎只做 DuckDB（1.5.5 + 1.1.3）与 DataFusion 54.0.0。
+- 首发引擎只做 DuckDB（1.5.5 + 1.1.3）与 DataFusion 54.0.0。（正式实验另加 SQLite、PostgreSQL、TiDB、MySQL，见 §9。）
 - 决策 3（行为画像定身份）、决策 11（跨引擎法定数即记 fail），以及 Equivalent query、Version differential 判 fail 的条件：采纳。
 - 新包名字与位置按推荐：`framework/surprise/`。
 - repair_bench 论文不再需要，整体归档。
 - SQLancer++ 对照暂不放入评估。
 - 不估工时。
+
+## 9. 正式实验的决定（2026-10-19，用户）
+
+设计全文在 `EXPERIMENT.md`，实施会话在 `SESSIONS.md` 的 S13–S25。与上文冲突处以本节为准。
+
+- 只评估新框架及其消融；原 CoevoDB 是早期草稿，淘汰，不再作对照组（改 §1 首句、第 1 条与 Phase 6 的对照组名单）。对照组：无 LLM 版、纯 LLM 生成、SQLancer。
+- 被测引擎扩到六个：DuckDB 1.5.5、DataFusion 54.0.0、SQLite 3.51.0、PostgreSQL 16.15、TiDB v8.5、MySQL 8.4 LTS；MariaDB 11.8 只作 MySQL 族的 Cross-DBMS 参照（改 §1 第 6 条、§7、§8 的"首发只做 DuckDB 与 DataFusion"）。新引擎沿用旧系统测过的版本线；DuckDB 与 DataFusion 不升版本。
+- 实验在 Linux 服务器上跑，实验期间专用；开发留在 Windows 本机。实验由用户自己在服务器上跑；Claude 只在搭环境与部署新引擎时、且服务器空闲时动服务器；grok 不登录服务器。
+- 规模：每格 24h × 5 个种子，按里程碑 E1–E7 分批，每个里程碑出一份报告；顺序为 DuckDB 主对比 → PostgreSQL → 其余；PostgreSQL 接入没赶上时服务器空等。
+- harness 分批解冻（PostgreSQL → DataFusion 与 SQLite → TiDB 与 MySQL），每次解冻后用新 harness 回放 E1 的一批记录，标签与身份逐条相同才算可比。不加结果行数上限。
+- SQLancer 在服务器上重跑（取代 S11 验收时"拷回原始结果"的决定）。LLM 调用不设上限，成本照实报告。
+- 新发现的缺陷在每个里程碑之后、到最新版复核过，交给用户提交上游。

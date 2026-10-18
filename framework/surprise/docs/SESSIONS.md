@@ -1,8 +1,10 @@
-# SESSIONS · 12 个实施会话
+# SESSIONS · 实施会话
 
 每个会话一节：范围、复用、门槛、不做什么。开场提示词见项目文档 `claude/coevodb-session-runbook.md`（所有会话共用一段，只换编号）。门槛脚本统一放在 `framework/surprise/gates/sNN.py`，退出码 0 = 通过。
 
 一个会话 = 一个可验收的交付物，不是固定工作量：提前做完也不顺手开下一个；做不完就拆成 S{n}a / S{n}b，共用同一个门槛。关键路径是 S1–S8，做完即得"新框架无 LLM 版"。
+
+S0–S12 是迁移到惊讶驱动框架的改造（已完成）。S13 起是正式实验：S13 定协议（`EXPERIMENT.md`），S14–S18 准备服务器与新引擎，S19–S25 跑里程碑 E1–E7 并出报告。正式实验阶段服务器上的分工见 `EXPERIMENT.md` §7。
 
 ---
 
@@ -205,3 +207,158 @@
 门槛 `gates/s12.py`：原 CoevoDB 臂在新位置可跑；s01 到 s11 的全部门槛仍通过。
 
 不做：新功能。
+
+---
+
+## S13 · 正式实验设计
+
+范围：
+- 把用户 2026-10-19 定下的正式实验设计写成 `framework/surprise/docs/EXPERIMENT.md`：引擎与版本、臂与消融、时长与种子、统计、调度与资源、里程碑与顺序、服务器分工、执行规则，末尾附门槛读取的机读清单。
+- `PLAN.md` 加 §9 记新决定，并在与之冲突的旧条目旁注明；本文件写 S13–S25；`HANDOFF.md`、`DECISIONS.md` 照常更新，HANDOFF 里由这些决定了结的未决问题注明去向。
+
+门槛 `gates/s13.py`：只核对文档。`EXPERIMENT.md` 的必备小节都在；机读清单里每个臂的每个配置键要么网格现在就认，要么写明由哪个会话补，每个引擎要么现在就是目标，要么写明由哪个会话接入，这些会话都在对应里程碑的前置里；按清单重算的格数与文中一致；正式种子与预实验种子互不重叠，也没在 `s12-done-r2` 的门槛与测试里出现过；本文件有 S13–S25 各节，每个里程碑的前置与运行会话都有对应一节；`PLAN.md` 有 §9；S13 的改动只在 `framework/surprise/docs/` 与门槛自己的两个文件里。
+
+不做：任何代码、环境改动、真实运行；`CLAUDE.md`、`ORCHESTRATION.md`（要改先问用户）。
+
+---
+
+## S14 · 服务器部署与双平台门槛
+
+范围：
+- Claude 经 `ssh 3090` 搭服务器环境（用户确认服务器空闲时）：服务器上建空的 git 仓库，本机推送 tag，服务器工作目录只检出 tag；用 uv 装 Python 3.13.9 与 `.venv`、`.venvs/duckdb-1.1.3`、`.venvs/duckdb-1.1.3-full`、`.venvs/datafusion-50.0.0`；SQLite 3.51.0 单独钉住（Linux 上标准库 `sqlite3` 用系统库，版本要与 Windows 上一致）；PG 16.15 参照服务器；JDK；`.src/` 两份源码检出；`framework/results/s08/` 拷过去。
+- 平台差异逐条记录；需要改的代码交给 grok 在本机 worktree 里改，两个平台都要绿。钉住的 S8 长跑产物与 Linux 对不上时，在服务器上按 S8 验收的办法重跑一份 Linux 的并另钉，Windows 的那份保留。
+- 写给用户的运行手册：在 tmux 里启动网格、查看状态、生成报告、压缩并拷回结果的命令。
+
+门槛 `gates/s14.py`：服务器上的环境版本表与约定一致；两个平台上 pytest 与 `gates.all` 都全绿；用户照运行手册在服务器上跑通一次 1 分钟的冒烟网格。
+
+不做：新功能；改旧代码的逻辑；动 harness。
+
+---
+
+## S15 · 实验基础设施
+
+范围：
+- 网格并行：固定并发度、块调度（同一引擎、同一种子下的全部臂为一批）、每格固定 CPU 份额与引擎线程数。
+- `surprise` 格加墙钟强杀；`RunData` 改成流式读（24h 约 7 万条记录）。
+- LLM 调用可以不设上限：网关的 `DEFAULT_MAX_CALLS` 与网格的 `max_calls` 都要能设成不限，默认行为不变。
+- 每个臂可选模型档（A11 用 strong 档）；`pure_llm` 跟随目标引擎。
+- 真正运行 SQLancer 的臂：固定 commit，日志里报出的用例转成 `SqlCase`，经同一套 CVE 画像换成同一种身份键；核实 SQLancer 是否支持 DataFusion。
+- 价格表：从 DeepSeek 官方价格页取，注明日期，接进网格的 `prices`。
+- 归档命令；运行手册补上并行与归档。
+- 改了 `experiments/` 等目录，按 S8 验收的办法重跑长跑、重钉，再跑 S8 的四个产物组与 S11 的 `ciao`。
+
+门槛 `gates/s15.py`：4 格并行冒烟；强杀；流式读的内存上限；SQLancer 臂在 DuckDB 上 10 分钟冒烟并产出家族键；换档开关；不限次数的 LLM 臂在缓存重放下跑通；旧门槛全绿。
+
+不做：新引擎；harness。
+
+---
+
+## S16 · PostgreSQL 目标（解冻 harness 第一批）
+
+范围：
+- 把 PostgreSQL 16.15 接成目标：`TARGET_ENGINES`、runner、plan variant（旧 PG 开关组）、Index presence（原生）、Version differential（PG 15 系列）、Cross-DBMS 参照（DuckDB、DataFusion、SQLite）、φ 计划提取、CVE 画像；种子用已有的 PG 语料。
+- 建新 manifest 并重新冻结（用户已同意分批解冻）。
+- 目标是在服务器跑 E1 的 3–5 天里做完；赶不上，服务器空等。服务器上的部署（装 PG 15、每格独立实例）与回放检查由 Claude 在用户确认服务器空闲时做。
+
+门槛 `gates/s16.py`：M1 式——`postgres/` 的已知复现判 fail 且身份正确、普通查询 pass、值依赖错误 invalid；七类 oracle 各给出三值或"不适用"；φ 跨进程稳定；回放检查（`EXPERIMENT.md` §8）通过；旧门槛全绿。
+
+不做：别的引擎。
+
+---
+
+## S17 · DataFusion 语料与 SQLite 目标（解冻第二批）
+
+范围：
+- 从 `.src/datafusion-54.0.0` 的 `.slt` 解析 DataFusion 种子语料。
+- 把 SQLite 3.51.0 接成目标：runner、plan variant（旧代码的 `SQLITE_VARIANTS`）、Index presence、Version differential（选定旧版并装环境）、Cross-DBMS 参照、φ 计划提取（EXPLAIN QUERY PLAN）、种子语料。
+- 多引擎运行（A12/A13）在 DuckDB + DataFusion + SQLite 上跑通。部署与回放检查同 S16。
+
+门槛 `gates/s17.py`：同 S16 的 M1 式检查（`sqlite/`、`datafusion/` 的已知复现）；DataFusion 运行有探索车道、不再 `exhausted`；回放检查通过；旧门槛全绿。
+
+不做：TiDB、MySQL。
+
+---
+
+## S18 · TiDB 与 MySQL 目标（解冻第三批）
+
+范围：
+- TiDB v8.5 与 MySQL 8.4 接成目标，MariaDB 11.8 接成参照：runner（TiDB 已有 `targets/tidb_runner.py`，MySQL、MariaDB 新写）、plan variant（优化器提示、`tidb_opt_*`、`optimizer_switch`）、Index presence（`USE/IGNORE INDEX`）、Version differential（TiDB v7.5、MySQL 8.0）、φ、sqlglot 方言、种子语料（TiDB 集成测试、mysql-test）。
+- TiDB 没有原生 Windows 版：代码在本机写，TiDB 部分的门槛在服务器空闲时跑。部署与回放检查同 S16。
+
+门槛 `gates/s18.py`：同 S16 的 M1 式检查（`tidb/`、`mysql/`、`mariadb/` 的已知复现）；MYSQL-A 与 MDB-A 的三票表决按预期判 `invalid`；回放检查通过；旧门槛全绿。
+
+不做：别的引擎。
+
+---
+
+## S19 · E1 DuckDB 主对比
+
+范围（S19–S24 都照这个做法）：
+- Claude 在本机按 `EXPERIMENT.md` §9 写好本里程碑的网格配置与运行单，提交并部署到服务器。
+- 用户照运行单在服务器上先跑预实验（2h，种子 9101、9102），把吞吐、标签稳定性与 LLM 用量发回；Claude 据此定并发度，写进协议。
+- 用户跑正式格、生成报告、把结果压缩拷回本机；Claude 核对结果，写分析报告与缺陷候选清单（在最新版上复核过）。
+- 本会话：DuckDB 1.5.5 上 `full`、`nollm`、`pure_llm`、`sqlancer` × 种子 1001–1005，20 格。
+
+门槛 `gates/s19.py`：拷回的结果里所有格 `done`；配置与 `EXPERIMENT.md` 一致；harness 哈希与部署时相同；报告的每个 RQ 节都有内容。
+
+不做：实验跑着时动服务器；改代码（发现的问题记进 HANDOFF）。
+
+---
+
+## S20 · E2 PostgreSQL
+
+范围：照 S19 的做法；PostgreSQL 16.15 上 4 个臂 × 5 个种子，20 格。前置 S16。
+
+门槛 `gates/s20.py`：同 S19。
+
+不做：同 S19。
+
+---
+
+## S21 · E3 DuckDB 机制
+
+范围：照 S19 的做法；DuckDB 1.5.5 上 A2–A11 × 5 个种子（50 格）与 A14 跨代配对（45 个 1 小时格，用 E1 的理论存储）。前置 E1。
+
+门槛 `gates/s21.py`：同 S19。
+
+不做：同 S19。
+
+---
+
+## S22 · E4 DuckDB 召回与理论质量
+
+范围：照 S19 的做法；DuckDB 1.1.3 上 4 个臂 × 5 个种子，20 格；另做人工真值抽样，供家族划分一致性。
+
+门槛 `gates/s22.py`：同 S19；另加每个已知缺陷的召回与首次发现时间写进报告。
+
+不做：同 S19。
+
+---
+
+## S23 · E5 嵌入式引擎泛化
+
+范围：照 S19 的做法；DataFusion、SQLite 各 4 个臂 × 5、A12/A13 × 5、SQLite 上 A3–A5 × 5，共 65 格（SQLancer 不支持 DataFusion 时少 5 格）。前置 S17。
+
+门槛 `gates/s23.py`：同 S19。
+
+不做：同 S19。
+
+---
+
+## S24 · E6 TiDB 与 MySQL
+
+范围：照 S19 的做法；TiDB、MySQL 各 4 个臂 × 5，共 40 格。前置 S18。TiDB 吃内存，并发可能只能 4 格。
+
+门槛 `gates/s24.py`：同 S19。
+
+不做：同 S19。
+
+---
+
+## S25 · E7 总报告
+
+范围：跨引擎总表、各里程碑结论汇总、缺陷清单（上报状态取自 `docs/UPSTREAM_ISSUES.md`）。
+
+门槛 `gates/s25.py`：报告里每个数字都能追溯到某个网格目录。
+
+不做：新的运行。
