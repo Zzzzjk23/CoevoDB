@@ -17,13 +17,15 @@
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
-| S13 | 正式实验设计 | 完成 | s13-done | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
+| S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
 ## 最近完成会话：S13（2026-10-19）
 
-Claude Code 担任编排者。S13 只写文档与门槛：没有派发 grok 包，没有真实调用，也没有运行实验。用户的指示是"开始做 S13"。设计在此前与用户的讨论里逐项定下，讨论稿在 Claude Doc（https://claude.ai/code/artifact/b1b40efa-a437-4839-aa25-a4e3a6845e63）。全部用户决定记在 `PLAN.md` §9 与 DECISIONS 的 S13 各条。会话分支 `session/s13` 从 `s12-done-r2` 建立。收尾合并回 main，tag `s13-done`，之后的工作从这里起。
+Claude Code 担任编排者。S13 只写文档与门槛：没有派发 grok 包，没有真实调用，也没有运行实验。用户的指示是"开始做 S13"。设计在此前与用户的讨论里逐项定下，讨论稿在 Claude Doc（https://claude.ai/code/artifact/b1b40efa-a437-4839-aa25-a4e3a6845e63）。全部用户决定记在 `PLAN.md` §9 与 DECISIONS 的 S13 各条。会话分支 `session/s13` 从 `s12-done-r2` 建立。收尾合并回 main，tag `s13-done`。用户验收后另打 `s13-done-r2`（只多了验收记录，代码与门槛相同），之后的工作从 `s13-done-r2` 起。
+
+**用户验收（2026-10-19）：** 用户的答复是"没有问题"。收尾消息里的五项人工检查都按编排者的说法定下，逐项见 DECISIONS 的 S13 验收一条：`EXPERIMENT.md` 的消融表与里程碑表、`PLAN.md` §9、`SESSIONS.md` 的 S14–S18 照现在的样子接受；`CLAUDE.md` 与 `ORCHESTRATION.md` 按建议在 S14 搭完服务器时一起改（届时把具体改动给用户看过再写入）。
 
 起点：第一次复跑 13 条测试失败。原因是 PG 参照服务器没在运行（`pg_ctl status` 退出码 3，测试报连接被拒），按 S3 一节的命令启动后（没有重新 initdb）重跑：pytest 935 passed, 3 skipped；GATES PASS 12/12（与 S12 收尾相同）。
 
@@ -74,7 +76,7 @@ Claude Code 担任编排者。S13 只写文档与门槛：没有派发 grok 包�
 
 ### 下一会话的起点：S14
 
-- 起点 `s13-done`。范围见 SESSIONS 的 S14 一节。
+- 起点 `s13-done-r2`。范围见 SESSIONS 的 S14 一节；收尾时连同 `CLAUDE.md`（"12 个实施会话"、服务器的引擎环境）与 `ORCHESTRATION.md`（grok 不登录服务器）的改动一起给用户看。
 - 开工前先问用户服务器是否空闲。Claude 只用 ssh 搭环境；grok 不登录服务器，需要改的代码照旧在本机 worktree 里由 grok 改。
 - PG 参照在本机重启后不会自己起来：开工检查先跑 `pg_ctl status`。
 
