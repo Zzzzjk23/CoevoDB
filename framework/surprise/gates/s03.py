@@ -43,6 +43,15 @@ def venvs_dir():
     return ROOT / '.venvs'
 
 
+def venv_python(name):
+    """The interpreter of ``.venvs/<name>``: ``Scripts/python.exe`` on Windows, ``bin/python`` elsewhere."""
+    root = venvs_dir() / name
+    for relative in ('Scripts/python.exe', 'bin/python'):
+        if (root / relative).exists():
+            return root / relative
+    return root / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+
+
 def require(condition, message):
     if not condition:
         raise AssertionError(message)
@@ -301,7 +310,7 @@ def check_version():
 
     from unittest.mock import patch
     from surprise.harness.oracles import version_differential as implementation
-    old_python = venvs_dir() / 'duckdb-1.1.3/Scripts/python.exe'
+    old_python = venv_python('duckdb-1.1.3')
     worker = Path(implementation.__file__).with_name('version_worker.py')
     payload = {'engine': 'duckdb', 'setup': list(ordered_case.setup), 'query': order_query}
     completed = subprocess.run([str(old_python), '-I', str(worker)], input=json.dumps(payload),
@@ -318,7 +327,8 @@ def check_version():
         with patch.object(implementation, '_run_worker', return_value=response):
             label_is(judge(ordered_case, 'version_differential', old_python=str(old_python)),
                      'invalid', 'harness_error')
-    require(not (venvs_dir() / 'datafusion-50.0.0/Lib/site-packages/duckdb').exists(), 'old DF environment polluted with DuckDB')
+    polluted = sorted((venvs_dir() / 'datafusion-50.0.0').glob('**/site-packages/duckdb'))
+    require(not polluted, 'old DF environment polluted with DuckDB')
     return 'F2 old/new measured bags and regression direction; both old venvs work; directionless mismatch invalid'
 
 
