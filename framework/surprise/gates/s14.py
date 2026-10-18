@@ -374,10 +374,12 @@ def check_env() -> str:
     detail = check_probe(live, table, linux=LINUX, where="server" if LINUX else "windows")
     if LINUX:
         return detail
+    # The recorded server probe proves the environment S14 pinned: after the tag, its spec.
+    pinned = spec(done_ref())
     recorded = load_json(EVIDENCE / "linux_env.json", "server probe")
     require(str(recorded.get("platform", "")).startswith("linux"), f"server probe platform {recorded.get('platform')!r}")
-    detail_linux = check_probe(recorded, table, linux=True, where="server (recorded)")
-    cross = check_cross(live, recorded, table)
+    detail_linux = check_probe(recorded, pinned, linux=True, where="server (recorded)")
+    cross = check_cross(live, recorded, pinned)
     return f"{detail}; {detail_linux}; {cross}"
 
 
