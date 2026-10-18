@@ -71,6 +71,19 @@ git status --short          # 必须为空
 
 本机的远程 `server` 指向 `3090:coevodb.git`。服务器工作目录的 `origin` 是 `~/coevodb.git`。S14 期间部署用的中间 tag 叫 `s14-deploy-N`。
 
+部署之后在服务器上记录一次，再拷回本机入库（也只在用户确认空闲时做）：
+
+```
+# 服务器
+cd ~/CoevoDB/framework
+../.venv/bin/python -m surprise.gates.s14 --record ~/s14-record   # 探针、pytest、全部门槛
+
+# Windows 本机，仓库根
+scp "3090:s14-record/*" framework/surprise/gates/s14_evidence/
+```
+
+门槛 s14 的 `linux` 组要求记录的提交与本机代码相同。打出 `s14-done` 之后，S14 的证据就不再改；后面的会话要验证服务器，把记录放进自己的证据目录。
+
 ## 4. 重建步骤
 
 服务器要重装时照这里做（全部在用户目录，不需要 sudo）。路径都相对 `~/CoevoDB`。

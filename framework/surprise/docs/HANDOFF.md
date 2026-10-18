@@ -22,17 +22,70 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 进行中：S14（2026-10-19）
+## 最近完成会话：S14（2026-10-19）
 
-Claude Code 担任编排者。用户的指示是"当前服务器3090空闲，开始搭建环境"（即开 S14，并确认了服务器空闲）。会话分支 `session/s14` 从 `s13-done-r2` 建立。环境、部署与运行手册写在新文件 `framework/surprise/docs/SERVER.md`；门槛 `gates/s14.py`（表在 `s14_cases.py`）。
+Claude Code 担任编排者。用户的指示是"当前服务器3090空闲，开始搭建环境"（即开 S14，并确认了服务器空闲）；重新记录之前又问过一次，用户答"空闲，开始吧"。会话分支 `session/s14` 从 `s13-done-r2` 建立，收尾合并回 main，tag `s14-done`。派发了一个 grok 包（`s14-posix-die`）。服务器上只做了搭环境与部署；冒烟网格由用户自己跑。
 
-已完成：
-- 服务器环境全部装好（全在 `~/CoevoDB` 下，没有 sudo）：裸仓库 `~/coevodb.git`、工作目录 `~/CoevoDB` 只检出 tag；uv；micromamba + conda-forge Python 3.13.9 底座；按 Windows 编译选项自编的 SQLite 3.51.0（source id 与 Windows 逐字相同）；四个 venv；PG 16.15（ICU 67.1，设置与 Windows 逐项相同，认证改 scram + `~/.pgpass`）；JDK 21；`.src/` 两份检出；`framework/results/s08/` 四个钉住的目录。细节与理由见 SERVER.md §1–§4。
-- 服务器上第一次全量运行发现三处平台差异（SERVER.md §6）：旧代码默认路径指向本机另一账号的 `/home/user/...`（环境变量覆盖，已解决）；S4 测试夹具 `die()` 在 POSIX 上用 SIGKILL（包 `s14-posix-die` 在修）；门槛 s03 写死 Windows 的 venv 路径（编排者已改）。
+### 交付与门槛
 
-- `s14-posix-die` 首轮通过并合并；服务器 venv 的间接依赖钉成 Windows 的版本。部署 `s14-deploy-1`（06a981a），服务器上 `python -m surprise.gates.s14 --record`：环境核对通过，pytest 935 passed, 3 skipped，GATES PASS 14/14；记录在 `gates/s14_evidence/`。本机同一代码：pytest 935 passed, 3 skipped；S01–S13 全过，S14 的 env、linux、docs、scope 通过。
+- **服务器环境**（全在 `~/CoevoDB` 下，没有 sudo，机器是多人共用的）：
+  - 代码：裸仓库 `~/coevodb.git`，工作目录 `~/CoevoDB` 只检出 tag。
+  - Python：micromamba + conda-forge 的 Python 3.13.9 作底座，uv 建四个 venv，包版本逐个钉成 Windows 上对应 venv 实际看到的版本（含间接依赖）。
+  - SQLite：按 Windows 那份库的编译选项自编 3.51.0，source id 与 Windows 逐字相同。
+  - PG 16.15：自编，ICU 67.1，设置与 Windows 逐项相同；认证用 scram + `~/.pgpass`；crontab `@reboot` 自启。
+  - 另有 JDK 21、`.src/` 两份检出、`framework/results/s08/` 四个钉住的目录。
+  - 细节与理由见新文件 `framework/surprise/docs/SERVER.md` §1–§4；§5 是用户运行手册，§7 是门槛读取的版本清单。
+- **`framework/surprise/docs/grids/s14_smoke.json`**（新）：一个不带 LLM 的 `surprise` 臂加一个读汇总的 `sqlancer` 臂，种子 7，1 分钟。
+- **包 `s14-posix-die`**（grok，首轮通过）：S4 测试夹具 `die()` 在 POSIX 上改用 `os._exit(code)`。
+- **编排者改门槛 s03**：venv 解释器与污染检查不再写死 Windows 布局。
+- **门槛 `gates/s14.py`**（表在 `s14_cases.py`）五组：
+  - `env`：现场探针对照 SERVER.md §7（Python、SQLite 版本、source id 与编译选项、四个 venv 的全部包、PG 设置与 ICU 排序版本、两份源码的 commit）。在服务器上另查 JDK、PG 没有 trust 规则、旧代码路径的覆盖、工作目录是干净的 tag 检出。在本机另查入库的服务器探针，并对照两边的 SQLite 编译选项（只差平台前缀）与 PG 设置。
+  - `linux`：入库的服务器记录（`--record` 写出）对应的提交与本机工作树代码相同；pytest 退出码 0、没有失败、skip ≤ 3；全部门槛 PASS。
+  - `smoke`：用户的冒烟网格（`--ingest-smoke` 导入）配置与 §5.6 相同，`done 1/1`，墙钟在 55–900 秒；manifest 是 Linux、钉住的引擎与旧引擎、PG 16.15、冻结的 harness 哈希、同一份代码（门槛自身除外，门槛核实网格不导入它）；报告各节齐全。
+  - `docs`：SERVER.md 各节次序；运行手册里的每条 `$PY -m` 命令存在且 `--help` 退出码 0；冒烟配置离线、1 分钟、一个种子。
+  - `scope`：自 `s13-done-r2` 起只改了 docs、门槛 s03 与 s14、证据目录和那个测试夹具；harness 与冻结清单没动。
+  - `linux`、`smoke` 两组在服务器上显示 N/A、不计数。
+  - 打出 `s14-done` 之后，`linux`、`smoke` 改为对照 tag：比较记录的提交与 tag 的代码，门槛清单与版本表取 tag 里的，证据自 tag 起不许改；`env` 组里入库的服务器探针也对照 tag 里的版本表。所以后面的会话改代码、加门槛，S14 照样是绿的。`env` 组的现场探针（本机，或在服务器上跑时的服务器）仍对照当前的 SERVER.md §7。
+- **证据** `gates/s14_evidence/`：服务器记录（`linux_env.json`、`linux_runs.json`、pytest 与门槛的日志）与 `smoke/`。
 
-待做：用户照 SERVER.md §5.6 跑冒烟网格，拷回后 `--ingest-smoke`；收尾时给用户看 `CLAUDE.md` 与 `ORCHESTRATION.md` 的改动（草稿在本会话，未写入）。
+最终复跑：
+
+| 平台 | 命令 | 结果 |
+|---|---|---|
+| 服务器（`s14-deploy-3`，7f35b42） | `python -m surprise.gates.s14 --record` | env 通过；pytest 935 passed, 3 skipped，退出码 0；GATES: PASS (14/14 passed) |
+| 本机（`session/s14`，代码同 7f35b42） | `../.venv/Scripts/python.exe -m pytest -q testing tests` | 935 passed, 3 skipped，退出码 0（与起点相同，skip 未增加） |
+| 本机 | `../.venv/Scripts/python.exe -m surprise.gates.all` | @@GATES@@ |
+| 服务器（用户，`s14-deploy-1`） | SERVER.md §5.6 冒烟网格 | `nollm/s7-r0` done，60.7 秒，78 条实验（37 pass、40 invalid、1 fail），1 个新族（Version differential）；第一次在 3 秒时被 Ctrl-C 打断，续跑时网格把那一格改名 `s7-r0.stale-1` 保留后重跑 |
+
+S8 钉住的 Windows 长跑产物在服务器上直接核对通过（S08 11/11），不需要另钉一份 Linux 的。
+
+### 平台差异
+
+SERVER.md §6 共四条，都已处理，没有放宽断言：
+1. 旧代码的默认路径指向这台机器上另一账号 `user` 的 `/home/user/...`：目录存在但不可读，`exists()` 抛 `PermissionError`。用环境变量把五个路径指到不存在的位置（`.orch/server.env`，`~/.bashrc` 第一行读入），旧代码不动。
+2. S4 测试夹具 `die()` 在 POSIX 上给自己发 SIGKILL，退出码恒为 -9。由包 `s14-posix-die` 修。
+3. 门槛 s03 写死了 Windows 的 venv 布局。
+4. 门槛 s14 自己：冒烟 `grid.json` 里 sqlancer 汇总存成绝对路径。
+
+### 与计划的偏差
+
+- SESSIONS 写"用 uv 装 Python 3.13.9"。实际用 conda-forge 的 Python 3.13.9 作底座：uv 的 Python 静态链接 SQLite 3.50.4，换不了；venv 仍由 uv 建，与 Windows 的结构（anaconda 底座 + uv venv）一致。
+- SQLite 3.51.0 是自编的：conda-forge 的 3.51.0 打过补丁，编译选项也不同，会改变 SQLite 参照的结果（例如 `sqrt(4)`）。
+- 服务器上 PG 用 scram + `~/.pgpass`，不用 trust：机器多人共用。DSN 不变，harness 与门槛都不用改。
+- 旧代码路径在服务器上靠环境变量覆盖（见平台差异第 1 条）。
+- Maven、SQLancer 本身与 Windows 本机的 JDK 留给 S15。
+- 门槛 s14 在导入冒烟后又改了两次（跨平台路径；打 tag 后对照 tag），每次都重新部署、重新记录（`s14-deploy-2`、`s14-deploy-3`），之前都问过用户服务器是否空闲。冒烟网格是在 `s14-deploy-1` 上跑的，与最终代码只差门槛与文档。
+- 没有写 `CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`：改动稿在收尾消息里给用户看，同意后在 `s14-done-r2` 写入。
+
+### 下一会话的起点：S15
+
+- 起点 `s14-done`（用户验收后是 `s14-done-r2`）。范围见 SESSIONS 的 S15 一节。
+- S15 改了 `experiments/` 等目录之后，要按 S8 验收的办法重跑长跑、重钉。要在服务器上验证新代码时：先问用户是否空闲，部署新 tag，跑 `python -m surprise.gates.s14 --record <目录>`（或 S15 自己的记录命令），拷回后在 S15 的门槛里核对；S14 的证据不要动（打 tag 后它只对照 `s14-done`）。
+- 改了环境（例如给 venv 加包）就要同时改 SERVER.md §7，两个平台都装上，否则在那个平台上跑 S14 的 `env` 组会失败。
+- 服务器上的 SQLancer 需要 Maven；SQLancer 的 commit 与 JDK 版本在 S15 定。
+- 开工检查：本机 `pg_ctl status`。
+- **用户的新决定（S14 期间，写进 PLAN §9 补充一条与 EXPERIMENT §7）**：服务器专用，部署不必先问是否空闲；实验也由 Claude 在服务器上起，次序仍按 SESSIONS（E1 在 S15 之后的 S19，预实验在前）；密钥沿用现有的，只走环境变量（本机用户环境里有 `DEEPSEEK_API_KEY`；传到服务器时经 ssh 标准输入进 tmux 会话的环境，不进命令行、文件与日志）。
+- **用户的指示**："S14验收后执行/clear，然后开始做S15，S15做完后继续做S19 E1"。S14、S15 的验收项照惯例由编排者自己定、打 `-r2`；`CLAUDE.md` 与 `ORCHESTRATION.md` 的改动仍等用户看过再写（见下面未决问题）。
 
 ## 最近完成会话：S13（2026-10-19）
 
@@ -1470,6 +1523,11 @@ S13 处理与新发现（2026-10-19）：
   4. 消融（E3）与 E1 的 `full`、`nollm` 不在同一批里跑，靠固定的每格 CPU 份额与线程数保证条件一致；报告里要写明。
   5. 本机重启后 PG 参照不会自己起来，S13 开工时碰上了（13 条测试失败）。开工检查先跑 `pg_ctl status`。
   6. 服务器上标准库 `sqlite3` 用系统库；版本与 Windows 上的 3.51.0 不同时，Cross-DBMS 的参照结果可能变，回放检查会过不了。S14 要单独钉住。
+- **S14 处理与新发现（2026-10-19）**：
+  - 上面第 6 条已解决：服务器上的 SQLite 3.51.0 按 Windows 的编译选项自编，source id 相同（SERVER.md §2）。
+  - 上面第 1 条仍待用户同意：`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`（DENY_BASH 加 ssh、scp、rsync、sftp）的改动稿在 S14 收尾消息里。用户后来改了服务器分工（PLAN §9 补充一条），改动稿已按新分工写。
+  - 新：`.gitignore` 的 `*.log` 会挡住证据目录里的日志；S14 的四个日志是 `git add -f` 加进去的。以后的证据日志同样要强制加入，或者在 S15 给 `.gitignore` 加一条例外（不在 S14 范围）。
+  - 新：本机 `.venv` 继承 anaconda 底座（`include-system-site-packages = true`），服务器的 venv 不继承、包逐个钉住。以后往 Windows 的 anaconda 里装或升级包，会让两边对不上，S14 的 `env` 组会在本机失败。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
