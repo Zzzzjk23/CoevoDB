@@ -1,0 +1,26 @@
+diff --git a/src/sqlancer/GlobalState.java b/src/sqlancer/GlobalState.java
+index 2b93012..af2c1fb 100644
+--- a/src/sqlancer/GlobalState.java
++++ b/src/sqlancer/GlobalState.java
+@@ -83,7 +83,7 @@ public abstract class GlobalState<O extends DBMSSpecificOptions<?>, S extends Ab
+     }
+ 
+     private ExecutionTimer executePrologue(Query<?> q) throws Exception {
+-        boolean logExecutionTime = getOptions().logExecutionTime();
++        boolean logExecutionTime = getOptions().logEachSelect() && getOptions().logExecutionTime();
+         ExecutionTimer timer = null;
+         if (logExecutionTime) {
+             timer = new ExecutionTimer().start();
+diff --git a/src/sqlancer/SQLGlobalState.java b/src/sqlancer/SQLGlobalState.java
+index 5340864..b531100 100644
+--- a/src/sqlancer/SQLGlobalState.java
++++ b/src/sqlancer/SQLGlobalState.java
+@@ -16,7 +16,7 @@ public abstract class SQLGlobalState<O extends DBMSSpecificOptions<?>, S extends
+ 
+     @Override
+     protected void executeEpilogue(Query<?> q, boolean success, ExecutionTimer timer) throws Exception {
+-        boolean logExecutionTime = getOptions().logExecutionTime();
++        boolean logExecutionTime = getOptions().logEachSelect() && getOptions().logExecutionTime();
+         if (success && getOptions().printSucceedingStatements()) {
+             System.out.println(q.getQueryString());
+         }

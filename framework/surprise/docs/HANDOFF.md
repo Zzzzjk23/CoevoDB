@@ -22,6 +22,24 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
+## 进行中：S15（2026-10-19）
+
+用户的指示："S14验收后执行/clear，然后开始做S15，S15做完后继续做S19 E1"。会话分支 `session/s15` 从 `s14-done-r2` 建立；起点复跑 935 passed, 3 skipped，GATES PASS 14/14。门槛 `gates/s15.py`（表在 `s15_cases.py`，数据在 `s15_data/`）十一组，派发前写好。
+
+编排者已做的环境准备（不入库，在仓库根 `.orch/` 下）：Temurin JDK 21.0.12.1+1（与服务器同版本，SHA256 已核对）、Maven 3.9.16（SHA512 已核对）、SQLancer `ab328b75`（2026-10-14 的 main）构建成 `.orch/sqlancer/`，打了一个补丁（`docs/sqlancer/log-each-select.patch`：原代码只要关掉 `--log-each-select` 就断言失败，不关的话 `-cur.log` 每格 24 小时会有几十 GB），自带的 DuckDB JDBC 1.3.0.0 换成 `override/duckdb_jdbc-1.5.5.0.jar`（SHA1 已核对；日志头确认 `Database version: v1.5.5`）。SQLancer 支持 DataFusion，但走它自己的 Flight SQL 服务端，钉在 DataFusion 40.0.0，要测 54.0.0 得先移植那个 Rust 服务端（留给 S17 决定）。
+
+拆包（文件归属不重叠）：
+
+| 包 | 内容 | 允许路径 | 批次 |
+|---|---|---|---|
+| `s15-llm` | LLM 调用不设上限（`"unlimited"`）、整次运行换档（`--llm-tier`）、Windows 上 CTRL_BREAK 转成中断 | `roles/gateway.py`、`roles/constants.py`、`roles/runtime.py`、`experiments/loop.py`、`baselines/pure_llm.py`、测试 | 1 |
+| `s15-grid` | 并发、块调度、每格 CPU 与引擎线程、墙钟强杀、新配置键、SQLancer 运行臂的命令、价格表数据文件 | `experiments/grid.py`、`metrics/data/prices_deepseek.json`、测试 | 1 |
+| `s15-rundata` | `RunData` 与 `run_metrics`、离线去重改成流式读 | `metrics/rundata.py`、`metrics/rq.py`、`metrics/dedup.py`、测试 | 1 |
+| `s15-sqlancer` | 真正运行 SQLancer 的驱动：日志转 `SqlCase`、同一套 oracle 与 CVE 评判、报告接入 | `baselines/sqlancer_run.py`（新）、`metrics/report.py`、测试与测试数据 | 2（在 grid 合并后） |
+| `s15-archive` | 归档命令：打包、校验、精简 | `experiments/archive.py`（新）、测试 | 2 |
+
+全部合并后：按 S8 验收的办法重跑 3 小时长跑、重钉；补 SERVER.md 的并行、归档与 SQLancer 三节；服务器部署（SQLancer 拷过去）。
+
 ## 最近完成会话：S14（2026-10-19）
 
 Claude Code 担任编排者。用户的指示是"当前服务器3090空闲，开始搭建环境"（即开 S14，并确认了服务器空闲）；重新记录之前又问过一次，用户答"空闲，开始吧"。会话分支 `session/s14` 从 `s13-done-r2` 建立，收尾合并回 main，tag `s14-done`。派发了一个 grok 包（`s14-posix-die`）。服务器上只做了搭环境与部署；冒烟网格由用户自己跑。
