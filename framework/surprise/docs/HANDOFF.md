@@ -17,8 +17,66 @@
 | S10 | Phase 5b 其余四个 LLM 角色（M3） | 完成 | s10-done；s10-done-r2（用户验收之后，S11 从这里起） | S10 12/12；pytest 774 passed, 3 skipped；GATES PASS 10/10 |
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
+| S13 | 正式实验设计 | 完成 | s13-done | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 最近完成会话：S13（2026-10-19）
+
+Claude Code 担任编排者。S13 只写文档与门槛：没有派发 grok 包，没有真实调用，也没有运行实验。用户的指示是"开始做 S13"。设计在此前与用户的讨论里逐项定下，讨论稿在 Claude Doc（https://claude.ai/code/artifact/b1b40efa-a437-4839-aa25-a4e3a6845e63）。全部用户决定记在 `PLAN.md` §9 与 DECISIONS 的 S13 各条。会话分支 `session/s13` 从 `s12-done-r2` 建立。收尾合并回 main，tag `s13-done`，之后的工作从这里起。
+
+起点：第一次复跑 13 条测试失败。原因是 PG 参照服务器没在运行（`pg_ctl status` 退出码 3，测试报连接被拒），按 S3 一节的命令启动后（没有重新 initdb）重跑：pytest 935 passed, 3 skipped；GATES PASS 12/12（与 S12 收尾相同）。
+
+### 交付与门槛
+
+- `framework/surprise/docs/EXPERIMENT.md`（新）：正式实验协议。内容是引擎与版本、臂与消融（A1–A14）、时长与种子、统计、调度与资源、里程碑 E1–E7 与顺序、服务器分工、执行规则（协议冻结、回放检查、缺陷上报），末尾是门槛读取的机读清单（JSON）。
+- `PLAN.md`：加 §9"正式实验的决定"；与之冲突的六处旧条目旁注明"见 §9"，原文不删。
+- `SESSIONS.md`：标题改为"实施会话"，开头加一段说明 S13 起的阶段；新增 S13–S25 十三节。
+- 门槛 `gates/s13.py`（表在 `s13_cases.py`）七组，只核对文档、不跑引擎：
+  - `scope`：S13 只改了 docs 与门槛自己的两个文件；打了 `s13-done` 之后改为比较两个 tag，后面的会话改代码不影响这一组。
+  - `sections`：EXPERIMENT.md 的小节齐全、次序正确，并写明格数合计。
+  - `arms`：每个臂的每个配置键要么网格现在就认，要么写明哪个会话补；角色、`hunter`、`freeze` 取值合法；冻结臂只开允许的角色；A6–A10、A13 恰好去掉所说的角色。
+  - `engines`：每个引擎要么现在就是目标或参照，要么写明哪个会话接入；每个里程碑的前置包含它的引擎与臂需要的会话；纯 LLM 与 SQLancer 每格只用一个引擎。
+  - `cells`：按清单重算的格数与声明一致：215 个 24 小时格加 45 个 1 小时格。
+  - `seeds`：正式种子 1001–1005 与预实验种子 9101、9102 互不重叠，也没在 `s12-done-r2` 的门槛与测试里出现过。
+  - `sessions`：SESSIONS 有 S13–S25，里程碑的前置与运行会话都有对应一节且次序正确；PLAN 有 §9；本文件状态表有 S13 一行。
+
+最终复跑（在 `session/s13` 主检出区，在 `framework/` 下，去掉密钥）：
+
+| 命令 | 结果 |
+|---|---|
+| `../.venv/Scripts/python.exe -m pytest -q testing tests` | 935 passed, 3 skipped，退出码 0（与起点相同，skip 未增加） |
+| `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17、S12 6/6、S13 7/7；GATES: PASS (13/13 passed)，退出码 0 |
+
+### 读代码核实的现状（S14 起要用）
+
+| 事实 | 出处 | 影响 |
+|---|---|---|
+| harness 只认 `duckdb`、`datafusion` 为目标；`sqlite`、`postgres` 只是 Cross-DBMS 参照 | `surprise/harness/oracles/registry.py` 的 `TARGET_ENGINES`、`REFERENCE_ENGINES` | 加新目标都要解冻 harness（在 `HASHED_PATHS` 里），S16–S18 分三批 |
+| 种子语料只有 DuckDB 784 条、PG 308 条 | `seeds/corpus.json` | DataFusion 没有探索车道（M3 跑到第 32 条就 `exhausted`）；SQLite、TiDB、MySQL 也没有种子 |
+| `.src/datafusion-54.0.0` 里有 474 个 `.slt` | — | 格式与 DuckDB 的 `.test` 基本相同，S17 可复用 `seeds/parse.py` 的思路 |
+| 旧系统留下各引擎的已知复现：仓库根 `sqlite/` 3 条、`tidb/` 2 条、`mysql/` 1 条、`mariadb/` 2 条、`postgres/` 7 条 | — | S16–S18 拿来做 M1 式验证，也当召回真值 |
+| 旧系统测过的版本：SQLite 3.51.2、PG 16.2、TiDB v8.5.8、MySQL 8.4.2、MariaDB 11.8.9 | `docs/FINAL_REPORT.md`、各复现文件头 | 用户据此定了沿用旧版本线 |
+| 网格逐格串行；`surprise` 格没有墙钟强杀；`RunData` 一次读入 | `experiments/grid.py`、`metrics/rundata.py` | S15 补 |
+| LLM 调用有硬上限：网关默认每次运行 200 次（`DEFAULT_MAX_CALLS`），网格要求填 `max_calls` | `roles/constants.py`、`grid.py` | 用户定不设上限，S15 让两处都能设成不限 |
+| 每个角色用哪一档模型是常数（`*_TIER`），网格没有换档开关 | `roles/constants.py` | S15 补（A11 要用） |
+| `sqlancer` 臂只读汇总 JSON；Windows 本机没有 Java | `baselines/sqlancer.py` | S15 新写真正运行 SQLancer 的臂；本机与服务器都要装 JDK |
+| 代码按平台区分 `Scripts/python.exe` 与 `bin/python`，但从没在 Linux 上跑过 | `harness/manifest.py`、`harness/oracles/version_differential.py`、`gates/s01.py` 等 | S14 在服务器上跑全部门槛，平台差异逐条记录 |
+| 吞吐：DuckDB 3 小时 8600 条；理论存储 152 MB、账本 79 MB | S11 长跑 | 每格 24h 约 2 GB，全部约 0.45 TB，服务器只有 309 GB 可用：每个里程碑后归档 |
+| 服务器（`ssh 3090`，经 UNSW 跳板、免密钥，用户 `junkezhang`）：Ubuntu 24.04.4，8 核 16 线程，62 GB，可用 309 GB；有 git、tmux、rsync、Python 3.12.3；没有 uv、Java | 2026-10-19 只读核查 | S14 装 Python 3.13.9（uv）、JDK、全部 venv 与 PG |
+
+### 与计划的偏差
+
+- 原 CoevoDB 不再评估（PLAN 原定作对照组）；SQLancer 改为在服务器上重跑（S11 验收原定拷回原始结果）；被测引擎扩到六个。这些都是用户的新决定，已记进 PLAN §9。
+- S13 本身是在原定的十二个会话之后新开的。
+- 没有改 `CLAUDE.md` 与 `ORCHESTRATION.md`：按规定要用户同意。见未决问题"S13 新发现"第 1 条。
+- 讨论稿的本地副本 `S13_DRAFT.md` 不入库，已删除，内容全部并入 EXPERIMENT.md。
+
+### 下一会话的起点：S14
+
+- 起点 `s13-done`。范围见 SESSIONS 的 S14 一节。
+- 开工前先问用户服务器是否空闲。Claude 只用 ssh 搭环境；grok 不登录服务器，需要改的代码照旧在本机 worktree 里由 grok 改。
+- PG 参照在本机重启后不会自己起来：开工检查先跑 `pg_ctl status`。
 
 ## 最近完成会话：S12（2026-10-16）
 
@@ -1382,6 +1440,22 @@ SESSIONS.md 对 `gates/s04.py` 的要求是"confirmed 族全部判 fail 且身�
 
 ### 未决问题（之后的工作需要知道的）
 
+S13 处理与新发现（2026-10-19）：
+- **由 S13 的决定了结或改派的旧条目**（原条目不删，以这里为准）：
+  - "harness 要不要加结果行数上限"（S11 发现"单条实验可以很慢"）：用户定不加。
+  - "SQLancer 对照组只有转录的汇总"：改为在服务器上重跑，S15 建臂；原始结果不再拷回。
+  - "没有价格表"：S15 从官方价格页补；LLM 调用不设上限，成本照实报告。
+  - "`RunData` 一次读入整个账本"、"网格的 `surprise` 格没有墙钟强杀"：S15 处理。
+  - "M4 冒烟的数字不能拿来比较"、"纯 LLM 对照组在 DuckDB 1.5.5 上 16 条用例没有一个失败"、"离线去重与覆盖度量的门槛样本很小"：正式实验的规模与预算已定，见 `EXPERIMENT.md`。
+  - "原 CoevoDB 对照组在 Windows 上 Version differential 恒为 disabled"：原 CoevoDB 不再评估，不再影响结果。
+- **S13 新发现**：
+  1. `CLAUDE.md` 有两处过时：开头写"`SESSIONS.md`：12 个实施会话的范围"，"引擎环境"只有 Windows 路径、没有服务器。"grok 不登录服务器"目前只写在 `EXPERIMENT.md` §7 与 `PLAN.md` §9，没写进 `ORCHESTRATION.md` 与 `CLAUDE.md`。这两个文件要用户同意才能改；建议 S14 搭完服务器时一起改。
+  2. SQLancer 是否支持 DataFusion 没有核实（S15）；不支持的话 E5 少 5 格。
+  3. SQLite 的 Version differential 旧版没定（S17 选）。
+  4. 消融（E3）与 E1 的 `full`、`nollm` 不在同一批里跑，靠固定的每格 CPU 份额与线程数保证条件一致；报告里要写明。
+  5. 本机重启后 PG 参照不会自己起来，S13 开工时碰上了（13 条测试失败）。开工检查先跑 `pg_ctl status`。
+  6. 服务器上标准库 `sqlite3` 用系统库；版本与 Windows 上的 3.51.0 不同时，Cross-DBMS 的参照结果可能变，回放检查会过不了。S14 要单独钉住。
+
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
 - **`evolution/__init__.py` 仍从 `archive.coevo.controller` 再导出 `CoEvolutionController`**：Hunter 导入 `evolution.dce` 时会连带导入整个归档的原型（移动前就如此）。仓库里没有任何地方用 `from evolution import CoEvolutionController`；删掉这一行能断开这条链，但算改旧代码的逻辑，要先问用户。用户验收 S12 时定下：现在不动，要断开时另开小修。
@@ -1679,6 +1753,8 @@ S2、S3 踩到的，仍然有效：
 ### S12 之后
 
 SESSIONS 的十二个会话到此全部完成。没有排定的 S13；接下来做什么由用户定。
+
+（2026-10-19）S13 已据此定下正式实验，见 `EXPERIMENT.md`；接着是 S14，起点见文首 S13 一节。下面各条里与正式实验有关的事项，去向见未决问题的"S13 处理与新发现"一组。
 
 - **起点**：`s12-done-r2`（用户验收之后的 main；与 `s12-done` 相比只多了验收记录）。用户验收时确认的下一步是规划正式实验。开工检查照旧：主分支、tag、工作区；PG 参照（服务器停着时按 S3 一节的恢复命令启动，不重新 initdb）；`DEEPSEEK_API_KEY` 在 Windows 用户环境变量里。
 - **复跑**（在 `framework/` 下，去掉密钥）：`../.venv/Scripts/python.exe -m pytest -q testing tests` 应为 935 passed, 3 skipped；`../.venv/Scripts/python.exe -m surprise.gates.all` 应为 `GATES: PASS (12/12 passed)`。
