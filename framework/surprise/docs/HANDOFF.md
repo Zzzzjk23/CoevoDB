@@ -18,7 +18,7 @@
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
-| S14 | 服务器部署与双平台门槛 | 完成 | s14-done | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
+| S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -77,9 +77,20 @@ SERVER.md §6 共四条，都已处理，没有放宽断言：
 - 门槛 s14 在导入冒烟后又改了两次（跨平台路径；打 tag 后对照 tag），每次都重新部署、重新记录（`s14-deploy-2`、`s14-deploy-3`），之前都问过用户服务器是否空闲。冒烟网格是在 `s14-deploy-1` 上跑的，与最终代码只差门槛与文档。
 - 没有写 `CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`：改动稿在收尾消息里给用户看，同意后在 `s14-done-r2` 写入。
 
+### 验收（2026-10-19，编排者按用户指示自行定下）
+
+用户的指示是"S14验收后执行/clear，然后开始做S15，S15做完后继续做S19 E1"，人当时去睡了。照以往惯例，收尾的人工检查项由编排者定下，用户可以推翻：
+1. `SERVER.md` §5 运行手册照现在的样子接受：用户已照 §5.6 跑通冒烟；续跑会覆盖日志的问题已改成 `tee -a`。
+2. 接受 conda-forge 的 Python 底座与自编的 SQLite 3.51.0（偏离 SESSIONS 写的"用 uv 装 Python"）：理由见 SERVER.md §2，是让 SQLite 参照与 Windows 逐字相同的唯一办法。
+3. 接受服务器上 PG 用 scram + `~/.pgpass`：机器多人共用，DSN 不变。
+4. 接受门槛 s14 在打 tag 后对照 `s14-done`（本节"交付与门槛"最后一条）。
+5. **没有定**：`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py` 的改动（稿子在 `orch/s14/claude_md_proposal.md`）。按规定要用户同意，建议照稿写入。
+
+`CLAUDE.md` 的改动稿以外，S14 到此结束，tag `s14-done-r2`（只比 `s14-done` 多这段验收记录）。S15 从 `s14-done-r2` 起。
+
 ### 下一会话的起点：S15
 
-- 起点 `s14-done`（用户验收后是 `s14-done-r2`）。范围见 SESSIONS 的 S15 一节。
+- 起点 `s14-done-r2`。范围见 SESSIONS 的 S15 一节。
 - S15 改了 `experiments/` 等目录之后，要按 S8 验收的办法重跑长跑、重钉。要在服务器上验证新代码时：先问用户是否空闲，部署新 tag，跑 `python -m surprise.gates.s14 --record <目录>`（或 S15 自己的记录命令），拷回后在 S15 的门槛里核对；S14 的证据不要动（打 tag 后它只对照 `s14-done`）。
 - 改了环境（例如给 venv 加包）就要同时改 SERVER.md §7，两个平台都装上，否则在那个平台上跑 S14 的 `env` 组会失败。
 - 服务器上的 SQLancer 需要 Maven；SQLancer 的 commit 与 JDK 版本在 S15 定。
