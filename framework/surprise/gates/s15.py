@@ -584,8 +584,16 @@ def _double_run(source: Path, target: Path) -> None:
         db.commit()
 
 
+def checkout_root() -> Path:
+    """The main checkout (a worktree shares its git common dir), where results/ lives."""
+    common = Path(git("rev-parse", "--git-common-dir").strip())
+    if not common.is_absolute():
+        common = (REPO / common).resolve()
+    return common.parent
+
+
 def check_stream() -> str:
-    run = REPO / C.STREAM_RUN
+    run = checkout_root() / C.STREAM_RUN
     require((run / "ledger.sqlite").is_file(), f"{C.STREAM_RUN} is missing (kept by S11, not in git)")
     tmp = tmpdir("stream")
     single = _metrics_peak(run, tmp / "metrics.json")
@@ -663,8 +671,8 @@ def check_llm() -> str:
         reply = strong.call("implementer", "prompt", tier="fast", seed=0)
         require(echo.models == [C.MODELS["strong"]] and reply.tier == "strong" and reply.model == C.MODELS["strong"],
                 f"tier override: transport saw {echo.models}, reply {reply.tier}/{reply.model}")
-        require(strong.manifest().get("tier") == "strong" and Gateway(cache_dir=tmp / "g5").manifest().get("tier", "x") is None,
-                "manifest must record the tier override (None by default)")
+        require(strong.manifest().get("tier") == "strong" and Gateway(cache_dir=tmp / "g5").manifest().get("tier") is None,
+                "manifest must record the tier override (nothing by default)")
         plain = Gateway(cache_dir=tmp / "g6", transport=echo)
         plain.call("implementer", "prompt", tier="fast", seed=0)
         require(echo.models[-1] == C.MODELS["fast"], "without an override the role's tier must be used")
