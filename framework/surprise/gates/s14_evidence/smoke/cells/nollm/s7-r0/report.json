@@ -1,0 +1,54 @@
+{
+  "run_id": "loop-s7",
+  "seed": 7,
+  "engines": [
+    "duckdb"
+  ],
+  "oracles": [
+    "tlp",
+    "norec",
+    "plan_variant",
+    "index_presence",
+    "equivalent_query",
+    "version_differential",
+    "cross_dbms"
+  ],
+  "beta": 1.0,
+  "status": "budget_minutes",
+  "experiments": 78,
+  "choices": 78,
+  "started_at": "2026-10-18T18:00:04.727614+00:00",
+  "finished_at": "2026-10-18T18:01:04.929990+00:00",
+  "wall_s": 60.202376,
+  "labels": {
+    "pass": 37,
+    "invalid": 40,
+    "fail": 1
+  },
+  "lanes": {
+    "explore": 78
+  },
+  "triage": {
+    "no_information": 31,
+    "invalid": 40,
+    "new_family": 1,
+    "boundary_move": 6
+  },
+  "hypotheses": 1,
+  "families": 1,
+  "edits": {
+    "accepted": 0,
+    "rejected": 0,
+    "rolled_back": 0
+  },
+  "curve": [],
+  "teeth": [],
+  "new_families": 1,
+  "extractor": {
+    "calls": 6724,
+    "cache_hits": 6057,
+    "timeouts": 0,
+    "restarts": 0,
+    "errors": 0
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "constants": {
+    "CVE_ATTRIBUTION_WALL_TIMEOUT_S": 120.0,
+    "CVE_BISECT_MAX_EXECUTIONS": 120,
+    "CVE_MINIMIZE_MAX_EXECUTIONS": 30,
+    "CVE_PROFILE_WALL_TIMEOUT_S": 600.0,
+    "CVE_RERUN_ATTEMPTS": 5,
+    "CVE_RERUN_EXTENDED": 15,
+    "CVE_WALL_TIMEOUT_S": 120.0,
+    "QUERY_TIMEOUT_S": 10.0
+  },
+  "created_at": "2026-10-18T18:00:05.064786+00:00",
+  "environment": {
+    "engines": {
+      "datafusion": "54.0.0",
+      "duckdb": "1.5.5",
+      "sqlite": "3.51.0"
+    },
+    "old_engines": {
+      "datafusion": "50.0.0",
+      "duckdb": "1.1.3"
+    },
+    "packages": {
+      "datafusion": "54.0.0",
+      "duckdb": "1.5.5",
+      "psycopg2-binary": "2.9.13",
+      "pyarrow": "21.0.0",
+      "sqlglot": "30.21.0"
+    },
+    "platform": "linux",
+    "python": "3.13.9",
+    "references": {
+      "postgres": "16.15"
+    }
+  },
+  "git_commit": "06a981a4da01b54de07cdfd8aa08088dfcfa4ab5",
+  "harness": {
+    "algorithm": "sha256",
+    "files": {
+      "agents/bug_fixer.py": "ffd1561492528748e517dae8edc5a1ca7b53c46410e066ba846c2995e2ef9b9b",
+      "diagnosis/bisect.py": "7702881ab1b1650445b025ceb7d3bd651109b2a0c75310d5f1cf2773c5f9dbd6",
+      "oracles/_remote_exec.py": "dbc8a10da4358098ee3745cbfad233ea11ad5e84bb5004e205018c04c73f8703",
+      "oracles/cross_engine.py": "cd2b6e239b5ce727b20af5591c4063341703d38435fe883d548ed7128c2efbe8",
+      "oracles/db_runner.py": "936cf04597dd780554f5b814e199940682812be0987c6092352b0e5df8ed038f",
+      "oracles/determinism.py": "67ed010ba6c3d0fb6786d8b99a60742bbbc7cb7baaf7038298c13313001624dc",
+      "oracles/differential.py": "7231fc7688833a812cb4361ea4d4279769ad7365b399a45b2febcc22c7502a40",
+      "oracles/equivalence.py": "75a62c404850fa78acedf08c9795b67071f9ac9f3c69ae88e7a41418a6481a9f",
+      "oracles/errors.py": "e05b5766d89bc3f41a6dc5984a0fe97d7394f356fd74778fdd3a787c79a083bf",
+      "oracles/index_variant.py": "2cad77fdf0750e54130b344774748e9bd2b229a90fc7d319e06aa2ac51844da3",
+      "oracles/models.py": "634b1b3d603015917ce834496a0161195a2d05eeb2b4694c0b1b060ae62d2548",
+      "oracles/norec.py": "f128c456e147804eefe8b8ddc45141584dddc58ea2fd4dd364a51d2290f9906e",
+      "oracles/normalize.py": "b9423386113664a9aa026356f5f14e205ee18465e4016d9e2b0efe653f86421c",
+      "oracles/plan_variant.py": "4cef0adc9f63d376f3bd5910fd1711a0cb83641f05165048fa2f7519b674ddca",
+      "oracles/tlp.py": "85c47f85f3e1a9c7f8a8cdaae8c6809e68bb0d39f7b4e1d651d765b12c6e1c9f",
+      "oracles/tlp_groupby.py": "765be1ea9053b12b517fe3f137bcfcf3f2a3193047ad606e60bbaa4e4f126304",
+      "scripts/cross_engine.py": "168d379ec13a0e4d116abfef8cfdc001239b0e875e29161351f0822b02eeaeb2",
+      "surprise/harness/__init__.py": "aad4dd7c9f187aaba4a38a5ccdebfbd00fe8ebb78889a6d15d3c223a405d7951",
+      "surprise/harness/constants.py": "6c0f5743c7de342a135f477745b9683a98260cbc464be2abc323678fb146eab6",
+      "surprise/harness/contracts.py": "08a68417d2faaa508a6865a021f9979855e06aac70dcc34333461ef4377d1aac",
+      "surprise/harness/cve/__init__.py": "889224fc33ffa3f0abb48021eac5914e5c039705674cb26f0534e6d6ea193817",
+      "surprise/harness/cve/certify.py": "278a48d0dc06ced9a6d0abb4fc1e603166473d1d1ee191f3fdaf236255794b1a",
+      "surprise/harness/cve/criterion.py": "f43cc5f6502709f3c2b6ab68b7fa71ead6ee005869e0f64712f76cd8f0ae10d3",
+      "surprise/harness/cve/hypothesis.py": "62081d186579a3261439cf60d181a21c4973b6bcad74853c9cca17a151346422",
+      "surprise/harness/cve/isolate.py": "24488c0503d0a14f684c4bc6ec221740747f8430b491bb672c93547fc30e1d01",
+      "surprise/harness/cve/premise.py": "2d326c39e5753f4b807dba54acccd9d6c453a720ab261033a05efee8e24ecd8b",
+      "surprise/harness/cve/session.py": "1443bcdff275a45320de982c725a1c27ab87442e43cfdc4ab5e904f774f1fe45",
+      "surprise/harness/cve/shape.py": "87722c617dcf3d9980dc762843745655328b2326cfd58842955e419b97b39b06",
+      "surprise/harness/cve/tier3.py": "9f19e1d6d813cc49f7d64ab2439ec1ca6dfa32401b2e98f7afc1ab1b201c4636",
+      "surprise/harness/cve/worker.py": "a3d386daa014a8f60d5958c8829de85b9246c39413677ae9abb3583d1afc4984",
+      "surprise/harness/evaluate.py": "4b79c2d3d9beb96f456abf62057e7aeba670e2f342d1bcf9541ce1f9cb76ec47",
+      "surprise/harness/ledger.py": "a83ab0b0b29311eb11c58ad3ab4f98c1b7ca5e36cf7893855adff7d7c4c2ca53",
+      "surprise/harness/manifest.py": "185d48fde04ed1745c5d785ec4db6464a6a5df1df4f09ccfe992875e96a348cd",
+      "surprise/harness/oracles/__init__.py": "d591c34dc17f9bc69f459bde719db9ef5e8aaadc7270fc4b6bebfe37e6121ffd",
+      "surprise/harness/oracles/common.py": "2d8fea41fead99c5629e04c8cd49ef5f3a9efe90fc4064154090af344cc11ee5",
+      "surprise/harness/oracles/cross_dbms.py": "df29d36920b0b455463e1577499c3736f02337a957fefc72e4e21707c9775569",
+      "surprise/harness/oracles/equivalent_query.py": "af49a1c521e24dd848b3efc7ec0e5312ec0338664a3ba577f8aa588950a4a7ff",
+      "surprise/harness/oracles/forms.py": "8762527f5010f30fe8a7bd544078865f91481854769c028c63a9d201661feb69",
+      "surprise/harness/oracles/index_presence.py": "b7451c4651842c4b4a813f7a73114cad6eb960200df29fe020a3cefb777b09a2",
+      "surprise/harness/oracles/norec.py": "d0c0d9bf25847ed0ea7dbd0c84cd6329e62bcda6584b45178e443f7a13211197",
+      "surprise/harness/oracles/pg_reference.py": "128de61d36c73bc792da16762cf20f6240e675a7160c6edb19ef1c933141bded",
+      "surprise/harness/oracles/plan_variant.py": "8fe229204b9ac67ed22c2b59c9b37848a3ea12fe129df0749d7d82403f7cd77a",
+      "surprise/harness/oracles/registry.py": "eeca9eb11f9e5a26c9f642b65bad17f81ac5b576b4a2f3acfd6c73d2cc8c22a6",
+      "surprise/harness/oracles/rewrites.py": "3229fca604c40e1f9669f0639ddfb0714fe5061af047fc000b5f19558ba8c0da",
+      "surprise/harness/oracles/sound.py": "0b078d9c3aee4d704075602aceb628439ea27f404a831eac67771077b781f12c",
+      "surprise/harness/oracles/tlp.py": "f2dc9db9a151ca293b741a9c4ce3c9b252c354e9b1ca1dd1bb7320255def9965",
+      "surprise/harness/oracles/version_differential.py": "2cb0f5e0cb8c65ff725d3f16c4d4e77c8a0f72118d5e357ce25cbedb4b66d099",
+      "surprise/harness/oracles/version_worker.py": "689826e6e77d2e6d7bacbc2c20b416cb64f9420e71a044f78ea070f3a60f837d",
+      "targets/datafusion_runner.py": "69c3172034ad6675f649d1db5e31cc90aa85a78876f5bf7845dec3e542eea047",
+      "targets/duckdb_runner.py": "94047ec60dc7f4984c7e756ed1ed67b04b1a27234be765eb9304b3cabb35e5b9",
+      "targets/sqlite_runner.py": "1072b95dc055520391aa06b64b0e1476815eefcc229636ae460f586fe3e201f2"
+    },
+    "hash": "98b70d9e81fced1606a03b02e9db5ee574ecd7b8121f786c88f8380a333c12dc"
+  },
+  "hunter": {
+    "beta": 1.0,
+    "code": {
+      "surprise/diagnoser/__init__.py": "c2474a9a5ba043b0f6bf9b95ff7a8dd53cc0b4c022d755838435a01fd0a59f3e",
+      "surprise/diagnoser/constants.py": "0216ac5046670d7f4b3e09026c8845963b029eae4b75cab5e101a4fb8b215b06",
+      "surprise/diagnoser/diagnoser.py": "264d3c7b809ab313008f8826596ab2431d0296474d61569b5b86d541096da391",
+      "surprise/experiments/__init__.py": "05195bd4aed9bab4cf5a74cfe252b0af17280284e62f6eac5222997485687f19",
+      "surprise/experiments/grid.py": "2c6bb41d7d645f52ebacd3e5f84098e54504e6ac642ed7e0db767add43fe1459",
+      "surprise/experiments/loop.py": "2db4fac6a420bcb7c90a909129b23bd609ff3872b02c73317eef22371464884a",
+      "surprise/hunter/__init__.py": "b7e6922cc4ca13f801963dde143c4854bb815b907cf24e393dee9425c2769f9b",
+      "surprise/hunter/constants.py": "81d465650bc8f399d419062e7f26b2300ea8379c5e8b35338897df5967397af2",
+      "surprise/hunter/extractor.py": "2fa4790eebad7034f2a8db88b6c532210ea5314d1944f1be68eb1f88e4fb6ee9",
+      "surprise/hunter/hunter.py": "4b8681102b969bde6929b5660b494c9665f43e0b725bcbf6f3c690cb2661aeb4",
+      "surprise/hunter/operators.py": "41b1a0103f9f516b65a22db3a2bc5003af6000eee1594c85093208ec159e818f",
+      "surprise/hunter/phi_worker.py": "fa4f430a1918598e3ad6f6cf65f3c26823db5890dcb11473295a6c5ae5863031",
+      "surprise/hunter/scoring.py": "a02e2b138b839dfa08c48a87f3544335369d667c5a48e0459b165facfac3d53e"
+    },
+    "constants": {
+      "ADJACENT_FACTOR": 2.0,
+      "EMPTY_ROUNDS": 20,
+      "EXPLORE_EVERY": 5,
+      "EXPLORE_SEEDS_PER_STEP": 6,
+      "MIGRATE_PER_STEP": 8,
+      "MUTANTS_PER_STEP": 48,
+      "NOVELTY_FLOOR": 0.2,
+      "NOVELTY_WINDOW": 200,
+      "PARENTS_PER_HYPOTHESIS": 3,
+      "PHI_TIMEOUT_S": 30.0,
+      "PROBE_HALF": 50.0,
+      "SEED_MUTATIONS_PER_SEED": 1
+    },
+    "diagnoser": {
+      "CHECKPOINT_EVERY": 100,
+      "COMPRESS_EVERY": 100
+    },
+    "engines": [
+      "duckdb"
+    ],
+    "oracles": [
+      "tlp",
+      "norec",
+      "plan_variant",
+      "index_presence",
+      "equivalent_query",
+      "version_differential",
+      "cross_dbms"
+    ],
+    "seed": 7
+  },
+  "run_id": "loop-s7",
+  "schema": 1,
+  "theory": {
+    "code": {
+      "algorithm": "sha256",
+      "files": {
+        "surprise/theory/__init__.py": "3c19ad349fcce92ac82278e276288a09b2250db283e93683b8ff0329cd488de5",
+        "surprise/theory/__main__.py": "a45fc3a3eadc4c8e75754ef233f56b51ea890bc7b32481811d99214c07adf2bf",
+        "surprise/theory/constants.py": "c8cd8e3857ce25d1ad5d1e2bc07840c878921865e7c0301c690ebea1ce2f163c",
+        "surprise/theory/contracts.py": "54116fdc0eabfe21bf5e62b9a62e9f874ec62bfbd46267d86f4878012d19c5ce",
+        "surprise/theory/edits.py": "4871cf5551edd7eb7ad36f12306a25d4c989d8859f501a160b03c48dc2f8f13a",
+        "surprise/theory/hypothesis.py": "909ee69862b9ba5ea452d71a9916aa910bed4b1fe2283c27f32ffc34240600c0",
+        "surprise/theory/identity.py": "3948d61070abe47e6fb56d4c27701c45fe495c057c3b0421137d339a3c2fda30",
+        "surprise/theory/length.py": "050174bb05a894679489df6c224bf94a68e108a95f5d013d15fbfea0250ed593",
+        "surprise/theory/manifest.py": "e7945e9c3d37f7cb91a1c6c0caaf46ffb6e99c4bfcb193aaa5b7867b7a6d4f63",
+        "surprise/theory/predict.py": "9d3cfb874dd0c82b9cb9536e6e79ada50513efd31a854b7830893fa8d82af550",
+        "surprise/theory/residual.py": "44beffe3baee08162bd4a09ce9d96c0b14add67aeb7468a4d7fb563f50ff4c23",
+        "surprise/theory/store.py": "d58541fe955626e8b00e7356e3bc6f2b0ba9f1a8b3c746d128110990e2c22aac",
+        "surprise/theory/theory.py": "d78045bc20ee8fa1a7810d721379978eadbad291c6dd20d7e7ba10d004e0a99d",
+        "surprise/theory/validity.py": "ac2ff4e1be514c49d24c27be0bd7fe47fb4942565f7fbc6155fae6746c8ba19f",
+        "surprise/theory/vspace.py": "3aa570b695999288aa455523c09450ee2025b4fe716edf0bb209cea65e4911e4",
+        "surprise/theory/workbench.py": "ff8db837018bb35b2a0985d58069668f8dca1a69eea06743b82cefc4592195c1"
+      },
+      "hash": "848a2cb634766649875bcbfe3b3be7388025015cdb4eef63cb9fa35f6754a0b0"
+    },
+    "constants": {
+      "ACCEPT_HOLDOUT_MAX": 1000,
+      "ACCEPT_TOLERANCE_BITS": 1e-09,
+      "BETA": 1.0,
+      "MDL_HYPOTHESIS_BITS": 8.0,
+      "MDL_LITERAL_BITS": 7.4,
+      "P_CONFIRMED": 0.95,
+      "P_PENDING": 0.5,
+      "RESIDUAL_PRIOR_FAILS": 1.0,
+      "RESIDUAL_PRIOR_TESTS": 100.0,
+      "TRIAGE_HIGH_BITS": 2.0,
+      "TRIAGE_LOW_BITS": 0.5,
+      "VALIDITY_PRIOR_INVALID": 1.0,
+      "VALIDITY_PRIOR_TESTS": 10.0,
+      "VS_MAX_GENERAL": 64
+    },
+    "features": {
+      "code": {
+        "algorithm": "sha256",
+        "files": {
+          "surprise/features/__init__.py": "c90fb461ac40108c07006d3402aeb04c612c073cd13463183071e9f1d9ce9f05",
+          "surprise/features/__main__.py": "6f8d7411fbd33a1fb2b8402378c683a8cdfaa19e42fe78afe2a27f625b5ef047",
+          "surprise/features/ast.py": "fc96a592266b9e355ce7065165caafeda56a63fce55b31a037446a1f4fd7488f",
+          "surprise/features/data.py": "09c54b01c5196cd64ebdc15c21daa24342422d76f53b8c10ad7f618e7b3222e1",
+          "surprise/features/extract.py": "f9d606cf98dff55816b24f2999a5143de955df43a8e0f2dbe9550cd09e313809",
+          "surprise/features/limits.py": "52100a5e36b487f688d6b0c7ceaa3a62b1f65e35777e6b387db477975fd6819a",
+          "surprise/features/phi.py": "379fa0bb7e20684aaa9c67b3b6573ba325f08ca712104ed2a7dd79cfb936934e",
+          "surprise/features/plan.py": "f464c6299b3ee0776e4065357037696f863d2d5009bd5f5083dde96cc19dacb8",
+          "surprise/features/registry.py": "19a00e99908a73932529f45de41d007910c5c7b3b12c41ba107e72f81e84b550",
+          "surprise/features/spec.py": "7ff2217912d685141e5e16ab93737b9a84df9b77b48a637f6f844fe47b50c018",
+          "surprise/features/units.py": "dd119b87a221025ac7ce9f4d11d69728aeeab3f096914d0fd0ce77d669641ffa",
+          "surprise/features/vocabulary.py": "ee632796bcfb4d4bc0bcf1575dab443e5c26125a1d2c72f97a5a83797684d2ca"
+        },
+        "hash": "db2d5686d6d825133a51f32bcb8a64d180444062a9eb9ae617a55fd3d1fc815a"
+      },
+      "limits": {
+        "ISOLATION_TIMEOUT_S": 60.0,
+        "MAX_TABLE_ROWS": 10000,
+        "PROBE_TIMEOUT_S": 10.0
+      },
+      "vocab": "1e001c14a030e4d3d757c30004fa37c8c7085c11653e6fe1194638b523941e52"
+    },
+    "schema": 1
+  }
+}

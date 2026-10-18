@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "name": "s14-smoke",
+  "budget": {
+    "minutes": 1.0
+  },
+  "seeds": [
+    7
+  ],
+  "repeats": 1,
+  "reference": "nollm",
+  "window": 10,
+  "known": null,
+  "prices": null,
+  "arms": [
+    {
+      "name": "nollm",
+      "kind": "surprise",
+      "budget": {
+        "minutes": 1.0
+      },
+      "engines": [
+        "duckdb"
+      ],
+      "oracles": [
+        "tlp",
+        "norec",
+        "plan_variant",
+        "index_presence",
+        "equivalent_query",
+        "version_differential",
+        "cross_dbms"
+      ],
+      "bootstrap": null,
+      "freeze": null,
+      "hunter": null,
+      "theory_from": null,
+      "select_from": null,
+      "vocabulary": null,
+      "beta": null,
+      "llm": null,
+      "python": null,
+      "network": false
+    },
+    {
+      "name": "sqlancer",
+      "kind": "sqlancer",
+      "summary": "/home/junkezhang/CoevoDB/framework/surprise/baselines/data/sqlancer_summary.json",
+      "engine": "duckdb",
+      "network": false
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "name": "s14-smoke",
+  "budget": {"minutes": 1.0},
+  "seeds": [7],
+  "repeats": 1,
+  "reference": "nollm",
+  "window": 10,
+  "arms": [
+    {"name": "nollm", "kind": "surprise", "engines": ["duckdb"]},
+    {"name": "sqlancer", "kind": "sqlancer", "engine": "duckdb"}
+  ]
+}

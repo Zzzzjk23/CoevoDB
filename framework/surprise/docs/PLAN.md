@@ -159,7 +159,8 @@ CVE 的另一半（测量 oracle 覆盖哪些缺陷：召回基准、上游回�
 
 - 只评估新框架及其消融；原 CoevoDB 是早期草稿，淘汰，不再作对照组（改 §1 首句、第 1 条与 Phase 6 的对照组名单）。对照组：无 LLM 版、纯 LLM 生成、SQLancer。
 - 被测引擎扩到六个：DuckDB 1.5.5、DataFusion 54.0.0、SQLite 3.51.0、PostgreSQL 16.15、TiDB v8.5、MySQL 8.4 LTS；MariaDB 11.8 只作 MySQL 族的 Cross-DBMS 参照（改 §1 第 6 条、§7、§8 的"首发只做 DuckDB 与 DataFusion"）。新引擎沿用旧系统测过的版本线；DuckDB 与 DataFusion 不升版本。
-- 实验在 Linux 服务器上跑，实验期间专用；开发留在 Windows 本机。实验由用户自己在服务器上跑；Claude 只在搭环境与部署新引擎时、且服务器空闲时动服务器；grok 不登录服务器。
+- 实验在 Linux 服务器上跑，实验期间专用；开发留在 Windows 本机。实验由用户自己在服务器上跑；Claude 只在搭环境与部署新引擎时、且服务器空闲时动服务器；grok 不登录服务器。（分工部分被下面 2026-10-19 补充的一条取代。）
+- （2026-10-19 补充，用户，S14 期间）服务器现在是专用的：Claude 部署不必先问是否空闲，可以直接部署；实验也由 Claude 在服务器上起（用户的原话是"帮我新建一个tmux窗口然后跑起来正式实验"），但仍按 SESSIONS 的次序：E1 在 S15 之后的 S19 跑，预实验在前。密钥沿用现有的那个（"你可以直接使用"），只走环境变量 `DEEPSEEK_API_KEY`：经 ssh 的标准输入传进 tmux 会话的环境，不进命令行、文件与日志。grok 仍不登录服务器。
 - 规模：每格 24h × 5 个种子，按里程碑 E1–E7 分批，每个里程碑出一份报告；顺序为 DuckDB 主对比 → PostgreSQL → 其余；PostgreSQL 接入没赶上时服务器空等。
 - harness 分批解冻（PostgreSQL → DataFusion 与 SQLite → TiDB 与 MySQL），每次解冻后用新 harness 回放 E1 的一批记录，标签与身份逐条相同才算可比。不加结果行数上限。
 - SQLancer 在服务器上重跑（取代 S11 验收时"拷回原始结果"的决定）。LLM 调用不设上限，成本照实报告。
