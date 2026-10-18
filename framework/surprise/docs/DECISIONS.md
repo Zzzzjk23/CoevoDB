@@ -313,3 +313,4 @@
 | 2026-10-19 | S13 | Version differential 的旧版：PG 15 系列、TiDB v7.5、MySQL 8.0；SQLite 留给 S17 选（与目标之间修过最多逻辑缺陷的版本）。参照引擎必须保持 SQLite 3.51.0、PG 16.15，否则回放检查过不了 | 编排者 |
 | 2026-10-19 | S13 | 门槛 `gates/s13.py` 七组（scope、sections、arms、engines、cells、seeds、sessions），只核对文档；机读清单放在 `EXPERIMENT.md` 末尾，S19–S24 写网格配置时从那里抄。`scope` 组在 `s13-done` 打出后改为比较两个 tag，后面的会话改代码不会让它失败。写好后用 7 种故意的违规核对过，都报失败；其中"合计格数的两处说法不一致"第一次没抓到，改成文中每处合计都要与清单相同 | 编排者 |
 | 2026-10-19 | S13 | 不改 `CLAUDE.md` 与 `ORCHESTRATION.md`（要用户同意）：CLAUDE.md 开头的"12 个实施会话"与只有 Windows 的"引擎环境"已过时，"grok 不登录服务器"暂时只写在 EXPERIMENT.md §7 与 PLAN §9；记进 HANDOFF 的未决问题 | 编排者 |
+| 2026-10-19 | S13 | 收尾：在 `session/s13` 主检出区独立复跑（去掉密钥）935 passed, 3 skipped，退出码 0（与起点相同，skip 未增加）；S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17、S12 6/6、S13 7/7；GATES: PASS (13/13 passed)，退出码 0。没有派发 grok 包，没有真实调用，没有运行实验；讨论稿本地副本 `S13_DRAFT.md` 不入库、已删除。合并回 main，tag `s13-done` | 编排者 |
