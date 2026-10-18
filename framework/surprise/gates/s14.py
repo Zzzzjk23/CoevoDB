@@ -85,8 +85,17 @@ def write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
-def spec() -> dict[str, Any]:
-    text = read(C.SERVER)
+def done_ref() -> str | None:
+    """The s14-done tag once it exists: from then on the server evidence is checked against it.
+
+    Later sessions change code and add gates; the evidence keeps proving what it proved at
+    the tag (like the scope group, and S13's), and a new server check needs a new record.
+    """
+    return C.DONE_TAG if C.DONE_TAG in git("tag", "--list", C.DONE_TAG).split() else None
+
+
+def spec(ref: str | None = None) -> dict[str, Any]:
+    text = read(C.SERVER) if ref is None else git("show", f"{ref}:{C.SERVER}").replace("\r\n", "\n")
     require(C.SPEC_HEADING in text, f"SERVER.md: no heading {C.SPEC_HEADING!r}")
     tail = text.split(C.SPEC_HEADING, 1)[1]
     match = re.search(r"```json\n(.*?)\n```", tail, re.S)
@@ -311,36 +320,52 @@ def check_cross(windows: dict[str, Any], linux: dict[str, Any], table: dict[str,
     return f"SQLite compile options equal apart from {prefixes}; PG settings equal"
 
 
-def code_equal(commit: str, what: str, ignore: tuple[str, ...] = ()) -> None:
-    """``commit`` holds the same code as this work tree (docs, evidence, CLAUDE.md and ``ignore`` aside)."""
+def code_equal(commit: str, what: str, ignore: tuple[str, ...] = (), against: str | None = None) -> None:
+    """``commit`` holds the same code as ``against`` (default: this work tree).
+
+    Docs, evidence, CLAUDE.md and ``ignore`` are not code.
+    """
     require(isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit or "") is not None,
             f"{what}: bad commit {commit!r}")
     proc = subprocess.run(["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=REPO, capture_output=True, timeout=60)
     require(proc.returncode == 0, f"{what}: commit {commit[:12]} is not in this repository")
     skipped = (*C.NOT_CODE, *ignore)
     excludes = [f":(exclude){path.rstrip('/')}" for path in skipped]
-    names = git("diff", "--name-only", commit, "--", ".", *excludes).split()
-    require(not names, f"{what}: code differs from {commit[:12]}: {names[:8]}")
+    names = git("diff", "--name-only", commit, *([against] if against else []), "--", ".", *excludes).split()
+    require(not names, f"{what}: code differs from {commit[:12]} ({against or 'work tree'}): {names[:8]}")
+    if against:
+        return
     untracked = [path for path in git("ls-files", "--others", "--exclude-standard").split("\n") if path.strip()]
     stray = [path for path in untracked if not any(path.startswith(prefix) or path == prefix for prefix in skipped)]
     require(not stray, f"{what}: untracked files outside the docs and evidence: {stray[:8]}")
 
 
-def gates_importers() -> list[str]:
-    """Tracked Python files that import the gates although the grid may run them."""
+def evidence_unchanged(ref: str) -> None:
+    """The evidence is byte-for-byte what was committed at ``ref``."""
+    changed = git("diff", "--name-only", ref, "--", C.EVIDENCE).split()
+    changed += git("ls-files", "--others", "--exclude-standard", "--", C.EVIDENCE).split()
+    require(not changed, f"evidence changed since {ref}: {changed[:8]}")
+
+
+def gates_importers(commit: str) -> list[str]:
+    """Python files in ``commit``, outside the gates and the tests, that import the gates."""
     pattern = re.compile(r"surprise\.gates|from \.+gates\b|import gates\b")
+    hits = git("grep", "-l", "-F", "gates", commit, "--", "framework/*.py", check=False).split("\n")
     found = []
-    for path in git("ls-files", "--", "framework/*.py").split("\n"):
-        path = path.strip()
+    for hit in hits:
+        path = hit.strip().split(":", 1)[-1]
         if not path or any(path.startswith(prefix) for prefix in C.NOT_RUN_BY_GRID):
             continue
-        if pattern.search((REPO / path).read_text(encoding="utf-8", errors="replace")):
+        if pattern.search(git("show", f"{commit}:{path}")):
             found.append(path)
     return found
 
 
-def gate_names() -> list[str]:
-    return sorted(path.stem for path in GATES_DIR.iterdir() if GATE_RE.match(path.name))
+def gate_names(ref: str | None = None) -> list[str]:
+    if ref is None:
+        return sorted(path.stem for path in GATES_DIR.iterdir() if GATE_RE.match(path.name))
+    listed = git("ls-tree", "--name-only", ref, GATES_DIR.relative_to(REPO).as_posix() + "/").split("\n")
+    return sorted(Path(path).stem for path in listed if GATE_RE.match(Path(path.strip()).name))
 
 
 def check_env() -> str:
@@ -357,10 +382,13 @@ def check_env() -> str:
 
 
 def check_linux() -> str:
+    ref = done_ref()
+    if ref:
+        evidence_unchanged(ref)
     runs = load_json(EVIDENCE / "linux_runs.json", "server runs")
     probe_record = load_json(EVIDENCE / "linux_env.json", "server probe")
     commit = runs.get("commit")
-    code_equal(commit, "server runs")
+    code_equal(commit, "server runs", against=ref)
     require((probe_record.get("git") or {}).get("commit") == commit, "server probe and runs are from different commits")
     pytest = runs.get("pytest") or {}
     require(pytest.get("exit") == 0, f"server pytest exit {pytest.get('exit')!r}: {pytest.get('summary')!r}")
@@ -369,16 +397,16 @@ def check_linux() -> str:
     require(isinstance(pytest.get("skipped"), int) and pytest["skipped"] <= C.SKIP_MAX,
             f"server pytest skipped {pytest.get('skipped')!r} > {C.SKIP_MAX}")
     gates = runs.get("gates") or {}
-    names = gate_names()
+    names = gate_names(ref)
     results = gates.get("results") or {}
     require(gates.get("exit") == 0, f"server gates.all exit {gates.get('exit')!r}: {gates.get('summary')!r}")
-    require(sorted(results) == names, f"server gates ran {sorted(results)}, this tree has {names}")
+    require(sorted(results) == names, f"server gates ran {sorted(results)}, {ref or 'this tree'} has {names}")
     failing = sorted(name for name, result in results.items() if result != "PASS")
     require(not failing, f"server gates failing: {failing}")
     expected = f"GATES: PASS ({len(names)}/{len(names)} passed)"
     require(gates.get("summary") == expected, f"server gates summary {gates.get('summary')!r} != {expected!r}")
-    return (f"server at {runs.get('tag') or commit[:12]} (same code as this tree): pytest {pytest.get('summary')}; "
-            f"{expected}")
+    return (f"server at {runs.get('tag') or commit[:12]} (same code as {ref or 'this tree'}): "
+            f"pytest {pytest.get('summary')}; {expected}")
 
 
 def portable_grid(config: dict[str, Any]) -> dict[str, Any]:
@@ -409,17 +437,20 @@ def check_smoke() -> str:
 
     from . import s11_cases
 
+    ref = done_ref()
     root = EVIDENCE / "smoke"
-    table = spec()
+    table = spec(ref)
     grid = load_json(root / "grid.json", "smoke grid.json")
-    expected = load_config(REPO / C.SMOKE_CONFIG)
-    require(portable_grid(grid) == portable_grid(expected), "smoke grid.json is not the config in SERVER.md 5.6")
+    if ref:
+        # Compared with the config at the tag; later sessions may change load_config's output.
+        evidence_unchanged(ref)
+    else:
+        expected = load_config(REPO / C.SMOKE_CONFIG)
+        require(portable_grid(grid) == portable_grid(expected), "smoke grid.json is not the config in SERVER.md 5.6")
     status = (root / "status.txt").read_text(encoding="utf-8").replace("\r\n", "\n").split("\n") \
         if (root / "status.txt").is_file() else []
     want = [f"{cell} done" for cell in C.SMOKE_CELLS] + [f"done {len(C.SMOKE_CELLS)}/{len(C.SMOKE_CELLS)}"]
     require([line for line in status if line] == want, f"smoke status {status!r} != {want!r}")
-    importers = gates_importers()
-    require(not importers, f"code the grid may run imports the gates: {importers[:8]}")
     frozen = load_json(REPO / C.FROZEN_MANIFEST, "frozen manifest")["harness"]["hash"]
     pg_version = table["postgres"]["server_version_num"]
     pg_text = f"{int(pg_version) // 10000}.{int(pg_version) % 10000}"
@@ -445,18 +476,20 @@ def check_smoke() -> str:
         require((environment.get("references") or {}).get("postgres") == pg_text,
                 f"{cell}: PostgreSQL reference {environment.get('references')}")
         require((manifest.get("harness") or {}).get("hash") == frozen, f"{cell}: harness hash is not the frozen one")
-        code_equal(manifest.get("git_commit"), f"{cell} manifest", ignore=C.SMOKE_NOT_RUN)
+        code_equal(manifest.get("git_commit"), f"{cell} manifest", ignore=C.SMOKE_NOT_RUN, against=ref)
+        importers = gates_importers(manifest["git_commit"])
+        require(not importers, f"{cell}: code the grid may run imports the gates: {importers[:8]}")
         run_report = load_json(base / "report.json", f"{cell} report.json")
         require(isinstance(run_report.get("experiments"), int) and run_report["experiments"] > 0,
                 f"{cell}: experiments {run_report.get('experiments')!r}")
     report = load_json(root / "report.json", "smoke grid report")
     missing = [key for key in s11_cases.REPORT_KEYS if key not in report]
     require(not missing, f"smoke report misses {missing}")
-    arms = sorted(arm["name"] for arm in expected["arms"])
-    require(sorted(report["arms"]) == arms and report["reference"] == expected["reference"],
+    arms = sorted(arm["name"] for arm in grid["arms"])
+    require(sorted(report["arms"]) == arms and report["reference"] == grid["reference"],
             f"smoke report arms {sorted(report['arms'])}, reference {report.get('reference')!r}")
     return (f"{len(C.SMOKE_CELLS)} cell(s) done on Linux with the frozen harness and pinned engines, "
-            f"same code as this tree apart from the gates (nothing the grid runs imports them); "
+            f"same code as {ref or 'this tree'} apart from the gates (nothing the grid runs imports them); "
             f"report has {len(s11_cases.REPORT_KEYS)} sections")
 
 
@@ -475,18 +508,17 @@ def check_docs() -> str:
     require(used, "runbook has no $PY -m commands")
     seen = set()
     for module, sub in used:
-        require(module in C.RUNBOOK_COMMANDS, f"runbook uses unknown module {module}")
+        # Later sessions may add commands (S15: archiving); each must exist and answer --help
+        # (argparse exits 2 on a subcommand it does not know).
         require(importlib.util.find_spec(module) is not None, f"runbook module {module} does not exist")
-        subs = C.RUNBOOK_COMMANDS[module]
-        if subs:
-            require(sub in subs, f"runbook: {module} {sub!r} is not one of {subs}")
-        seen.add((module, sub if subs else ""))
+        seen.add((module, sub if C.RUNBOOK_COMMANDS.get(module) else ""))
     for module, subs in C.RUNBOOK_COMMANDS.items():
         for sub in subs or ("",):
             require((module, sub) in seen, f"runbook never uses {module} {sub}".rstrip())
-            argv = [sys.executable, "-m", module, *([sub] if sub else []), "--help"]
-            proc = subprocess.run(argv, cwd=FRAMEWORK, capture_output=True, text=True, timeout=300)
-            require(proc.returncode == 0, f"{' '.join(argv[2:])}: exit {proc.returncode}")
+    for module, sub in sorted(seen):
+        argv = [sys.executable, "-m", module, *([sub] if sub else []), "--help"]
+        proc = subprocess.run(argv, cwd=FRAMEWORK, capture_output=True, text=True, timeout=300)
+        require(proc.returncode == 0, f"{' '.join(argv[2:])}: exit {proc.returncode}")
     smoke_path = C.SMOKE_CONFIG.split("framework/", 1)[1]
     require(smoke_path in runbook, f"runbook does not run {smoke_path}")
     config = load_config(REPO / C.SMOKE_CONFIG)

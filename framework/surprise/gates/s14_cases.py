@@ -61,7 +61,7 @@ OLD_CODE_DEFAULT_ROOT = "/home/user/"
 # The smoke grid (SERVER.md 5.6).
 SMOKE_CELLS = ("nollm/s7-r0",)
 # The smoke grid never runs the gates, so changing them does not make its record stale;
-# s14.check_smoke verifies that no code outside the gates and the tests imports them.
+# s14.check_smoke verifies that, in the smoke's commit, no code outside the gates and the tests imports them.
 SMOKE_NOT_RUN = ("framework/surprise/gates/",)
 NOT_RUN_BY_GRID = ("framework/surprise/gates/", "framework/tests/", "framework/testing/")
 SMOKE_MIN_WALL_S = 55.0
