@@ -1,0 +1,854 @@
+{
+ "arms": {
+  "nollm": {
+   "cells": [
+    "nollm/s7-r0"
+   ],
+   "kind": "surprise",
+   "options": {
+    "beta": null,
+    "bootstrap": null,
+    "budget": {
+     "minutes": 1.0
+    },
+    "engines": [
+     "duckdb"
+    ],
+    "freeze": null,
+    "hunter": null,
+    "kind": "surprise",
+    "llm": null,
+    "name": "nollm",
+    "network": false,
+    "oracles": [
+     "tlp",
+     "norec",
+     "plan_variant",
+     "index_presence",
+     "equivalent_query",
+     "version_differential",
+     "cross_dbms"
+    ],
+    "python": null,
+    "select_from": null,
+    "theory_from": null,
+    "vocabulary": null
+   }
+  },
+  "sqlancer": {
+   "cells": [],
+   "kind": "sqlancer",
+   "options": {
+    "engine": "duckdb",
+    "kind": "sqlancer",
+    "name": "sqlancer",
+    "network": false,
+    "summary": "/home/junkezhang/CoevoDB/framework/surprise/baselines/data/sqlancer_summary.json"
+   }
+  }
+ },
+ "cells": {
+  "nollm/s7-r0": {
+   "arm": "nollm",
+   "metrics": {
+    "cost": {
+     "executions": 78,
+     "input_tokens": 0,
+     "llm_calls": 0,
+     "output_tokens": 0,
+     "per_family": {
+      "executions": 78.0,
+      "llm_calls": 0.0,
+      "tokens": 0.0,
+      "usd": null
+     },
+     "usd": null,
+     "wall_s": 60.202376
+    },
+    "rq1": {
+     "duplicate_rate": 0.0,
+     "executions": 78,
+     "families": [
+      {
+       "elapsed_s": 42.74,
+       "key": "fix|duckdb|window_self_join",
+       "record_id": "loop-s7:46",
+       "seq": 46
+      }
+     ],
+     "families_per_1000": 12.820512820512821,
+     "families_per_hour": 59.79830430612905,
+     "family_count": 1,
+     "first_family": {
+      "elapsed_s": 42.74,
+      "seq": 46
+     },
+     "theory_families": [
+      "fix|duckdb|window_self_join"
+     ]
+    },
+    "rq2": {
+     "brier": 0.06534736842105264,
+     "brier_reference": 0.02562326869806094,
+     "calibration": [
+      {
+       "count": 32,
+       "fail_rate": 0.03125,
+       "hi": 0.05,
+       "lo": 0.0,
+       "mean_p": 0.01
+      },
+      {
+       "count": 0,
+       "fail_rate": null,
+       "hi": 0.2,
+       "lo": 0.05,
+       "mean_p": null
+      },
+      {
+       "count": 0,
+       "fail_rate": null,
+       "hi": 0.4,
+       "lo": 0.2,
+       "mean_p": null
+      },
+      {
+       "count": 6,
+       "fail_rate": 0.0,
+       "hi": 0.6,
+       "lo": 0.4,
+       "mean_p": 0.5
+      },
+      {
+       "count": 0,
+       "fail_rate": null,
+       "hi": 0.8,
+       "lo": 0.6,
+       "mean_p": null
+      },
+      {
+       "count": 0,
+       "fail_rate": null,
+       "hi": 0.95,
+       "lo": 0.8,
+       "mean_p": null
+      },
+      {
+       "count": 0,
+       "fail_rate": null,
+       "hi": 1.0,
+       "lo": 0.95,
+       "mean_p": null
+      }
+     ],
+     "curve": [
+      0.014499569695115089,
+      0.014499569695115089,
+      0.014499569695115089,
+      0.014499569695115089,
+      1.212731808569398,
+      0.34299971313007677,
+      0.014499569695115089
+     ],
+     "high_surprise": {
+      "count": 1,
+      "new_family": 1,
+      "share": 1.0,
+      "threshold": 4.0
+     },
+     "mean_surprise": 0.3445616539558761,
+     "teeth": [
+      4
+     ],
+     "valid": 38,
+     "window": 10
+    },
+    "rq3": {
+     "calls": {
+      "by_role": {},
+      "input_tokens": 0,
+      "network": 0,
+      "output_tokens": 0,
+      "total": 0
+     },
+     "calls_per_family": 0.0,
+     "conjectures": {
+      "registered": 0,
+      "rejected": 0,
+      "survival_rate": null,
+      "survived": 0,
+      "with_settled": 0
+     },
+     "families_via": {
+      "bet": 0,
+      "implement": 0,
+      "invented_feature": 0,
+      "llm_rule": 0,
+      "translate": 0
+     },
+     "predictions": {
+      "accuracy": null,
+      "broken": 0,
+      "kept": 0,
+      "open": 0,
+      "total": 0,
+      "void": 0
+     },
+     "pure_llm": null,
+     "timeline": [],
+     "tokens_per_family": 0.0,
+     "translations": {
+      "accuracy": null,
+      "broken": 0,
+      "kept": 0,
+      "total": 0
+     }
+    },
+    "rq4": {
+     "duplicate_rate": 0.0,
+     "edits": {
+      "accepted": 0,
+      "rejected": 0,
+      "rolled_back": 0
+     },
+     "in_out": {
+      "edits": 0,
+      "gap": null,
+      "mean_in": null,
+      "mean_out": null
+     },
+     "invalid": {
+      "by_oracle": {
+       "cross_dbms": 5,
+       "equivalent_query": 10,
+       "index_presence": 8,
+       "norec": 1,
+       "plan_variant": 6,
+       "tlp": 2,
+       "version_differential": 8
+      },
+      "by_reason": {
+       "insufficient_engines": 2,
+       "nondeterministic": 14,
+       "not_applicable": 3,
+       "query_error": 5,
+       "setup_error": 16
+      },
+      "count": 40,
+      "rate": 0.5128205128205128
+     },
+     "theory_length": [
+      {
+       "generation": 0,
+       "hypotheses": 1,
+       "length": 96.80000000000001,
+       "live": true
+      }
+     ]
+    },
+    "rq5": {
+     "arm": null,
+     "ciao": {
+      "above_mean": null,
+      "batches": [
+       0
+      ],
+      "below_mean": null,
+      "diagonal_mean": 0.015947686365885238,
+      "generations": [
+       0
+      ],
+      "matrix": [
+       [
+        0.015947686365885238
+       ]
+      ]
+     }
+    },
+    "rq6": {
+     "boundary": [
+      {
+       "classification": "too_narrow",
+       "extra": [
+        "ast:clause:order_by",
+        "ast:stmt:select",
+        "ast:window_fn:aggregate",
+        "data:type:integer",
+        "plan:HASH_JOIN",
+        "plan:ORDER_BY",
+        "plan:PERFECT_HASH_GROUP_BY",
+        "plan:PROJECTION",
+        "plan:SEQ_SCAN"
+       ],
+       "family": "duckdb|fix:window_self_join",
+       "missing": [],
+       "name": "F2"
+      }
+     ],
+     "recall": null
+    },
+    "run": {
+     "arm": null,
+     "engines": [
+      "duckdb"
+     ],
+     "experiments": 78,
+     "kind": "surprise",
+     "llm_roles": [],
+     "oracles": [
+      "tlp",
+      "norec",
+      "plan_variant",
+      "index_presence",
+      "equivalent_query",
+      "version_differential",
+      "cross_dbms"
+     ],
+     "run_id": "loop-s7",
+     "seed": 7,
+     "status": "budget_minutes",
+     "wall_s": 60.202376
+    }
+   },
+   "rep": 0,
+   "seed": 7,
+   "status": "done"
+  }
+ },
+ "external": {
+  "sqlancer": {
+   "checks": 7300000,
+   "engine": "duckdb",
+   "families_per_1000": 0.0,
+   "family_count": 0,
+   "kind": "sqlancer",
+   "transcribed": true,
+   "version": "1.5.5"
+  }
+ },
+ "grid": "s14-smoke",
+ "reference": "nollm",
+ "rq1": {
+  "arms": {
+   "nollm": {
+    "duplicate_rate": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    },
+    "families_per_1000": {
+     "max": 12.820512820512821,
+     "median": 12.820512820512821,
+     "min": 12.820512820512821,
+     "n": 1
+    },
+    "families_per_hour": {
+     "max": 59.79830430612905,
+     "median": 59.79830430612905,
+     "min": 59.79830430612905,
+     "n": 1
+    },
+    "family_count": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1
+    },
+    "first_family_minutes": {
+     "max": 0.7123333333333334,
+     "median": 0.7123333333333334,
+     "min": 0.7123333333333334,
+     "n": 1
+    }
+   },
+   "sqlancer": {
+    "duplicate_rate": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "families_per_1000": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    },
+    "families_per_hour": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "family_count": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    },
+    "first_family_minutes": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    }
+   }
+  },
+  "curves": {
+   "nollm/s7-r0": [
+    [
+     0.7123333333333334,
+     1
+    ]
+   ]
+  },
+  "metrics": [
+   "family_count",
+   "families_per_1000",
+   "families_per_hour",
+   "first_family_minutes",
+   "duplicate_rate"
+  ]
+ },
+ "rq2": {
+  "arms": {
+   "nollm": {
+    "brier": {
+     "max": 0.06534736842105264,
+     "median": 0.06534736842105264,
+     "min": 0.06534736842105264,
+     "n": 1
+    },
+    "brier_reference": {
+     "max": 0.02562326869806094,
+     "median": 0.02562326869806094,
+     "min": 0.02562326869806094,
+     "n": 1
+    },
+    "high_surprise_share": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1
+    },
+    "mean_surprise": {
+     "max": 0.3445616539558761,
+     "median": 0.3445616539558761,
+     "min": 0.3445616539558761,
+     "n": 1
+    },
+    "teeth": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1
+    }
+   },
+   "sqlancer": {
+    "brier": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "brier_reference": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "high_surprise_share": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "mean_surprise": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "teeth": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    }
+   }
+  },
+  "calibration": {
+   "nollm": [
+    {
+     "count": 32,
+     "fail_rate": 0.03125,
+     "hi": 0.05,
+     "lo": 0.0,
+     "mean_p": 0.01
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.2,
+     "lo": 0.05,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.4,
+     "lo": 0.2,
+     "mean_p": null
+    },
+    {
+     "count": 6,
+     "fail_rate": 0.0,
+     "hi": 0.6,
+     "lo": 0.4,
+     "mean_p": 0.5
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.8,
+     "lo": 0.6,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.95,
+     "lo": 0.8,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 1.0,
+     "lo": 0.95,
+     "mean_p": null
+    }
+   ],
+   "sqlancer": [
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.05,
+     "lo": 0.0,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.2,
+     "lo": 0.05,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.4,
+     "lo": 0.2,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.6,
+     "lo": 0.4,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.8,
+     "lo": 0.6,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 0.95,
+     "lo": 0.8,
+     "mean_p": null
+    },
+    {
+     "count": 0,
+     "fail_rate": null,
+     "hi": 1.0,
+     "lo": 0.95,
+     "mean_p": null
+    }
+   ]
+  },
+  "metrics": [
+   "brier",
+   "brier_reference",
+   "mean_surprise",
+   "high_surprise_share",
+   "teeth"
+  ]
+ },
+ "rq3": {
+  "arms": {
+   "nollm": {
+    "calls_per_family": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    },
+    "prediction_accuracy": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "pure_llm_accuracy": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "survival_rate": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "tokens_per_family": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    }
+   },
+   "sqlancer": {
+    "calls_per_family": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "prediction_accuracy": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "pure_llm_accuracy": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "survival_rate": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "tokens_per_family": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    }
+   }
+  },
+  "metrics": [
+   "survival_rate",
+   "prediction_accuracy",
+   "calls_per_family",
+   "tokens_per_family",
+   "pure_llm_accuracy"
+  ],
+  "timeline": {
+   "nollm/s7-r0": []
+  }
+ },
+ "rq4": {
+  "arms": {
+   "nollm": {
+    "duplicate_rate": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    },
+    "edits_accepted": {
+     "max": 0.0,
+     "median": 0.0,
+     "min": 0.0,
+     "n": 1
+    },
+    "in_out_gap": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "invalid_rate": {
+     "max": 0.5128205128205128,
+     "median": 0.5128205128205128,
+     "min": 0.5128205128205128,
+     "n": 1
+    },
+    "theory_length_final": {
+     "max": 96.80000000000001,
+     "median": 96.80000000000001,
+     "min": 96.80000000000001,
+     "n": 1
+    }
+   },
+   "sqlancer": {
+    "duplicate_rate": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "edits_accepted": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "in_out_gap": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "invalid_rate": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    },
+    "theory_length_final": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    }
+   }
+  },
+  "metrics": [
+   "invalid_rate",
+   "duplicate_rate",
+   "theory_length_final",
+   "in_out_gap",
+   "edits_accepted"
+  ],
+  "theory_length": {
+   "nollm/s7-r0": [
+    {
+     "generation": 0,
+     "hypotheses": 1,
+     "length": 96.80000000000001,
+     "live": true
+    }
+   ]
+  }
+ },
+ "rq5": {
+  "ciao": {
+   "nollm/s7-r0": {
+    "above_mean": null,
+    "batches": [
+     0
+    ],
+    "below_mean": null,
+    "diagonal_mean": 0.015947686365885238,
+    "generations": [
+     0
+    ],
+    "matrix": [
+     [
+      0.015947686365885238
+     ]
+    ]
+   }
+  },
+  "freezing": [],
+  "pairing": []
+ },
+ "rq6": {
+  "arms": {
+   "nollm": {
+    "recall": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    }
+   },
+   "sqlancer": {
+    "recall": {
+     "max": null,
+     "median": null,
+     "min": null,
+     "n": 0
+    }
+   }
+  },
+  "boundary": {
+   "nollm/s7-r0": [
+    {
+     "classification": "too_narrow",
+     "extra": [
+      "ast:clause:order_by",
+      "ast:stmt:select",
+      "ast:window_fn:aggregate",
+      "data:type:integer",
+      "plan:HASH_JOIN",
+      "plan:ORDER_BY",
+      "plan:PERFECT_HASH_GROUP_BY",
+      "plan:PROJECTION",
+      "plan:SEQ_SCAN"
+     ],
+     "family": "duckdb|fix:window_self_join",
+     "missing": [],
+     "name": "F2"
+    }
+   ]
+  },
+  "metrics": [
+   "recall"
+  ],
+  "partition": null
+ },
+ "schema": 1,
+ "stats": [
+  {
+   "a": "nollm",
+   "a12": 1.0,
+   "b": "sqlancer",
+   "median_a": 12.820512820512821,
+   "median_b": 0.0,
+   "method": "exact",
+   "metric": "families_per_1000",
+   "n_a": 1,
+   "n_b": 1,
+   "p": 1.0,
+   "rq": "rq1",
+   "u": 1.0
+  },
+  {
+   "a": "nollm",
+   "a12": 1.0,
+   "b": "sqlancer",
+   "median_a": 1.0,
+   "median_b": 0.0,
+   "method": "exact",
+   "metric": "family_count",
+   "n_a": 1,
+   "n_b": 1,
+   "p": 1.0,
+   "rq": "rq1",
+   "u": 1.0
+  }
+ ]
+}

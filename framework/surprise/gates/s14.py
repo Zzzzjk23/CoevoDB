@@ -311,18 +311,32 @@ def check_cross(windows: dict[str, Any], linux: dict[str, Any], table: dict[str,
     return f"SQLite compile options equal apart from {prefixes}; PG settings equal"
 
 
-def code_equal(commit: str, what: str) -> None:
-    """``commit`` holds the same code as this work tree (docs, evidence and CLAUDE.md aside)."""
+def code_equal(commit: str, what: str, ignore: tuple[str, ...] = ()) -> None:
+    """``commit`` holds the same code as this work tree (docs, evidence, CLAUDE.md and ``ignore`` aside)."""
     require(isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit or "") is not None,
             f"{what}: bad commit {commit!r}")
     proc = subprocess.run(["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=REPO, capture_output=True, timeout=60)
     require(proc.returncode == 0, f"{what}: commit {commit[:12]} is not in this repository")
-    excludes = [f":(exclude){path.rstrip('/')}" for path in C.NOT_CODE]
+    skipped = (*C.NOT_CODE, *ignore)
+    excludes = [f":(exclude){path.rstrip('/')}" for path in skipped]
     names = git("diff", "--name-only", commit, "--", ".", *excludes).split()
     require(not names, f"{what}: code differs from {commit[:12]}: {names[:8]}")
     untracked = [path for path in git("ls-files", "--others", "--exclude-standard").split("\n") if path.strip()]
-    stray = [path for path in untracked if not any(path.startswith(prefix) or path == prefix for prefix in C.NOT_CODE)]
+    stray = [path for path in untracked if not any(path.startswith(prefix) or path == prefix for prefix in skipped)]
     require(not stray, f"{what}: untracked files outside the docs and evidence: {stray[:8]}")
+
+
+def gates_importers() -> list[str]:
+    """Tracked Python files that import the gates although the grid may run them."""
+    pattern = re.compile(r"surprise\.gates|from \.+gates\b|import gates\b")
+    found = []
+    for path in git("ls-files", "--", "framework/*.py").split("\n"):
+        path = path.strip()
+        if not path or any(path.startswith(prefix) for prefix in C.NOT_RUN_BY_GRID):
+            continue
+        if pattern.search((REPO / path).read_text(encoding="utf-8", errors="replace")):
+            found.append(path)
+    return found
 
 
 def gate_names() -> list[str]:
@@ -367,6 +381,29 @@ def check_linux() -> str:
             f"{expected}")
 
 
+def portable_grid(config: dict[str, Any]) -> dict[str, Any]:
+    """``config`` with checkout-absolute paths cut to their part inside the checkout.
+
+    load_config stores a sqlancer arm's summary as an absolute path, so the server's grid.json
+    names ``/home/<user>/CoevoDB/framework/...`` where this tree has ``D:\\CoevoDB\\framework\\...``.
+    A path is cut only when it ends in this tree's own relative path, so any other file still differs.
+    """
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    from surprise.baselines import sqlancer
+
+    inside = sqlancer.SUMMARY_PATH.relative_to(REPO).parts
+    arms = []
+    for arm in config.get("arms", []):
+        summary = arm.get("summary") if isinstance(arm, dict) else None
+        if isinstance(summary, str):
+            parts = (PureWindowsPath if PureWindowsPath(summary).drive else PurePosixPath)(summary).parts
+            if parts[-len(inside):] == inside:
+                arm = {**arm, "summary": "/".join(inside)}
+        arms.append(arm)
+    return {**config, "arms": arms}
+
+
 def check_smoke() -> str:
     from surprise.experiments.grid import load_config
 
@@ -376,11 +413,13 @@ def check_smoke() -> str:
     table = spec()
     grid = load_json(root / "grid.json", "smoke grid.json")
     expected = load_config(REPO / C.SMOKE_CONFIG)
-    require(grid == expected, "smoke grid.json is not the config in SERVER.md 5.6")
+    require(portable_grid(grid) == portable_grid(expected), "smoke grid.json is not the config in SERVER.md 5.6")
     status = (root / "status.txt").read_text(encoding="utf-8").replace("\r\n", "\n").split("\n") \
         if (root / "status.txt").is_file() else []
     want = [f"{cell} done" for cell in C.SMOKE_CELLS] + [f"done {len(C.SMOKE_CELLS)}/{len(C.SMOKE_CELLS)}"]
     require([line for line in status if line] == want, f"smoke status {status!r} != {want!r}")
+    importers = gates_importers()
+    require(not importers, f"code the grid may run imports the gates: {importers[:8]}")
     frozen = load_json(REPO / C.FROZEN_MANIFEST, "frozen manifest")["harness"]["hash"]
     pg_version = table["postgres"]["server_version_num"]
     pg_text = f"{int(pg_version) // 10000}.{int(pg_version) % 10000}"
@@ -406,7 +445,7 @@ def check_smoke() -> str:
         require((environment.get("references") or {}).get("postgres") == pg_text,
                 f"{cell}: PostgreSQL reference {environment.get('references')}")
         require((manifest.get("harness") or {}).get("hash") == frozen, f"{cell}: harness hash is not the frozen one")
-        code_equal(manifest.get("git_commit"), f"{cell} manifest")
+        code_equal(manifest.get("git_commit"), f"{cell} manifest", ignore=C.SMOKE_NOT_RUN)
         run_report = load_json(base / "report.json", f"{cell} report.json")
         require(isinstance(run_report.get("experiments"), int) and run_report["experiments"] > 0,
                 f"{cell}: experiments {run_report.get('experiments')!r}")
@@ -417,7 +456,8 @@ def check_smoke() -> str:
     require(sorted(report["arms"]) == arms and report["reference"] == expected["reference"],
             f"smoke report arms {sorted(report['arms'])}, reference {report.get('reference')!r}")
     return (f"{len(C.SMOKE_CELLS)} cell(s) done on Linux with the frozen harness and pinned engines, "
-            f"same code as this tree; report has {len(s11_cases.REPORT_KEYS)} sections")
+            f"same code as this tree apart from the gates (nothing the grid runs imports them); "
+            f"report has {len(s11_cases.REPORT_KEYS)} sections")
 
 
 def check_docs() -> str:
