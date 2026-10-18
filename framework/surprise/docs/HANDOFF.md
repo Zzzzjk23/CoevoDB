@@ -30,7 +30,9 @@ Claude Code 担任编排者。用户的指示是"当前服务器3090空闲，开
 - 服务器环境全部装好（全在 `~/CoevoDB` 下，没有 sudo）：裸仓库 `~/coevodb.git`、工作目录 `~/CoevoDB` 只检出 tag；uv；micromamba + conda-forge Python 3.13.9 底座；按 Windows 编译选项自编的 SQLite 3.51.0（source id 与 Windows 逐字相同）；四个 venv；PG 16.15（ICU 67.1，设置与 Windows 逐项相同，认证改 scram + `~/.pgpass`）；JDK 21；`.src/` 两份检出；`framework/results/s08/` 四个钉住的目录。细节与理由见 SERVER.md §1–§4。
 - 服务器上第一次全量运行发现三处平台差异（SERVER.md §6）：旧代码默认路径指向本机另一账号的 `/home/user/...`（环境变量覆盖，已解决）；S4 测试夹具 `die()` 在 POSIX 上用 SIGKILL（包 `s14-posix-die` 在修）；门槛 s03 写死 Windows 的 venv 路径（编排者已改）。
 
-待做：合并 `s14-posix-die`；服务器上 `gates.all` 的完整结果；部署 `s14-deploy-N` 并用 `python -m surprise.gates.s14 --record` 录服务器记录；用户照 SERVER.md §5.6 跑冒烟网格；收尾时给用户看 `CLAUDE.md` 与 `ORCHESTRATION.md` 的改动。
+- `s14-posix-die` 首轮通过并合并；服务器 venv 的间接依赖钉成 Windows 的版本。部署 `s14-deploy-1`（06a981a），服务器上 `python -m surprise.gates.s14 --record`：环境核对通过，pytest 935 passed, 3 skipped，GATES PASS 14/14；记录在 `gates/s14_evidence/`。本机同一代码：pytest 935 passed, 3 skipped；S01–S13 全过，S14 的 env、linux、docs、scope 通过。
+
+待做：用户照 SERVER.md §5.6 跑冒烟网格，拷回后 `--ingest-smoke`；收尾时给用户看 `CLAUDE.md` 与 `ORCHESTRATION.md` 的改动（草稿在本会话，未写入）。
 
 ## 最近完成会话：S13（2026-10-19）
 

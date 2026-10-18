@@ -158,6 +158,7 @@ tar -czf ~/<名字>.tar.gz <名字> <名字>.log
 Windows 本机（PowerShell）：
 
 ```
+New-Item -ItemType Directory -Force D:\CoevoDB\framework\results\server | Out-Null
 scp 3090:<名字>.tar.gz D:\CoevoDB\framework\results\server\
 ```
 
@@ -169,6 +170,7 @@ S14 的门槛要求用户照本节跑通一次 1 分钟的冒烟网格。配置�
 
 ```
 tmux new -s s14-smoke
+PY=~/CoevoDB/.venv/bin/python
 cd ~/CoevoDB/framework
 $PY -m surprise.experiments.grid run surprise/docs/grids/s14_smoke.json --out results/s14-smoke 2>&1 | tee results/s14-smoke.log
 $PY -m surprise.experiments.grid status results/s14-smoke
@@ -176,7 +178,7 @@ $PY -m surprise.metrics.report results/s14-smoke
 cd ~/CoevoDB/framework/results && tar -czf ~/s14-smoke.tar.gz s14-smoke s14-smoke.log
 ```
 
-然后在 Windows 上 `scp 3090:s14-smoke.tar.gz D:\CoevoDB\framework\results\server\`，告诉编排者。
+跑完后可以 `exit` 退出 tmux。然后照 §5.5 在 Windows 上把 `s14-smoke.tar.gz` 拷到 `D:\CoevoDB\framework\results\server\`，告诉编排者；编排者解压后用 `python -m surprise.gates.s14 --ingest-smoke <解压出的 s14-smoke 目录>` 把门槛要读的部分放进 `framework/surprise/gates/s14_evidence/smoke/`。
 
 ## 6. 平台差异
 
