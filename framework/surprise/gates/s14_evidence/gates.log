@@ -1,0 +1,176 @@
+=== gate s01 ===
+[PASS] baseline tag: v1-baseline -> 55c5512
+[PASS] skeleton: surprise/ + 10 subpackages import
+[PASS] engine environments: duckdb 1.5.5; datafusion 54.0.0; sqlite 3.51.0; duckdb-1.1.3: duckdb 1.1.3; datafusion-50.0.0: datafusion 50.0.0
+[PASS] main.py --help: exit 0
+[PASS] pytest: 935 passed (baseline 64): 935 passed, 3 skipped in 280.33s (0:04:40)
+[PASS] campaign scripts: 41 scripts in campaigns/, 39 answer --help, 2 syntax-checked
+[PASS] DuckDBRunner move: 6 import orders ok; _remote_exec imports in duckdb-1.1.3
+S01 GATE: PASS (7/7 checks passed)
+=== gate s02 ===
+[PASS] contracts: 10 objects round-trip, 10 invalid ones rejected
+[PASS] ledger: 5 records in 2 runs: written, filtered, reopened; 4 bad writes rejected
+[PASS] manifest: 51 files hashed (98b70d9e81fc); verify catches 3 kinds of change
+[PASS] oracles: 60 judgements stable and as expected (6 fail, 35 invalid); crash, error mismatch and timeout paths ok
+[PASS] evaluate: 11 executions, 11 ledger records (4 pass, 3 fail, 4 invalid)
+S02 GATE: PASS (5/5 groups passed)
+=== gate s03 ===
+[PASS] registry: 3 existing oracles x 2 engines pass; registry and invalid sources checked
+[PASS] local: ART exercised, injected mismatch caught; 3 proved rules x 2 engines incl NULL; untrusted pairs rejected
+[PASS] cross: PG16 + DuckDB witness DF-A/DF-B; insufficient quorum, ties, multiple outliers and engine aliases rejected
+[PASS] version: F2 old/new measured bags and regression direction; both old venvs work; directionless mismatch invalid
+[PASS] matrix: 7 oracles x 2 engines, 14 ledger records, no hidden harness failures, manifest verified
+S03 GATE: PASS (5/5 groups passed)
+=== gate s04 ===
+[PASS] contracts: 17 invalid sources, 7 CVE constants in the manifest; raw entry points untouched; 5 bad requests rejected before execution (1s)
+[PASS] isolation: ok / error / timeout x2 / crash x2 told apart; 7 distinct processes for one candidate; process death, hang and dying reference contained (17s)
+[PASS] tier1: 6 stable families fail after 5 fresh reruns; F8 unstable; F5 reproduced 3/5; 6 scripted rerun schedules (20s)
+[PASS] premise: ASOF ties, writing statements and incomparable cross-engine values are invalid; their tie-free, crashing and comparable counterparts stay fail (9s)
+[PASS] environment: 51 files hashed, 17 imported old modules all covered; old engines, PostgreSQL 16.15 and 5 packages recorded (0s)
+[PASS] tier2: fix-set attribution: F1, F6, F6 via TLP consistent, F2 escalated; profile attribution: DF-A consistent, DF-B escalated; 5 malformed hypotheses rejected (17s)
+[PASS] tier3: 9 confirmed cases profiled: fix sets as measured and as in recall_repros.json, version ladder, minimised subsequence; noise removed; lost candidate downgraded (44s)
+[PASS] m1: 50 final labels in the ledger (14 fail, 20 invalid, 16 pass); known recall gaps: DF-E, DF-G, DF-H, DF-J, F10, F5 (57s)
+[PASS] freeze: 51 files (31 in the harness), hash 98b70d9e81fc, 8 constants match (0s)
+S04 GATE: PASS (9/9 groups passed)
+=== gate s05 ===
+[PASS] vocab: 166 core entries (131 leaves) with hierarchy; open families; digest 1e001c14a030 stable across processes; invented feature registered, 8 bad ones rejected, saved and loaded; phi container (0s)
+[PASS] spec: 12 hand-written phi / spec pairs judged as expected; 3 malformed specs rejected (0s)
+[PASS] units: 23 hand-written feature sets project onto the expected units (0s)
+[PASS] ast: 74 probes, 5 fallbacks, 3 invariance pairs; 12 families show their core features and are pairwise distinct (66 pairs) (0s)
+[PASS] dynamic: 13 data probes on two engines, 6 measured plans; failing setup, ast-only and isolated extraction behave (2s)
+[PASS] stable: 25 cases (12 families, 13 corpus seeds): two processes and this one agree (18s)
+[PASS] distinguish: 12 families: pairwise distinct by statement text alone (66 pairs) and by phi; DF-A -> DF-B is one sibling swap; 11 measured units (0s)
+[PASS] specs: 17 hand-written spec / SQL pairs, all judged correctly (0s)
+[PASS] corpus: 1092 seeds in 76 units over 10 constructs; ast fallback 34, plan ok 480, data ok 483; top [('postgres|plain|none|unknown', 134), ('duckdb|plain|none|unknown', 83), ('duckdb|window|none|unknown', 56)]; 17s (31s)
+S05 GATE: PASS (9/9 groups passed)
+=== gate s06 ===
+[PASS] constants: 9 constants as frozen; magnitudes 6.64, 4.32, 1.00, 0.07, 0.01 bits, split at 0.5 and 2.0; features and theory import in either order (1s)
+[PASS] language: 10 reductions, 13 coverage checks, 8 generalisations, 12 specialisations; 7 malformed calls rejected (0s)
+[PASS] vspace: 5 sequences (25 steps) reach the expected S and G; positions incl. undetermined and out of scope; G capped at 64; invariants hold over 480 random steps (0s)
+[PASS] hypothesis: contract keeps S2-era objects and round-trips the new fields; 4 families started from profiles, one with earlier passes replayed; 2 attribution requests accepted by the harness parser (0s)
+[PASS] identity: 17 hypothesis / label pairs judged: harness test first, then fix set, then the three profile fields (0s)
+[PASS] residual: prior 0.01, counts and rate per unit, round trip; the rate never reaches 0 or 1 (0s)
+[PASS] validity: prior 0.1; counts, reasons and rate per (class, oracle); round trip (0s)
+[PASS] predict: surprise 6.64 / 4.32 / 1.00 / 0.07 / 0.01 bits; 6 zone predictions with precedence confirmed > pending > residual; per-unit rho and per-class K^v (0s)
+[PASS] triage: 14 (label, bits) pairs incl. both thresholds; the six rows of the framework document; 8 bad calls rejected (0s)
+[PASS] theory: 9 scripted experiments: 6.64 -> family, 1.00 x 2 -> G moves and a second family, 0.07 duplicate, 4.32 unexpected pass, 0.01 no information, invalid, unexplained failure; replay, reload and determinism; 4 drifted-residual cases; 6 bad calls rejected (0s)
+[PASS] manifest: theory section: 9 constants, 16 theory files and 12 feature files hashed, vocabulary and limits; harness part and the S4 freeze verify unchanged; stored with a run; tampering reported (1s)
+[PASS] walkthrough: DF-A 6.64 bits opens h2; two predictions at 1.00 bit: left_has_dups enters G, INTERSECT ALL fails with another identity and opens h3; surprises 6.64, 1.00, 1.00, 0.07, 4.32, 0.01; 6 records, surprise recomputed from the ledger (12s)
+S06 GATE: PASS (12/12 groups passed)
+=== gate s07 ===
+[PASS] constants: 4 new constants beside the nine of S6, all in the manifest; a change is reported by name (0s)
+[PASS] length: hypothesis = 8.0 + 7.4 x |S| bits; theory = sum (0s)
+[PASS] theory_api: remove, reserve_id, passes, next_id; common_conjunction agrees with generalize on 81 pairs (0s)
+[PASS] store: one file per hypothesis, save/load is the identity, 22 damaged stores refused, logs append-only (0s)
+[PASS] generations: closing a generation snapshots its last state and leaves the live state alone; snapshots load, predict and are checked (0s)
+[PASS] imports: 16 theory files import no model and no old code; 5 import orders load in fresh processes (1s)
+[PASS] edits: 20 malformed proposals refused; claims and fingerprints ignore ids and evidence; bets match by spec; held-out sample is deterministic (0s)
+[PASS] accept: hand-written h2 accepted on length alone and both bets kept; a held-out pass, the trigger record, no gain, no bets each refuse an edit; only refutations enter the negative memory; 4 unexplained failures pay for a hypothesis, 1 does not (0s)
+[PASS] rollback: a lost bet rolls back the edit and replays what was observed since; the claim enters the negative memory and is refused under any kind; a settled edit survives contradictions; later edits cascade without blame; manual rollback (0s)
+[PASS] journal: reopening reproduces the workbench and it continues identically; the journal alone reproduces the theory; labels are kept without detail (0s)
+[PASS] mdl: merge when nothing separates two hypotheses of one identity, not when a known pass lies between them; tighten after 16 contradictions, split after 40, neither earlier; compress() reaches a fixed point and does not undo itself (1s)
+[PASS] families: fix-set families span oracles; a hypothesis without a fix set is its own family; owner = opened, attributed, or first absorber (0s)
+[PASS] ciao: mean surprise of the old records by generation: 0.537, 0.074, 0.074 bits (0s)
+[PASS] replay: 74 experiments, 11 hypotheses; confirmed fail: 48, confirmed pass: 5, pending fail: 13, unexplored fail: 4, unexplored pass: 1; 47/54 repeats predicted before execution, 47 at tier 2; wrong edit e1 rolled back by s07-replay:49; compress applied [], declined ['merge:h6+h10:holdout', 'merge:h9+h11:holdout']; absorbed twice: [] (171s)
+[PASS] ledger: 24 adjudicated failures in 10 manual families: new framework 11 families, ARI 0.974, pair F1 0.976 (P 1.00 R 0.95); sigma 19 families, ARI 0.425, pair F1 0.444 (P 1.00 R 0.29); merged against the ledger: []; split against it: ['DF-D|DF-D_where'] (44s)
+S07 GATE: PASS (15/15 groups passed)
+=== gate s08 ===
+[PASS] no_llm: hunter, metrics, baselines, diagnoser and the loop import no model client and no old agent (0s)
+[PASS] constants: 12 hunter and 2 diagnoser constants as planned; BETA = 1.0 (pre-experiment families per run: {'0.5': {'9001': 1, '9002': 3, '9003': 3}, '1.0': {'9001': 3, '9002': 3, '9003': 3}, '2.0': {'9001': 3, '9002': 3, '9003': 3}, '4.0': {'9001': 3, '9002': 5, '9003': 1}}) (0s)
+[PASS] scoring: U untested 0.498 bits, adjacent 0.758; pending 0.455 after 50 probes, adjacent unexplored 1.365 at beta 2, confirmed 0 (0s)
+[PASS] operators: 29 mutants of a three-statement case (4 deletions); oracle options filtered as planned (0s)
+[PASS] candidates: after F1 and DF-A: {'refine': 4, 'generalize': 4, 'migrate': 2, 'explore': 81} candidates, all traceable; chose refine at 0.909 (10s)
+[PASS] lanes: 32 records; executed {'bootstrap': 2, 'explore': 23, 'generalize': 3, 'refine': 4}; offered {'refine': 30, 'generalize': 31, 'migrate': 139, 'explore': 2474}; 4 families opened, 2 edits (52s)
+[PASS] determinism: seed 31 twice in separate processes: 26 identical rows, labels and final theory; seed 32 differs (37s)
+[PASS] longrun: 8600 experiments over 179 minutes, labels {'invalid': 4393, 'pass': 4117, 'fail': 90}, lanes {'explore': 8511, 'generalize': 55, 'refine': 34}, 27 hypotheses, 13 families, 0 harness errors (26s)
+[PASS] sawtooth: 86 windows, teeth at [3, 9, 17, 35, 63, 78]; curve [0.25, 0.01, 0.22, 0.5, 0.11, 0.19, 0.03, 0.04, 0.16, 0.37, 0.01, 0.22, 0.05, 0.23, 0.01, 0.01, 0.01, 0.43, 0.05, 0.3, 0.37, 0.41, 0.13, 0.04, 0.09, 0.25, 0.03, 0.06, 0.04, 0.01, 0.01, 0.04, 0.17, 0.03, 0.07, 0.38, 0.21, 0.07, 0.35, 0.01, 0.04, 0.08, 0.03, 0.01, 0.01, 0.01, 0.01, 0.03, 0.01, 0.01, 0.01, 0.01, 0.01, 0.24, 0.07, 0.03, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.18, 0.31, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.1, 0.11, 0.01, 0.01, 0.01, 0.01, 0.01, 0.27, 0.4, 0.05, 0.01, 0.13, 0.03, 0.29, 0.18, 0.01] (0s)
+[PASS] duplicates: duplicate rate new 0.462 (13 families, 7 distinct identities) < old no_llm 0.818 (11 reports, 2 distinct) on 179 minutes each (1s)
+[PASS] recall: DuckDB 1.1.3: 6 of 9 known reproductions fail there (['F1', 'F7', 'F7_file', 'F9', 'F6', 'F6_predicate']); 3395 experiments over 60 minutes recalled ['F1', 'F6', 'F6_predicate'] (recall 0.5), missed ['F7', 'F7_file', 'F9'] (1s)
+S08 GATE: PASS (11/11 groups passed)
+=== gate s09 ===
+[PASS] isolation: roles load no model client until a transport is built; loop, Hunter, Diagnoser, harness never import them; transport reuses BaseAgent and the old ledger (1s)
+[PASS] constants: 19 constants as planned; tiers {'fast': 'deepseek-flash', 'strong': 'deepseek-v4-pro'} (0s)
+[PASS] cache: key = prompt hash + model + seed; hits make no call; replay identical; forged entry refused; ledger and per-role totals (0s)
+[PASS] reject: 9 replies parsed as planned; refusals replay as refusals; the implementer refuses before phi (0s)
+[PASS] cap: cap 2 blocks the third call; cache served past the cap; cap 0 calls nothing; env ceiling; errors count, not cached (0s)
+[PASS] source: confined, exact, read-only; checkouts at datafusion 45d943dfb869, duckdb d8cdaa33fda8 (0s)
+[PASS] implementer: accepted, retried with feedback, unmet, bad case, replayed, blocked (0s)
+[PASS] conjecturer: selection picks datafusion/expr/src/logical_plan/builder.rs for DF-A and src/optimizer/filter_pushdown.cpp for ('filter_pushdown',); registered with a revise whose bets are its predictions; settled by experiments; refusals, drops, not covering, blocked (4s)
+[PASS] wiring: off: 40 rows identical to S8, no role loaded; on: 7 scripted calls, 0 implementer experiments meeting their specs; cap 0 completes (51s)
+[PASS] implementer_report: phi-check pass rate 0.97 at the first try, 1.00 after 2 tries (30/30); boundary 10/10, core 10/10, whole 10/10 (1s)
+[PASS] dfa: mechanism: LogicalPlanBuilder::intersect_or_except implements EXCEPT ALL as a LeftAnti hash join with NullEqualsNull, so it removes every left row having any match instead; trigger ['ast:set_op:except_all', 'ast:stmt:select', 'data:setop:left_has_dups']; 4 predictions (fail on ast:set_op:except_all+ast:stmt:select+data:setop:left_has_dups+data:table:dup_rows+data:type:integer without data:setop:left_has_null+data:setop:right_has_null+data:table:has_null; pass on ast:set_op:except_all+ast:stmt:select+data:setop:left_has_null+data:setop:right_has_null+data:table:has_null+data:type:integer without data:setop:left_has_dups+data:table:dup_rows; fail on ast:set_op:except_all+ast:stmt:select+data:setop:left_has_dups+data:setop:left_has_null+data:setop:right_has_null+data:table:dup_rows+data:table:has_null+data:type:integer; pass on ast:set_op:except_all+ast:stmt:select+data:setop:left_has_dups+data:table:dup_rows+data:table:empty+data:type:integer without data:setop:left_has_null+data:setop:right_has_null+data:table:has_null); proposed as e1, accepted (0s)
+[PASS] replay: 21 experiments and 25 calls replayed from the cache, identical; lanes {'bootstrap': 1, 'generalize': 5, 'bet': 5, 'implement': 7, 'refine': 3}; book {'conjectures': 3, 'rejected': 0, 'predictions': 12, 'open': 4, 'kept': 6, 'broken': 2} (24s)
+S09 GATE: PASS (12/12 groups passed)
+=== gate s10 ===
+[PASS] isolation: 4 role modules load no model client; loop, Hunter, Diagnoser and harness never import the roles (1s)
+[PASS] constants: 35 S10 constants as planned, S9 constants unchanged, library constants ['LIBRARY_ENV', 'LIBRARY_KINDS', 'LIBRARY_MIN_REFERENCES', 'LIBRARY_RULE_PREFIX', 'LIBRARY_SCHEMA'] (0s)
+[PASS] frozen: harness changes since s09-done-r2: ['equivalent_query.py', 'rewrites.py']; re-frozen and verified; 12 frozen-rule outputs unchanged with and without a library (0s)
+[PASS] library: 4 usable and 10 refused templates; 8 malformed libraries refused; judgements {'llm:wrap_sub': 'pass', 'llm:is_true': 'pass', 'llm:first_row': 'untrusted_rewrite/reference_disagrees', 'llm:octet': 'untrusted_rewrite/rewrite_error'}; frozen rule unchanged; no library, no trust (2s)
+[PASS] frame: prior moves U 0.498 -> 1.000; extra rules offered; prepare once per round (1 rounds); vocabulary run extracts ast:set_op:except_all_two_tables (10s)
+[PASS] switches: all on: calls {'implementer': 4, 'conjecturer': 1, 'prior': 3, 'translator': 1, 'vocab_inventor': 1, 'oracle_inventor': 1}; each role off: no call, no ledger line, plugin module not loaded (76s)
+[PASS] prior: 20 units priced in 2 calls; evidence from the checkouts (40 lines); bad prior weight -> 0.0 after 20; useful prior weight 0.490 (0s)
+[PASS] translator: DF-A family -> DuckDB translated once; settled {'tr-match': ('kept', 'match'), 'tr-mismatch': ('kept', 'mismatch'), 'tr-broken': ('broken', None), 'tr-void': ('void', None)}; bad switch refused; unmet spec retried (5s)
+[PASS] vocab_inventor: accepted ast:set_op:except_all_two_tables on held-out records; refused {'empty': 'pattern', 'long': 'pattern', 'catastrophic': 'scan', 'everything': 'scan', 'no_exclusion': 'train', 'train_only': 'holdout'} and a data-layer id; prompt hides the held-out records (20s)
+[PASS] oracle_inventor: accepted ['llm:wrap_sub'] on 5 instances; refused disagree, template, duplicate; 3 calls in 401 experiments; judged by the harness: pass (1s)
+[PASS] translator_real: F2 (duckdb) -> datafusion: status ok, expect pass, switches []; label pass; settled kept identity None (4s)
+[PASS] m3: 32 experiments and 43 calls replayed from the cache, identical; calls {'conjecturer': 2, 'oracle_inventor': 1, 'implementer': 36, 'prior': 4}; DF-B (shape|datafusion|wrong_result|-|extra_only) reached at experiment 3 via bet (bet from c1 on h1); lanes {'bootstrap': 1, 'generalize': 2, 'bet': 7, 'refine': 4, 'implement': 18} (48s)
+S10 GATE: PASS (12/12 groups passed)
+=== gate s11 ===
+[PASS] constants: 7 metric constants, request deadline 600.0 s, pure-LLM constants and 10 topics (0s)
+[PASS] store: 6 replace calls for 3 transient failures (0.36s); a lasting failure raises PermissionError (2s)
+[PASS] loop_error: original exception kept and written to error.txt (both, drive) (1s)
+[PASS] deadline: normal answer passes; deadline 1.5s held (trickle 1.5s, silent 1.5s); errors booked, not cached (7s)
+[PASS] vocabulary: run_registry, new_families, compare, recall.score, RunData and run_metrics all read the run's vocabulary (37s)
+[PASS] stats: exact and asymptotic MWU (scipy agrees), A12, median, summarize as hand-computed (0s)
+[PASS] runmetrics: 31 records, 1 ledger families, Brier 0.2194, 1 high-surprise records, invalid 14, theory length 193.0; all recomputed (0s)
+[PASS] ciao: 88 generations, 12x12 matrix in 19s; diagonal 0.056, new theory on old batches 0.029, old theory on new batches 0.211 (29s)
+[PASS] llm_metrics: 15 experiments replayed; 2 conjectures, survival 0.0, accuracy 0.7142857142857143 over 7 settled bets; families via {'implement': 0, 'bet': 1, 'translate': 0, 'llm_rule': 0, 'invented_feature': 0}; 23 calls (19s)
+[PASS] rq6: classify, F2 fix conditions (1 entries), pair agreement as hand-computed; F2 hypothesis too_narrow (missing [], extra 9 literals); recall 0.5 (4s)
+[PASS] arms: random Hunter deterministic and different; frozen theory unchanged (1 failures fully profiled); frozen Diagnoser no edits; theory-from and select-from (5 choices scored differently); 5 usage errors refused (116s)
+[PASS] pure_llm_script: 4 cases executed from 3 calls (1 reply rejected, 2 bad cases skipped); prompts deterministic; budget holds (5s)
+[PASS] pure_llm: 16 cases from 4 cached calls replayed identically; labels {'pass': 15, 'invalid': 1}; 0 families (7s)
+[PASS] dedup: 3 failures, 1 true duplicates; sigma p/r 1.0/1.0, membership p/r None/0.0 (7s)
+[PASS] coverage: 4 upstream regression seeds x 2 oracles on 1.5.5 and 1.1.3; {'plan_variant': {'old': {'pass': 4}, 'new': {'pass': 4}, 'fail_old_pass_new': [], 'fail_both': [], 'fail_new_only': []}, 'equivalent_query': {'old': {'invalid': 4}, 'new': {'invalid': 4}, 'fail_old_pass_new': [], 'fail_both': [], 'fail_new_only': []}} (7s)
+[PASS] sqlancer: 35 runs, 0 bugs; per engine rows match docs/FINAL_REPORT.md (0s)
+[PASS] grid: 2 arms x 2 seeds in 4.0 min, resumed, report and 7 figures in one command; median families/hour {'surprise': 29.826741924397197, 'old': 29.983202471466544}; p 1.0, A12 0.375 (245s)
+S11 GATE: PASS (17/17 groups passed)
+=== gate s12 ===
+[PASS] layout: 28 files moved (11 into coevodb_v1, 17 into archive), main.py forwards to surprise.baselines.coevodb_v1.main; 9 shared files and 5 shared directories in place, no copies (0s)
+[PASS] moves: 164 old .py files of s11-done-r2 checked: 28 moved files (incl. non-Python) equal modulo import paths and 3 anchors, 11 import-edited in place, 132 untouched (1s)
+[PASS] imports: 365 files scanned: no import of an old location, every first-party import resolves; 27 moved or shared modules import; 3 scripts answer --help; coevo smoke: executed=5, invalid=0, confirmed_new_bugs=0, new_plans=10 (9s)
+[PASS] isolation: no-LLM loop loads none of 4 moved LLM modules; every harness module imported without ['archive', 'surprise.baselines.coevodb_v1']; nothing in surprise/ imports coevodb_v1 (1s)
+[PASS] old_arm: --help identical at the new location, through main.py and at s11-done-r2; 9 artifacts of a 2-iteration no_llm run equal to the base (6s / 5s); old_no_llm arm 60s, ended killed, metrics keys ['cost', 'rq1', 'rq2', 'rq3'] (72s)
+[PASS] docs: 4 docs updated; 221 repository paths named, all exist; required mentions present (0s)
+S12 GATE: PASS (6/6 groups passed)
+=== gate s13 ===
+[PASS] scope: 7 paths changed (s12-done-r2..s13-done), all under the docs or the S13 gate (0s)
+[PASS] sections: 11 headings in order; spec parses; totals stated 2x, all match (0s)
+[PASS] arms: 17 arms valid against grid.py or named sessions; ablations drop the stated roles (0s)
+[PASS] engines: 7 engines; 44 milestone arm placements have their prerequisites (0s)
+[PASS] cells: 7 milestones; 215 cells of 24h and 45 of 1h, as declared (0s)
+[PASS] seeds: formal [1001, 1002, 1003, 1004, 1005], pilot [9101, 9102]; none among 29 numbers near 'seed' at s12-done-r2 (0s)
+[PASS] sessions: SESSIONS.md has S13-S25; 7 milestones ordered; PLAN section 9 and HANDOFF row present (0s)
+S13 GATE: PASS (7/7 groups passed)
+=== gate s14 ===
+[PASS] env: server: python, sqlite, 4 venvs, PG reference (no trust rules), sources, JDK 21.0.12.1, old-code overrides, clean checkout of s14-deploy-3 (0s)
+[N/A] linux: checked on Windows; it reads the records this server produces
+[N/A] smoke: checked on Windows; it reads the records this server produces
+[PASS] docs: SERVER.md: 13 headings in order, spec with 4 venvs; 6 runbook commands exist; smoke config loads offline; HANDOFF has S14 (1s)
+[PASS] scope: 19 paths changed (s13-done-r2..work tree), all in scope; harness and frozen manifest untouched (0s)
+S14 GATE on the server: PASS (3/3 groups passed)
+=== summary ===
+s01: PASS
+s02: PASS
+s03: PASS
+s04: PASS
+s05: PASS
+s06: PASS
+s07: PASS
+s08: PASS
+s09: PASS
+s10: PASS
+s11: PASS
+s12: PASS
+s13: PASS
+s14: PASS
+GATES: PASS (14/14 passed)
