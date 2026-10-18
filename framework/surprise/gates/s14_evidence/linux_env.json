@@ -1,0 +1,199 @@
+{
+  "created_at": "2026-10-18T16:39:36.182204+00:00",
+  "git": {
+    "commit": "06a981a4da01b54de07cdfd8aa08088dfcfa4ab5",
+    "dirty": "",
+    "tag": "s14-deploy-1"
+  },
+  "java": {
+    "java": "21.0.12.1",
+    "path": ".orch/jdk/jdk-21.0.12.1+1/bin/java"
+  },
+  "overrides": {
+    "COEVO_ARGUS_DIR": {
+      "exists": false,
+      "resolved": "/home/junkezhang/CoevoDB/.orch/absent/Argus",
+      "value": "/home/junkezhang/CoevoDB/.orch/absent/Argus"
+    },
+    "COEVO_DUCKDB_SRC": {
+      "exists": false,
+      "resolved": "/home/junkezhang/CoevoDB/.orch/absent/duckdb_src",
+      "value": "/home/junkezhang/CoevoDB/.orch/absent/duckdb_src"
+    },
+    "COEVO_KEYS_YML": {
+      "exists": false,
+      "resolved": "/home/junkezhang/CoevoDB/.orch/absent/api-keys.yml",
+      "value": "/home/junkezhang/CoevoDB/.orch/absent/api-keys.yml"
+    },
+    "COEVO_OLD_VENV": {
+      "exists": false,
+      "resolved": "/home/junkezhang/CoevoDB/.orch/absent/venv_duckdb_old",
+      "value": "/home/junkezhang/CoevoDB/.orch/absent/venv_duckdb_old"
+    },
+    "COEVO_PGBLD": {
+      "exists": false,
+      "resolved": "/home/junkezhang/CoevoDB/.orch/absent/pgbld",
+      "value": "/home/junkezhang/CoevoDB/.orch/absent/pgbld"
+    }
+  },
+  "platform": "linux",
+  "postgres": {
+    "DateStyle": "ISO, MDY",
+    "TimeZone": "Australia/Sydney",
+    "datcollate": "C",
+    "datctype": "C",
+    "datlocprovider": "c",
+    "default_text_search_config": "pg_catalog.english",
+    "icu_collversion": "153.14",
+    "lc_messages": "C",
+    "lc_monetary": "C",
+    "lc_numeric": "C",
+    "lc_time": "C",
+    "server_encoding": "UTF8",
+    "server_version_num": "160015",
+    "trust_rules": 0
+  },
+  "python": "3.13.9",
+  "schema": 1,
+  "sqlite": {
+    "compile_options": [
+      "ATOMIC_INTRINSICS=1",
+      "COMPILER=gcc-13.3.0",
+      "DEFAULT_AUTOVACUUM",
+      "DEFAULT_CACHE_SIZE=-2000",
+      "DEFAULT_FILE_FORMAT=4",
+      "DEFAULT_JOURNAL_SIZE_LIMIT=-1",
+      "DEFAULT_MMAP_SIZE=0",
+      "DEFAULT_PAGE_SIZE=4096",
+      "DEFAULT_PCACHE_INITSZ=20",
+      "DEFAULT_RECURSIVE_TRIGGERS",
+      "DEFAULT_SECTOR_SIZE=4096",
+      "DEFAULT_SYNCHRONOUS=2",
+      "DEFAULT_WAL_AUTOCHECKPOINT=1000",
+      "DEFAULT_WAL_SYNCHRONOUS=2",
+      "DEFAULT_WORKER_THREADS=0",
+      "DIRECT_OVERFLOW_READ",
+      "ENABLE_COLUMN_METADATA",
+      "ENABLE_FTS5",
+      "ENABLE_GEOPOLY",
+      "ENABLE_RTREE",
+      "MALLOC_SOFT_LIMIT=1024",
+      "MAX_ATTACHED=10",
+      "MAX_COLUMN=2000",
+      "MAX_COMPOUND_SELECT=500",
+      "MAX_DEFAULT_PAGE_SIZE=8192",
+      "MAX_EXPR_DEPTH=1000",
+      "MAX_FUNCTION_ARG=1000",
+      "MAX_LENGTH=1000000000",
+      "MAX_LIKE_PATTERN_LENGTH=50000",
+      "MAX_MMAP_SIZE=0x7fff0000",
+      "MAX_PAGE_COUNT=0xfffffffe",
+      "MAX_PAGE_SIZE=65536",
+      "MAX_SQL_LENGTH=1000000000",
+      "MAX_TRIGGER_DEPTH=1000",
+      "MAX_VARIABLE_NUMBER=250000",
+      "MAX_VDBE_OP=250000000",
+      "MAX_WORKER_THREADS=8",
+      "MUTEX_PTHREADS",
+      "SYSTEM_MALLOC",
+      "TEMP_STORE=1",
+      "THREADSAFE=1"
+    ],
+    "source_id": "2025-11-04 19:38:17 fb2c931ae597f8d00a37574ff67aeed3eced4e5547f9120744ae4bfa8e74527b",
+    "version": "3.51.0"
+  },
+  "src": {
+    ".src/datafusion-54.0.0": "45d943dfb8699dc9cb9ef2320e955b73e3e6c03b",
+    ".src/duckdb-v1.5.5": "d8cdaa33fda8df955cc76ef58a280f68f4cd43fa"
+  },
+  "venvs": {
+    ".venv": {
+      "packages": {
+        "anyio": "4.15.1",
+        "certifi": "2025.11.12",
+        "cloudpickle": "3.1.1",
+        "contourpy": "1.3.3",
+        "cycler": "0.11.0",
+        "datafusion": "54.0.0",
+        "duckdb": "1.5.5",
+        "fonttools": "4.60.1",
+        "h11": "0.16.0",
+        "httpcore": "1.0.9",
+        "httpx": "0.28.1",
+        "idna": "3.20",
+        "iniconfig": "2.3.0",
+        "kiwisolver": "1.4.9",
+        "matplotlib": "3.10.6",
+        "numpy": "2.3.5",
+        "packaging": "26.3",
+        "pillow": "12.2.0",
+        "pluggy": "1.6.0",
+        "psycopg2-binary": "2.9.13",
+        "pyarrow": "21.0.0",
+        "pygments": "2.21.0",
+        "pyparsing": "3.2.5",
+        "pytest": "9.1.1",
+        "python-dateutil": "2.9.0.post0",
+        "pyyaml": "6.0.3",
+        "scipy": "1.16.3",
+        "six": "1.17.0",
+        "sniffio": "1.3.1",
+        "sqlglot": "30.21.0",
+        "typing-extensions": "4.16.0"
+      },
+      "python": "3.13.9"
+    },
+    ".venvs/datafusion-50.0.0": {
+      "packages": {
+        "datafusion": "50.0.0",
+        "duckdb": null,
+        "psycopg2-binary": null,
+        "pyarrow": "25.0.1"
+      },
+      "python": "3.13.9"
+    },
+    ".venvs/duckdb-1.1.3": {
+      "packages": {
+        "duckdb": "1.1.3",
+        "psycopg2-binary": "2.9.13"
+      },
+      "python": "3.13.9"
+    },
+    ".venvs/duckdb-1.1.3-full": {
+      "packages": {
+        "anyio": "4.10.0",
+        "certifi": "2025.11.12",
+        "cloudpickle": "3.1.2",
+        "contourpy": "1.3.3",
+        "cycler": "0.11.0",
+        "datafusion": "54.0.0",
+        "duckdb": "1.1.3",
+        "fonttools": "4.60.1",
+        "h11": "0.16.0",
+        "httpcore": "1.0.9",
+        "httpx": "0.28.1",
+        "idna": "3.11",
+        "iniconfig": "2.3.1",
+        "kiwisolver": "1.4.9",
+        "matplotlib": "3.10.6",
+        "numpy": "2.3.5",
+        "packaging": "26.3",
+        "pillow": "12.2.0",
+        "pluggy": "1.6.0",
+        "psycopg2-binary": "2.9.13",
+        "pyarrow": "21.0.0",
+        "pygments": "2.21.0",
+        "pyparsing": "3.2.5",
+        "pytest": "9.1.1",
+        "python-dateutil": "2.9.0.post0",
+        "pyyaml": "6.0.3",
+        "scipy": "1.16.3",
+        "six": "1.17.0",
+        "sniffio": "1.3.0",
+        "sqlglot": "30.21.0",
+        "typing-extensions": "4.15.0"
+      },
+      "python": "3.13.9"
+    }
+  }
+}
