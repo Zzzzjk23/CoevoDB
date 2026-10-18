@@ -18,7 +18,7 @@
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
-| S14 | 服务器部署与双平台门槛 | 进行中 | — | — |
+| S14 | 服务器部署与双平台门槛 | 完成 | s14-done | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -52,9 +52,9 @@ Claude Code 担任编排者。用户的指示是"当前服务器3090空闲，开
 
 | 平台 | 命令 | 结果 |
 |---|---|---|
-| 服务器（`s14-deploy-3`，7f35b42） | `python -m surprise.gates.s14 --record` | env 通过；pytest 935 passed, 3 skipped，退出码 0；GATES: PASS (14/14 passed) |
+| 服务器（`s14-deploy-3`，7f35b42） | `python -m surprise.gates.s14 --record` | env 通过；pytest 935 passed, 3 skipped，退出码 0；S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17、S12 6/6、S13 7/7、S14 3/3（另两组在服务器上 N/A）；GATES: PASS (14/14 passed) |
 | 本机（`session/s14`，代码同 7f35b42） | `../.venv/Scripts/python.exe -m pytest -q testing tests` | 935 passed, 3 skipped，退出码 0（与起点相同，skip 未增加） |
-| 本机 | `../.venv/Scripts/python.exe -m surprise.gates.all` | @@GATES@@ |
+| 本机 | `../.venv/Scripts/python.exe -m surprise.gates.all` | S01–S13 全过（组数与服务器相同），S14 5/5；GATES: PASS (14/14 passed)，退出码 0 |
 | 服务器（用户，`s14-deploy-1`） | SERVER.md §5.6 冒烟网格 | `nollm/s7-r0` done，60.7 秒，78 条实验（37 pass、40 invalid、1 fail），1 个新族（Version differential）；第一次在 3 秒时被 Ctrl-C 打断，续跑时网格把那一格改名 `s7-r0.stale-1` 保留后重跑 |
 
 S8 钉住的 Windows 长跑产物在服务器上直接核对通过（S08 11/11），不需要另钉一份 Linux 的。
@@ -1525,7 +1525,7 @@ S13 处理与新发现（2026-10-19）：
   6. 服务器上标准库 `sqlite3` 用系统库；版本与 Windows 上的 3.51.0 不同时，Cross-DBMS 的参照结果可能变，回放检查会过不了。S14 要单独钉住。
 - **S14 处理与新发现（2026-10-19）**：
   - 上面第 6 条已解决：服务器上的 SQLite 3.51.0 按 Windows 的编译选项自编，source id 相同（SERVER.md §2）。
-  - 上面第 1 条仍待用户同意：`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`（DENY_BASH 加 ssh、scp、rsync、sftp）的改动稿在 S14 收尾消息里。用户后来改了服务器分工（PLAN §9 补充一条），改动稿已按新分工写。
+  - 上面第 1 条仍待用户同意：`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`（DENY_BASH 加 ssh、scp、rsync、sftp）的改动稿在 `framework/surprise/docs/orch/s14/claude_md_proposal.md`（S14 收尾消息里也贴了）。用户后来改了服务器分工（PLAN §9 补充一条），改动稿已按新分工写。
   - 新：`.gitignore` 的 `*.log` 会挡住证据目录里的日志；S14 的四个日志是 `git add -f` 加进去的。以后的证据日志同样要强制加入，或者在 S15 给 `.gitignore` 加一条例外（不在 S14 范围）。
   - 新：本机 `.venv` 继承 anaconda 底座（`include-system-site-packages = true`），服务器的 venv 不继承、包逐个钉住。以后往 Windows 的 anaconda 里装或升级包，会让两边对不上，S14 的 `env` 组会在本机失败。
 

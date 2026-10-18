@@ -334,3 +334,4 @@
 | 2026-10-19 | S14 | 改门槛 s14 之后重新部署、重新记录（`s14-deploy-2`、`s14-deploy-3`），每次之前问过用户服务器是否空闲。冒烟仍是 `s14-deploy-1` 上跑的那一次：它与最终代码只差门槛与文档 | `linux` 组要求记录与代码相同；冒烟不运行门槛 |
 | 2026-10-19 | S14 | 不改 `CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`：改动稿放在收尾消息里给用户看，同意后在 `s14-done-r2` 写入 | S13 验收时定下；CLAUDE.md 规定这两个文件要用户同意才能改 |
 | 2026-10-19 | S14 | 用户新决定：服务器专用，Claude 部署不必先问是否空闲；实验也由 Claude 在服务器上起（"帮我新建一个tmux窗口然后跑起来正式实验"），次序仍按 SESSIONS（E1 在 S15 之后的 S19，预实验在前）；密钥沿用现有的（"你可以直接使用"）。写进 PLAN §9（补充一条，原条注明部分被取代）与 EXPERIMENT §7。密钥只走环境变量：本机用户环境里已有 `DEEPSEEK_API_KEY`，传到服务器时经 ssh 标准输入进 tmux 会话的环境，不进命令行、文件与日志 | 用户指示（本会话）。编排者曾提议今晚先跑一个计划外的 nollm 预跑，用户问"预跑是S14的任务吗？正式实验是S15的任务吗？"，没有跑 |
+| 2026-10-19 | S14 | 收尾：服务器 `s14-deploy-3`（7f35b42）记录 env 通过、pytest 935 passed, 3 skipped、GATES PASS 14/14；本机同一代码 pytest 935 passed, 3 skipped（与起点相同，skip 未增加）、GATES PASS 14/14（S14 5/5）。证据目录里的日志被 `.gitignore` 的 `*.log` 挡住，`git add -f` 加入。`s14-posix-die` 已 cleanup。合并回 main，tag `s14-done` | 编排者 |
