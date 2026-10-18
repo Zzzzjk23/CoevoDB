@@ -40,7 +40,7 @@
 
 各 venv 的包（`uv pip freeze` 的直接依赖部分，版本照 Windows 本机）：
 
-- `.venv` 与 `.venvs/duckdb-1.1.3-full`（只有 duckdb 版本不同）：duckdb、datafusion 54.0.0、psycopg2-binary 2.9.13、sqlglot 30.21.0、pyyaml 6.0.3、pytest 9.1.1、matplotlib 3.10.6、scipy 1.16.3、numpy 2.3.5、pyarrow 21.0.0、httpx 0.28.1。Windows 的 `.venv` 继承 anaconda 底座的包（matplotlib、scipy、numpy、pyarrow、httpx 来自那里）；服务器上把它们直接装进 venv，版本相同。
+- `.venv` 与 `.venvs/duckdb-1.1.3-full`：代码直接用到的是 duckdb、datafusion 54.0.0、psycopg2-binary 2.9.13、sqlglot 30.21.0、pyyaml 6.0.3、pytest 9.1.1、matplotlib 3.10.6、scipy 1.16.3、numpy 2.3.5、pyarrow 21.0.0、httpx 0.28.1。Windows 的这两个 venv 继承 anaconda 底座的包（matplotlib、scipy、numpy、pyarrow、httpx 及其依赖来自那里）；服务器上的 venv 不继承底座，把这些包连同间接依赖（pyparsing、pillow、fonttools 等）直接装进去，版本逐个照 Windows 上那个 venv 实际看到的版本钉住（两个 venv 的间接依赖版本略有不同，例如 anyio、idna，各照各的）。完整列表是 §7 的 `venvs`。
 - `.venvs/duckdb-1.1.3`：duckdb 1.1.3、psycopg2-binary 2.9.13。
 - `.venvs/datafusion-50.0.0`：datafusion 50.0.0、pyarrow 25.0.1；不装 duckdb、psycopg2（与 Windows 相同，S1 修订的决定）。
 
@@ -81,7 +81,7 @@ git status --short          # 必须为空
 4. SQLite：下载 `https://sqlite.org/2025/sqlite-amalgamation-3510000.zip`，解压后
    `gcc -O2 -fPIC -shared -DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_GEOPOLY -DSQLITE_ENABLE_RTREE -DSQLITE_MAX_VARIABLE_NUMBER=250000 -DSQLITE_THREADSAFE=1 sqlite3.c -o .orch/sqlite-3.51.0/lib/libsqlite3.so.3.51.0 -Wl,-soname,libsqlite3.so.0 -lpthread -ldl -lm`，
    再 `ln -sfn` 把 `envs/py313/lib/libsqlite3.so.0` 与 `libsqlite3.so` 指过去。核对 `sqlite_source_id()` 是 `2025-11-04 19:38:17 fb2c931ae597f8d00a37574ff67aeed3eced4e5547f9120744ae4bfa8e74527b`。
-5. venv：`uv venv --python .orch/mamba/envs/py313/bin/python3.13 <路径>`，再 `uv pip install --python <路径>/bin/python <§2 的包==版本>`。
+5. venv：`uv venv --python .orch/mamba/envs/py313/bin/python3.13 <路径>`，再 `uv pip install --python <路径>/bin/python <§7 里该 venv 的全部 包==版本>`（值为 `null` 的不装）。
 6. PG：`micromamba create -p .orch/mamba/envs/pgdeps -c conda-forge --override-channels icu=67.1 readline zlib`；官方源码包 `postgresql-16.15.tar.bz2`（SHA256 `c1575341fa7bd40f5274ea465b34390f4dc64cdd0770af327005caaeb9f6b7ed`）；`./configure --prefix=$HOME/CoevoDB/.orch/pg16/pgsql --with-icu --with-openssl --with-readline --with-zlib CPPFLAGS=-I<pgdeps>/include LDFLAGS="-L<pgdeps>/lib -Wl,-rpath,<pgdeps>/lib"`（`PKG_CONFIG_PATH=<pgdeps>/lib/pkgconfig`），`make -j16 world-bin && make install-world-bin`。initdb：`-U coevo --encoding=UTF8 --locale=C --auth=scram-sha-256 --pwfile=<临时文件>`，密码先写进 `~/.pgpass`（`127.0.0.1:55432:*:coevo:<密码>` 与 `localhost` 一行）；`postgresql.conf` 末尾加 `listen_addresses`、`port`、`unix_socket_directories`、`timezone`、`log_timezone`、`datestyle`、`default_text_search_config` 七行，取值见 §2。
 7. JDK：Adoptium `OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz`（SHA256 `ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94`）解压到 `.orch/jdk/`。
 8. 源码：`git clone --depth 1 --branch v1.5.5 https://github.com/duckdb/duckdb .src/duckdb-v1.5.5`；`git clone --depth 1 --branch 54.0.0 https://github.com/apache/datafusion .src/datafusion-54.0.0`。
@@ -180,7 +180,13 @@ cd ~/CoevoDB/framework/results && tar -czf ~/s14-smoke.tar.gz s14-smoke s14-smok
 
 ## 6. 平台差异
 
-（S14 逐条记录，见下。）
+S14 在服务器上第一次跑全量测试与全部门槛时发现的差异，逐条记录。代码、门槛的改动都只为让同一件事在两个平台上得到同一个结果，没有放宽任何断言。
+
+| # | 现象 | 原因 | 处理 |
+|---|---|---|---|
+| 1 | `test_pg_local_server.py::test_live_server_roundtrip` 与旧系统对照组（`old_no_llm`，也就是 `test_real_no_llm_is_killed_at_the_budget` 与 S12 门槛 `old_arm`）报 `PermissionError` | 旧代码的默认路径（`framework/util/paths.py` 的 `COEVO_PGBLD` 等五个、`framework/config.yml` 的 `old_venv`）指向原开发机的 `/home/user/work/db_safety/...`。这台服务器上恰好有另一个账号 `user`，目录存在但不可读，`Path.exists()` 抛异常而不是返回 False；Windows 上这些路径不存在，返回 False | 不改旧代码（S12 的 `moves` 组钉着它们与 `s11-done-r2` 只差导入路径）。`util/paths.py` 的文档本来就说"新克隆用环境变量覆盖"：`~/CoevoDB/.orch/server.env` 把五个变量指到 `~/CoevoDB/.orch/absent/` 下不存在的路径，与 Windows 上"路径不存在"的行为一致；`~/.bashrc` 第一行（在交互式判断之前）读入它，所以 ssh 远程命令、tmux 里的 shell 都有。门槛 s14 的 `env` 组核对这五个变量 |
+| 2 | `test_surprise_s04_pipeline.py` 两个测试断言子进程退出码是 77 / 0，Linux 上得到 -9 | 测试夹具 `tests/test_surprise_s04_runners.py` 的 `die(code)`：Windows 上用 `TerminateProcess(code)`（S5 为避开 `os._exit` 的偶发访问冲突），POSIX 上写成了给自己发 SIGKILL，退出码恒为 -9。harness 如实报了 crash 与退出码 | 包 `s14-posix-die`：POSIX 分支改成 `os._exit(code)`（Linux 上 `exit_group` 立即结束所有线程，没有 Windows 那个问题）；断言不变 |
+| 3 | 门槛 s03 的 `version` 组找不到 `.venvs/duckdb-1.1.3/Scripts/python.exe`；同组"旧 DataFusion 环境里没有 DuckDB"一项查的是 `Lib/site-packages/duckdb`，在 Linux 上恒真 | 门槛写死了 Windows 的 venv 布局 | 编排者改门槛：解释器按 `Scripts/python.exe`、`bin/python` 依次找；污染检查改为在整个 venv 里找 `site-packages/duckdb`，两个平台上都真的在查 |
 
 ## 7. 机读清单
 
@@ -196,44 +202,15 @@ cd ~/CoevoDB/framework/results && tar -czf ~/s14-smoke.tar.gz s14-smoke s14-smok
 {
   "schema": 1,
   "python": "3.13.9",
-  "sqlite": {
-    "version": "3.51.0",
-    "source_id": "2025-11-04 19:38:17 fb2c931ae597f8d00a37574ff67aeed3eced4e5547f9120744ae4bfa8e74527b",
-    "platform_options": ["ATOMIC_INTRINSICS=", "COMPILER=", "MUTEX_"]
-  },
+  "sqlite": {"version": "3.51.0", "source_id": "2025-11-04 19:38:17 fb2c931ae597f8d00a37574ff67aeed3eced4e5547f9120744ae4bfa8e74527b", "platform_options": ["ATOMIC_INTRINSICS=", "COMPILER=", "MUTEX_"]},
   "venvs": {
-    ".venv": {"duckdb": "1.5.5", "datafusion": "54.0.0", "psycopg2-binary": "2.9.13", "sqlglot": "30.21.0",
-              "pyyaml": "6.0.3", "pytest": "9.1.1", "matplotlib": "3.10.6", "scipy": "1.16.3", "numpy": "2.3.5",
-              "pyarrow": "21.0.0", "httpx": "0.28.1"},
+    ".venv": {"anyio": "4.15.1", "certifi": "2025.11.12", "cloudpickle": "3.1.1", "contourpy": "1.3.3", "cycler": "0.11.0", "datafusion": "54.0.0", "duckdb": "1.5.5", "fonttools": "4.60.1", "h11": "0.16.0", "httpcore": "1.0.9", "httpx": "0.28.1", "idna": "3.20", "iniconfig": "2.3.0", "kiwisolver": "1.4.9", "matplotlib": "3.10.6", "numpy": "2.3.5", "packaging": "26.3", "pillow": "12.2.0", "pluggy": "1.6.0", "psycopg2-binary": "2.9.13", "pyarrow": "21.0.0", "pygments": "2.21.0", "pyparsing": "3.2.5", "pytest": "9.1.1", "python-dateutil": "2.9.0.post0", "pyyaml": "6.0.3", "scipy": "1.16.3", "six": "1.17.0", "sniffio": "1.3.1", "sqlglot": "30.21.0", "typing-extensions": "4.16.0"},
     ".venvs/duckdb-1.1.3": {"duckdb": "1.1.3", "psycopg2-binary": "2.9.13"},
-    ".venvs/duckdb-1.1.3-full": {"duckdb": "1.1.3", "datafusion": "54.0.0", "psycopg2-binary": "2.9.13",
-                                 "sqlglot": "30.21.0", "pyyaml": "6.0.3", "pytest": "9.1.1", "matplotlib": "3.10.6",
-                                 "scipy": "1.16.3", "numpy": "2.3.5", "pyarrow": "21.0.0", "httpx": "0.28.1"},
-    ".venvs/datafusion-50.0.0": {"datafusion": "50.0.0", "pyarrow": "25.0.1", "duckdb": null, "psycopg2-binary": null}
+    ".venvs/duckdb-1.1.3-full": {"anyio": "4.10.0", "certifi": "2025.11.12", "cloudpickle": "3.1.2", "contourpy": "1.3.3", "cycler": "0.11.0", "datafusion": "54.0.0", "duckdb": "1.1.3", "fonttools": "4.60.1", "h11": "0.16.0", "httpcore": "1.0.9", "httpx": "0.28.1", "idna": "3.11", "iniconfig": "2.3.1", "kiwisolver": "1.4.9", "matplotlib": "3.10.6", "numpy": "2.3.5", "packaging": "26.3", "pillow": "12.2.0", "pluggy": "1.6.0", "psycopg2-binary": "2.9.13", "pyarrow": "21.0.0", "pygments": "2.21.0", "pyparsing": "3.2.5", "pytest": "9.1.1", "python-dateutil": "2.9.0.post0", "pyyaml": "6.0.3", "scipy": "1.16.3", "six": "1.17.0", "sniffio": "1.3.0", "sqlglot": "30.21.0", "typing-extensions": "4.15.0"},
+    ".venvs/datafusion-50.0.0": {"datafusion": "50.0.0", "duckdb": null, "psycopg2-binary": null, "pyarrow": "25.0.1"}
   },
-  "postgres": {
-    "server_version_num": "160015",
-    "server_encoding": "UTF8",
-    "datcollate": "C",
-    "datctype": "C",
-    "datlocprovider": "c",
-    "TimeZone": "Australia/Sydney",
-    "DateStyle": "ISO, MDY",
-    "default_text_search_config": "pg_catalog.english",
-    "lc_messages": "C",
-    "lc_monetary": "C",
-    "lc_numeric": "C",
-    "lc_time": "C",
-    "icu_collversion": "153.14"
-  },
-  "src": {
-    ".src/duckdb-v1.5.5": "d8cdaa33fda8df955cc76ef58a280f68f4cd43fa",
-    ".src/datafusion-54.0.0": "45d943dfb8699dc9cb9ef2320e955b73e3e6c03b"
-  },
-  "linux": {
-    "java": "21.0.12.1",
-    "pg_trust_rules": 0,
-    "old_code_overrides": ["COEVO_PGBLD", "COEVO_OLD_VENV", "COEVO_DUCKDB_SRC", "COEVO_ARGUS_DIR", "COEVO_KEYS_YML"]
-  }
+  "postgres": {"server_version_num": "160015", "server_encoding": "UTF8", "datcollate": "C", "datctype": "C", "datlocprovider": "c", "TimeZone": "Australia/Sydney", "DateStyle": "ISO, MDY", "default_text_search_config": "pg_catalog.english", "lc_messages": "C", "lc_monetary": "C", "lc_numeric": "C", "lc_time": "C", "icu_collversion": "153.14"},
+  "src": {".src/duckdb-v1.5.5": "d8cdaa33fda8df955cc76ef58a280f68f4cd43fa", ".src/datafusion-54.0.0": "45d943dfb8699dc9cb9ef2320e955b73e3e6c03b"},
+  "linux": {"java": "21.0.12.1", "pg_trust_rules": 0, "old_code_overrides": ["COEVO_PGBLD", "COEVO_OLD_VENV", "COEVO_DUCKDB_SRC", "COEVO_ARGUS_DIR", "COEVO_KEYS_YML"]}
 }
 ```

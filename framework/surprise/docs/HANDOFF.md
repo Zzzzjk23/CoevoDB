@@ -18,8 +18,19 @@
 | S11 | Phase 6 评估管线（M4 冒烟） | 完成 | s11-done；s11-done-r2（用户验收之后，S12 从这里起） | S11 17/17；pytest 935 passed, 3 skipped；GATES PASS 11/11 |
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
+| S14 | 服务器部署与双平台门槛 | 进行中 | — | — |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S14（2026-10-19）
+
+Claude Code 担任编排者。用户的指示是"当前服务器3090空闲，开始搭建环境"（即开 S14，并确认了服务器空闲）。会话分支 `session/s14` 从 `s13-done-r2` 建立。环境、部署与运行手册写在新文件 `framework/surprise/docs/SERVER.md`；门槛 `gates/s14.py`（表在 `s14_cases.py`）。
+
+已完成：
+- 服务器环境全部装好（全在 `~/CoevoDB` 下，没有 sudo）：裸仓库 `~/coevodb.git`、工作目录 `~/CoevoDB` 只检出 tag；uv；micromamba + conda-forge Python 3.13.9 底座；按 Windows 编译选项自编的 SQLite 3.51.0（source id 与 Windows 逐字相同）；四个 venv；PG 16.15（ICU 67.1，设置与 Windows 逐项相同，认证改 scram + `~/.pgpass`）；JDK 21；`.src/` 两份检出；`framework/results/s08/` 四个钉住的目录。细节与理由见 SERVER.md §1–§4。
+- 服务器上第一次全量运行发现三处平台差异（SERVER.md §6）：旧代码默认路径指向本机另一账号的 `/home/user/...`（环境变量覆盖，已解决）；S4 测试夹具 `die()` 在 POSIX 上用 SIGKILL（包 `s14-posix-die` 在修）；门槛 s03 写死 Windows 的 venv 路径（编排者已改）。
+
+待做：合并 `s14-posix-die`；服务器上 `gates.all` 的完整结果；部署 `s14-deploy-N` 并用 `python -m surprise.gates.s14 --record` 录服务器记录；用户照 SERVER.md §5.6 跑冒烟网格；收尾时给用户看 `CLAUDE.md` 与 `ORCHESTRATION.md` 的改动。
 
 ## 最近完成会话：S13（2026-10-19）
 
