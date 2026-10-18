@@ -119,10 +119,10 @@ PG 没在跑时启动它（不要重新 initdb）：
 ```
 tmux new -s <名字>                          # 例如 s14-smoke
 cd ~/CoevoDB/framework
-$PY -m surprise.experiments.grid run <配置.json> --out results/<名字> 2>&1 | tee results/<名字>.log
+$PY -m surprise.experiments.grid run <配置.json> --out results/<名字> 2>&1 | tee -a results/<名字>.log
 ```
 
-按 `Ctrl-b` 再按 `d` 离开 tmux，网格继续跑；`tmux attach -t <名字>` 回来看。网格中途被打断（断电、误按 `Ctrl-c`）时，用同一条命令续跑：已经 `done` 的格不会重跑，没跑完的格改名成 `<格>.stale-<k>` 保留，再从头跑。
+按 `Ctrl-b` 再按 `d` 离开 tmux，网格继续跑；`tmux attach -t <名字>` 回来看。网格中途被打断（断电、误按 `Ctrl-c`）时，用同一条命令续跑：已经 `done` 的格不会重跑，没跑完的格改名成 `<格>.stale-<k>` 保留，再从头跑。`tee -a` 是追加，续跑时日志里前后两段都在。
 
 不带 LLM 的格，子进程里没有密钥。带 LLM 的格要密钥：只在启动网格的那个 shell 里设 `DEEPSEEK_API_KEY`（例如 `read -s DEEPSEEK_API_KEY && export DEEPSEEK_API_KEY`），不要写进文件、命令行参数或 `~/.bashrc`。
 
@@ -172,7 +172,7 @@ S14 的门槛要求用户照本节跑通一次 1 分钟的冒烟网格。配置�
 tmux new -s s14-smoke
 PY=~/CoevoDB/.venv/bin/python
 cd ~/CoevoDB/framework
-$PY -m surprise.experiments.grid run surprise/docs/grids/s14_smoke.json --out results/s14-smoke 2>&1 | tee results/s14-smoke.log
+$PY -m surprise.experiments.grid run surprise/docs/grids/s14_smoke.json --out results/s14-smoke 2>&1 | tee -a results/s14-smoke.log
 $PY -m surprise.experiments.grid status results/s14-smoke
 $PY -m surprise.metrics.report results/s14-smoke
 cd ~/CoevoDB/framework/results && tar -czf ~/s14-smoke.tar.gz s14-smoke s14-smoke.log
@@ -182,13 +182,14 @@ cd ~/CoevoDB/framework/results && tar -czf ~/s14-smoke.tar.gz s14-smoke s14-smok
 
 ## 6. 平台差异
 
-S14 在服务器上第一次跑全量测试与全部门槛时发现的差异，逐条记录。代码、门槛的改动都只为让同一件事在两个平台上得到同一个结果，没有放宽任何断言。
+S14 在服务器上第一次跑全量测试、全部门槛与冒烟网格时发现的差异，逐条记录。代码、门槛的改动都只为让同一件事在两个平台上得到同一个结果，没有放宽任何断言。
 
 | # | 现象 | 原因 | 处理 |
 |---|---|---|---|
 | 1 | `test_pg_local_server.py::test_live_server_roundtrip` 与旧系统对照组（`old_no_llm`，也就是 `test_real_no_llm_is_killed_at_the_budget` 与 S12 门槛 `old_arm`）报 `PermissionError` | 旧代码的默认路径（`framework/util/paths.py` 的 `COEVO_PGBLD` 等五个、`framework/config.yml` 的 `old_venv`）指向原开发机的 `/home/user/work/db_safety/...`。这台服务器上恰好有另一个账号 `user`，目录存在但不可读，`Path.exists()` 抛异常而不是返回 False；Windows 上这些路径不存在，返回 False | 不改旧代码（S12 的 `moves` 组钉着它们与 `s11-done-r2` 只差导入路径）。`util/paths.py` 的文档本来就说"新克隆用环境变量覆盖"：`~/CoevoDB/.orch/server.env` 把五个变量指到 `~/CoevoDB/.orch/absent/` 下不存在的路径，与 Windows 上"路径不存在"的行为一致；`~/.bashrc` 第一行（在交互式判断之前）读入它，所以 ssh 远程命令、tmux 里的 shell 都有。门槛 s14 的 `env` 组核对这五个变量 |
 | 2 | `test_surprise_s04_pipeline.py` 两个测试断言子进程退出码是 77 / 0，Linux 上得到 -9 | 测试夹具 `tests/test_surprise_s04_runners.py` 的 `die(code)`：Windows 上用 `TerminateProcess(code)`（S5 为避开 `os._exit` 的偶发访问冲突），POSIX 上写成了给自己发 SIGKILL，退出码恒为 -9。harness 如实报了 crash 与退出码 | 包 `s14-posix-die`：POSIX 分支改成 `os._exit(code)`（Linux 上 `exit_group` 立即结束所有线程，没有 Windows 那个问题）；断言不变 |
 | 3 | 门槛 s03 的 `version` 组找不到 `.venvs/duckdb-1.1.3/Scripts/python.exe`；同组"旧 DataFusion 环境里没有 DuckDB"一项查的是 `Lib/site-packages/duckdb`，在 Linux 上恒真 | 门槛写死了 Windows 的 venv 布局 | 编排者改门槛：解释器按 `Scripts/python.exe`、`bin/python` 依次找；污染检查改为在整个 venv 里找 `site-packages/duckdb`，两个平台上都真的在查 |
+| 4 | 门槛 s14 的 `smoke` 组判冒烟网格的 `grid.json` 与配置不符 | `load_config` 把 `sqlancer` 臂的汇总文件存成绝对路径：服务器上是 `/home/<用户>/CoevoDB/framework/...`，本机是 `D:\CoevoDB\framework\...` | 编排者改门槛：两边都截成工作目录内的相对路径再比，且只在两边指向同一个文件时才截；网格代码不动 |
 
 ## 7. 机读清单
 
