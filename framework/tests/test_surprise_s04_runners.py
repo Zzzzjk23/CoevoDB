@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import ctypes
 import os
-import signal
 import time
 from typing import Any
 
@@ -22,6 +21,15 @@ EXIT_CODE = 77
 
 
 def die(code: int) -> None:
+    """End the process immediately with exit code ``code``.
+
+    Windows uses ``TerminateProcess`` because ``os._exit`` can race DuckDB
+    worker threads; about 0.5% of those children then exit with access
+    violation 0xC0000005 instead of ``code``. POSIX uses ``os._exit``, which
+    is ``exit_group``: every thread stops at once, without atexit, destructors,
+    or unloading libraries, so the wait status is ``code``. SIGKILL would
+    make the wait status -9 on Linux regardless of ``code``.
+    """
     if os.name == "nt":
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.GetCurrentProcess.restype = ctypes.c_void_p
@@ -29,7 +37,7 @@ def die(code: int) -> None:
         kernel32.TerminateProcess.restype = ctypes.c_int
         kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code)
     else:
-        os.kill(os.getpid(), signal.SIGKILL)
+        os._exit(code)
     os._exit(code)
 
 
