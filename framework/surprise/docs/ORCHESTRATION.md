@@ -7,7 +7,7 @@
 | 角色 | 谁 | 做 | 不做 |
 |---|---|---|---|
 | 编排者 | 你 | 读交接文件、拆工作包、先写 `gates/sNN.py`、写任务说明、派发与监控、独立复跑审查、合并、写 HANDOFF 与 DECISIONS、打 tag | 不写实现代码 |
-| 执行者 | grok 或 codex 的无界面模式，每个工作包一个（2026-10-19 起暂用 codex，见第 11 节） | 在自己的 worktree 与分支 `grok/<包号>` 上实现、跑测试、提交、写 `.orch/report.md` | 不改 `gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`.codex/`、`tools/orch/`；不打 tag、不合并、不 push |
+| 执行者 | grok 或 codex 的无界面模式，每个工作包一个（2026-10-19 起暂用 codex，见第 11 节） | 在自己的 worktree 与分支 `grok/<包号>` 上实现、跑测试、提交、写 `.orch/report.md` | 不改 `gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`.codex/`、`tools/orch/`；不打 tag、不合并、不 push；不登录实验服务器 |
 | 用户 | — | 定参数、批准 CLAUDE.md 改动、处理升级上来的问题、会话验收 | — |
 
 你直接提交的只应是：门槛脚本、交接文件、归档、合并提交。实现代码全部来自 `grok/` 分支。
@@ -151,3 +151,10 @@
 `gw handover <包号>` 用于执行者中途退出（例如余额用完）的包：在原 worktree 上开新会话，提示里要求先读懂上一位留下的改动、能用的接着用。审查照常读完整 diff，接手的包不放松。
 
 codex 启动即失败：看 `.orch/logs/<包号>.stderr.log`；在一个临时目录里跑 `codex exec "hi"` 确认登录没过期；需要指定程序路径时设 `ORCH_CODEX_CMD`。
+
+## 12. 实验服务器
+
+- 服务器专用（2026-10-19 用户决定，PLAN §9 补充一条）：你直接部署，并照运行单起实验，次序按 SESSIONS。
+- 部署只推 tag（`git push server refs/tags/<tag>`），服务器工作目录只检出 tag，不在上面改代码。
+- 执行者（grok 或 codex）不登录服务器：deny 规则看不到 ssh 引号里的远程命令，服务器上的操作也不留 diff 可审。需要在服务器上做的事由你做；需要改的代码照旧由执行者在本机 worktree 里改。`grok_worker.py` 把 `ssh`、`scp`、`rsync`、`sftp` 列进了 grok 的 `DENY_BASH` 与 codex 的 `CODEX_FORBIDDEN`；与第 10 节一样，包一层的写法拦不住，靠审查。
+- 环境与运行手册见 `SERVER.md`。

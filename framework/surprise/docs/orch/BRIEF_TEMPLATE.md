@@ -40,7 +40,8 @@
 
 - 不改 `framework/surprise/gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`tools/orch/`。{S4 之后加上：`framework/surprise/harness/`（已冻结）。}
 - 旧代码（`framework/surprise/` 以外）{只移动、不改逻辑，移动时只允许改导入路径 / 本包不碰}。
-- 不靠改测试让测试通过：不新增 skip / xfail，不删断言、不放宽断言，不用宽泛的 try/except 吞掉失败，不改 conftest。某个测试确实该改，就写进报告的"未决问题"，停下。
+- 不靠改测试让测试通过：不新增 skip / xfail，不删断言、不放宽断言，不用宽泛的 try/except 吞掉失败，不改 conftest。这一条管基线里已有的测试与门槛：其中某个测试确实该改，就写进报告的"未决问题"，停下。本包新写的测试照常修改，只要改完仍检查这份说明要求的东西。
+- 不登录、不连接实验服务器（不用 ssh、scp、rsync、sftp）。
 - 标签路径上不调用 LLM；密钥只走环境变量 `DEEPSEEK_API_KEY`，不打印，不写进代码、配置、日志、提交或报告。{S9 之前：本包不需要任何 LLM 调用。}
 - 不打 tag，不合并，不 rebase，不 push，不切换或删除分支，不动别的 worktree；不改 `HANDOFF.md`、`DECISIONS.md`。
 - {本包特有的禁止项；没有就删掉这一行。}

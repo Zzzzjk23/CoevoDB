@@ -3,7 +3,9 @@
 目标：把 CoevoDB 从 bandit + playbook 的共同进化循环改造成惊讶驱动框架。
 文档都在 `framework/surprise/docs/`：
 - `PLAN.md`：总规划（只读，只在用户做出新决定时改）
-- `SESSIONS.md`：12 个实施会话的范围、交付物与门槛
+- `SESSIONS.md`：实施会话的范围、交付物与门槛（S0–S12 迁移，S13 起正式实验）
+- `EXPERIMENT.md`：正式实验协议
+- `SERVER.md`：实验服务器的环境、部署与运行手册
 - `HANDOFF.md`：会话之间的交接
 - `DECISIONS.md`：决策日志（只追加）
 
@@ -15,18 +17,20 @@
 - S12 之前，旧代码只做移动、不改逻辑（移动时只允许改导入路径）；旧测试保持通过。
 - 只做 `SESSIONS.md` 中当前会话的范围；计划外的问题记进 `HANDOFF.md` 的"未决问题"，不要顺手修。
 - 与 `PLAN.md` 冲突的决定先问用户；小的实现选择自己定，记进 `DECISIONS.md`。
+- 实验服务器（`ssh 3090`）专用：编排者直接部署（只推 tag，服务器工作目录只检出 tag、不在上面改代码），并照运行单在上面起实验，次序按 `SESSIONS.md`；不跑计划外的实验，不动正在跑的格。密钥经 ssh 标准输入进 tmux 会话的环境，不进命令行、文件与日志。执行者（grok 或 codex）不登录服务器。
 
 ## 命令（在 `framework/` 目录下执行）
 
 - 测试：`../.venv/Scripts/python.exe -m pytest -q testing tests`
   （用仓库根 `.venv` 的解释器：PATH 上的 `pytest` 是 anaconda 的，没有 duckdb。不要直接 `pytest -q`：`framework/test_api.py` 在设置了密钥时会真的调用 DeepSeek API）
 - 门槛：`../.venv/Scripts/python.exe -m surprise.gates.all`（每个 `gates/sNN.py` 退出码 0 = 通过；由 S1 建立）
-- 编排（在仓库根执行）：`.venv/Scripts/python.exe tools/orch/grok_worker.py {spawn|status|review|resume|merge|cleanup|list}`（流程见 `framework/surprise/docs/ORCHESTRATION.md`）
+- 编排（在仓库根执行）：`.venv/Scripts/python.exe tools/orch/grok_worker.py {spawn|status|review|resume|handover|merge|cleanup|list}`（流程见 `framework/surprise/docs/ORCHESTRATION.md`）
 - 引擎环境（路径相对仓库根，都不入库；解释器是 `<venv>/Scripts/python.exe`，Python 3.13.9）：
   - `.venv`（主环境）：DuckDB 1.5.5、DataFusion 54.0.0、SQLite 3.51.0（标准库 `sqlite3`）、psycopg2-binary 2.9.13
   - `.venvs/duckdb-1.1.3`：DuckDB 1.1.3（另装 psycopg2-binary，旧版子进程 `oracles._remote_exec` 导入时要用）
   - `.venvs/datafusion-50.0.0`：DataFusion 50.0.0（Version differential 用的旧版）
   - 仓库根有 `duckdb/`、`datafusion/` 两个放复现 SQL 的目录：在仓库根 `import` 这两个名字会假成功，核对环境要看 `__version__`
+- 服务器上的环境版本与 Windows 相同，路径见 `framework/surprise/docs/SERVER.md`；解释器是 `~/CoevoDB/.venv/bin/python`，部署见 SERVER.md §3。
 - PostgreSQL 相关注意事项见 `framework/AGENTS.md`。
 
 ## 收尾协议（编排者）
@@ -43,7 +47,8 @@
 
 - 只做 `.orch/brief.md` 里的工作包，只改其中"允许改动的路径"列出的路径。说明与本文件冲突时，以说明为准。
 - 不改 `framework/surprise/gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`tools/orch/`，也不碰自己 worktree 以外的任何文件。
-- 不靠改测试让测试通过：不新增 skip / xfail，不删断言、不放宽断言，不用宽泛的 try/except 吞掉失败，不改 conftest。认为某个测试本身有错，就写进报告，停下。
+- 不靠改测试让测试通过：不新增 skip / xfail，不删断言、不放宽断言，不用宽泛的 try/except 吞掉失败，不改 conftest。这一条管基线里已有的测试与门槛：认为其中某个测试本身有错，就写进报告，停下。本包新写的测试照常修改，只要改完仍检查说明要求的东西。
+- 不登录、不连接实验服务器（不用 ssh、scp、rsync、sftp）。
 - 被权限规则拒绝的操作不要换写法重试，也不要改用 shell、脚本或别的工具达到同样效果；确实需要它才能完成任务时，写进报告，停下。
 - 收尾：把改动提交到当前分支（`grok/<包号>`）；写 `.orch/report.md`（不入库），内容为改了哪些文件、跑了哪些命令及输出末 20 行、与说明的偏差、未决问题。
 - 不打 tag、不合并、不 rebase、不 push、不切换或删除分支，不改 `HANDOFF.md` 与 `DECISIONS.md`。

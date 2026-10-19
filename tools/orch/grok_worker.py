@@ -132,6 +132,8 @@ DENY_BASH = [
     "rd /s*", "rd /S*", "rd /q /s*", "rd /Q /S*",
     "rmdir /s*", "rmdir /S*", "rmdir /q /s*", "rmdir /Q /S*",
     "del /s*", "del /S*",
+    # executors never log in to the experiment server (ORCHESTRATION §12)
+    "ssh*", "scp*", "rsync*", "sftp*",
 ]
 # recursive deletes, PowerShell (cmdlet and its aliases)
 DENY_BASH += [
@@ -158,6 +160,8 @@ CODEX_FORBIDDEN = [
     ([["del", "erase"], ["/s", "/S"]], "no recursive deletes"),
     ([["Remove-Item", "remove-item", "rm", "ri", "del", "erase", "rd", "rmdir"],
       ["-Recurse", "-recurse", "-r", "-R"]], "no recursive deletes"),
+    ([["ssh", "ssh.exe", "scp", "scp.exe", "rsync", "rsync.exe", "sftp", "sftp.exe"]],
+     "executors never log in to the experiment server"),
 ]
 
 SKIP_RE = re.compile(
