@@ -35,7 +35,7 @@ def compare_dedup(run_dir: str | Path, *, limit: int | None = None, reprofile: b
     """
     limit = _limit(limit)
     data = RunData.open(run_dir)
-    failures = [record for record in data.records if record.label.y == "fail"]
+    failures = [record for record in data.iter_records() if record.label.y == "fail"]
     if limit is not None:
         failures = failures[:limit]
     pending = [record for record in failures if not _profile_ran(record.label)]
