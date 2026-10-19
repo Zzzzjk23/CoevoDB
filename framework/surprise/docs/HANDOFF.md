@@ -20,8 +20,19 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
+| S19 | E1 DuckDB 主对比 | **进行中**（预实验在服务器上跑） | s19-deploy-1（预实验部署） | 未跑（`gates/s19.py` 在结果拷回前写） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S19（E1 DuckDB 主对比，2026-10-20 开始）
+
+用户的指示："开始S19，注意你只需要把实验跑起来，并告诉我结果会储存到哪里，以及进入实验terminal的tmux指令，不需要监控它是否跑完"。会话分支 `session/s19` 从 `s15-done-r3` 建立；本会话只加了文档与配置，代码与 `s15-done-r3` 相同。
+
+- 交付：预实验配置 `docs/grids/e1_pilot_c{8,4,1}.json`、脚本 `docs/runs/e1_pilot.sh`、运行单 `docs/runs/E1.md`（正式配置等预实验之后写）。
+- 部署 `s19-deploy-1` 到服务器，tmux 会话 `e1-pilot` 里依次跑 c8 → c4 → c1，约 15 小时；结果在服务器 `~/CoevoDB/framework/results/e1-pilot-c{8,4,1}/` 与同名 `.log`。密钥经 ssh 标准输入（`tmux load-buffer -`）粘进会话里的 `read -rs`，没有进命令行、文件与日志。
+- 按用户的话，起跑后不监控。
+
+下一步：预实验跑完后拷回（或在服务器上读）三份报告，比吞吐、标签稳定性与 LLM 用量，定并发度写进 `EXPERIMENT.md`；写 `docs/grids/e1.json`、门槛 `gates/s19.py`，部署后起正式 20 格。
 
 ## 最近完成会话：S15（2026-10-19）
 

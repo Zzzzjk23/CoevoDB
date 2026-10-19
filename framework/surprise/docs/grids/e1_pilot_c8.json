@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "name": "e1-pilot-c8",
+  "budget": {
+    "minutes": 120.0
+  },
+  "seeds": [
+    9101,
+    9102
+  ],
+  "repeats": 1,
+  "reference": "nollm",
+  "window": 10,
+  "prices": {
+    "deepseek-flash": {
+      "input": 0.3,
+      "output": 1.2
+    },
+    "deepseek-v4-pro": {
+      "input": 1.32,
+      "output": 3.96
+    }
+  },
+  "concurrency": 8,
+  "cpus_per_cell": 2,
+  "engine_threads": 2,
+  "kill_grace_minutes": 10,
+  "arms": [
+    {
+      "name": "full",
+      "kind": "surprise",
+      "engines": [
+        "duckdb"
+      ],
+      "llm": {
+        "roles": [
+          "implementer",
+          "conjecturer",
+          "prior",
+          "translator",
+          "vocab_inventor",
+          "oracle_inventor"
+        ],
+        "cache": "results/e1-pilot-c8/llm-cache/full",
+        "max_calls": "unlimited"
+      }
+    },
+    {
+      "name": "nollm",
+      "kind": "surprise",
+      "engines": [
+        "duckdb"
+      ]
+    },
+    {
+      "name": "pure-llm",
+      "kind": "pure_llm",
+      "engine": "duckdb",
+      "llm": {
+        "cache": "results/e1-pilot-c8/llm-cache/pure-llm",
+        "max_calls": "unlimited"
+      }
+    },
+    {
+      "name": "sqlancer",
+      "kind": "sqlancer",
+      "engine": "duckdb",
+      "run": true
+    }
+  ]
+}
