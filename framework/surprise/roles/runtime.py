@@ -21,7 +21,7 @@ from . import constants
 from .base import PLUGINS, RoleContext
 from .conjecturer import ConjectureBook, Conjecturer
 from .constants import IMPLEMENTER_PER_CHOICE, TIERS
-from .gateway import Gateway
+from .gateway import UNLIMITED, Gateway
 from .implementer import Implementer
 from .source import SourceError, open_sources
 
@@ -287,15 +287,18 @@ class RoleSet:
                 "dir": "" if root is None else root.name,
                 "commit": commit or None,
             }
+        cap = self._gateway.max_calls
         result = {
             "roles": list(self._roles),
             "tiers": dict(TIERS),
-            "max_calls": self._gateway.max_calls,
+            "max_calls": UNLIMITED if cap is None else cap,
             "network": self._network,
             "seed": self._seed,
             "constants": constants.as_dict(),
             "sources": sources,
         }
+        if self._gateway.tier is not None:
+            result["tier"] = self._gateway.tier
         if self.plugins:
             result["plugins"] = {name: role.manifest() for name, role in self.plugins.items()}
         return result
@@ -397,6 +400,7 @@ def build_roles(
         ledger_path=llm / "calls.jsonl",
         max_calls=config["max_calls"],
         transport=transport,
+        tier=config.get("tier"),
     )
     book = ConjectureBook(llm / "conjectures.jsonl")
     try:

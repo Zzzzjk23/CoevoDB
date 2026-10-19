@@ -14,6 +14,10 @@ from .cache import ResponseCache, cache_key
 from .constants import CAP_ENV, DEFAULT_MAX_CALLS, TIERS, as_dict
 from .schema import parse_reply
 
+# Not a name in roles.constants: as_dict() would copy every uppercase constant
+# into the manifest of every run.
+UNLIMITED = "unlimited"
+
 _ROLE_TOTAL_KEYS = (
     "calls",
     "network",
@@ -63,15 +67,43 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _effective_cap(max_calls: int | None) -> int:
-    cap = DEFAULT_MAX_CALLS if max_calls is None else max_calls
+def _resolve_max_calls(max_calls: object) -> int | None:
+    """Effective network cap, or None when the gateway itself has no cap.
+
+    ``None`` asks for ``DEFAULT_MAX_CALLS``. ``UNLIMITED`` asks for no cap.
+    A negative, a bool, a float, or any other string is rejected. ``CAP_ENV``,
+    when it holds an integer, lowers a numeric cap and is the cap of an
+    unlimited gateway.
+    """
+    if max_calls is None:
+        configured: int | None = DEFAULT_MAX_CALLS
+    elif isinstance(max_calls, str) and max_calls == UNLIMITED:
+        configured = None
+    elif isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 0:
+        raise ValueError(
+            f"max_calls must be an integer >= 0, null, or {UNLIMITED!r}, got {max_calls!r}"
+        )
+    else:
+        configured = max_calls
     raw = os.environ.get(CAP_ENV)
     if raw is None:
-        return cap
+        return configured
     try:
-        return min(cap, int(raw))
+        ceiling = int(raw)
     except (TypeError, ValueError):
-        return cap
+        return configured
+    if configured is None:
+        return ceiling
+    return min(configured, ceiling)
+
+
+def _resolve_tier(tier: object) -> str | None:
+    """A tier forced on every call, or None to keep the tier the caller passed."""
+    if tier is None:
+        return None
+    if isinstance(tier, str) and tier in TIERS:
+        return tier
+    raise ValueError(f"tier must be one of {', '.join(TIERS)} or null, got {tier!r}")
 
 
 def _blank_role() -> dict[str, int]:
@@ -86,12 +118,16 @@ class Gateway:
         *,
         cache_dir: Path | str,
         ledger_path: Path | str | None = None,
-        max_calls: int | None = None,
+        max_calls: int | str | None = None,
         transport: Any = None,
+        tier: str | None = None,
     ) -> None:
+        resolved_cap = _resolve_max_calls(max_calls)
+        resolved_tier = _resolve_tier(tier)
         self._cache = ResponseCache(cache_dir)
         self._ledger_path = Path(ledger_path) if ledger_path is not None else None
-        self._max_calls = _effective_cap(max_calls)
+        self._max_calls = resolved_cap
+        self._tier = resolved_tier
         self._transport = transport
         self._network_calls = 0
         self._seq = 0
@@ -104,7 +140,19 @@ class Gateway:
         return self._network_calls
 
     @property
-    def max_calls(self) -> int:
+    def max_calls(self) -> int | None:
+        """The effective cap, or None when nothing caps this gateway."""
+        return self._max_calls
+
+    @property
+    def tier(self) -> str | None:
+        """The tier forced on every call, or None when each call keeps its own."""
+        return self._tier
+
+    def _published_max_calls(self) -> int | str:
+        """What ``totals`` and ``manifest`` record: an int, or ``UNLIMITED``."""
+        if self._max_calls is None:
+            return UNLIMITED
         return self._max_calls
 
     def call(
@@ -117,6 +165,8 @@ class Gateway:
         temperature: float = 0.0,
         max_tokens: int = 4000,
     ) -> Reply:
+        if self._tier is not None:
+            tier = self._tier
         if tier not in TIERS:
             raise ValueError(f"unknown tier: {tier!r}")
         model = TIERS[tier]
@@ -139,15 +189,18 @@ class Gateway:
         return {
             "by_role": {role: dict(stats) for role, stats in self._by_role.items()},
             "network": self._network_calls,
-            "max_calls": self._max_calls,
+            "max_calls": self._published_max_calls(),
         }
 
     def manifest(self) -> dict[str, Any]:
-        return {
+        result = {
             "tiers": dict(TIERS),
-            "max_calls": self._max_calls,
+            "max_calls": self._published_max_calls(),
             "constants": as_dict(),
         }
+        if self._tier is not None:
+            result["tier"] = self._tier
+        return result
 
     def _invoke(
         self,
@@ -195,7 +248,7 @@ class Gateway:
                 input_tokens=0,
                 output_tokens=0,
             )
-        if self._network_calls >= self._max_calls:
+        if self._max_calls is not None and self._network_calls >= self._max_calls:
             return Reply(
                 role=role,
                 tier=tier,
