@@ -12,6 +12,7 @@ import argparse
 import importlib.metadata
 import json
 import random
+import signal
 import sys
 import time
 import traceback
@@ -25,7 +26,8 @@ from surprise.harness.ledger import Ledger
 from surprise.harness.manifest import build_manifest
 from surprise.harness.oracles.registry import TARGET_ENGINES
 from surprise.hunter.extractor import PhiExtractor
-from surprise.roles.gateway import Gateway
+from surprise.roles.constants import TIERS
+from surprise.roles.gateway import UNLIMITED, Gateway
 
 # fast tier; reasoning tokens on deepseek-flash count toward max_tokens, and
 # 8000 truncated real replies in S9/S10.
@@ -94,7 +96,8 @@ class _Run:
         oracles: tuple[str, ...],
         max_experiments: int | None,
         max_minutes: float | None,
-        max_calls: int | None,
+        max_calls: int | str | None,
+        tier: str | None,
         offline: bool,
         cache_dir: Path,
         run_id: str,
@@ -108,6 +111,7 @@ class _Run:
         self.max_experiments = max_experiments
         self.max_minutes = max_minutes
         self.max_calls = max_calls
+        self.tier = tier
         self.offline = offline
         self.cache_dir = cache_dir
         self.run_id = run_id
@@ -217,15 +221,18 @@ def run(
     max_experiments: int | None = None,
     max_minutes: float | None = None,
     cache=None,
-    max_calls: int | None = None,
+    max_calls: int | str | None = None,
     offline: bool = False,
     run_id: str | None = None,
     transport=None,
+    tier: str | None = None,
 ) -> dict[str, Any]:
     """Run the pure-LLM baseline into ``out`` and return the report.
 
     ``transport`` is a scripted stand-in when the caller supplies one. With
     ``offline`` and no transport, the gateway answers from the cache only.
+    ``max_calls`` may be ``"unlimited"``. ``tier`` forces every call onto one
+    tier; omitted, calls keep ``PURE_LLM_TIER``.
     """
     checked = _check_args(
         seed=seed,
@@ -237,6 +244,7 @@ def run(
         max_calls=max_calls,
         offline=offline,
         run_id=run_id,
+        tier=tier,
     )
     directory = Path(out)
     _ensure_out(directory)
@@ -249,6 +257,7 @@ def run(
         max_experiments=checked["max_experiments"],
         max_minutes=checked["max_minutes"],
         max_calls=checked["max_calls"],
+        tier=checked["tier"],
         offline=checked["offline"],
         cache_dir=cache_dir,
         run_id=checked["run_id"],
@@ -296,6 +305,7 @@ def _check_args(
     max_calls: object,
     offline: object,
     run_id: object,
+    tier: object,
 ) -> dict[str, Any]:
     seed_n = _require_int(seed, "seed")
     if not isinstance(engine, str) or engine == "":
@@ -309,7 +319,8 @@ def _check_args(
         raise UsageError("set max_experiments or max_minutes")
     if not isinstance(offline, bool):
         raise UsageError(f"offline: expected a bool, got {offline!r}")
-    calls = _optional_whole(max_calls, "max_calls")
+    calls = _optional_calls(max_calls)
+    chosen_tier = _optional_tier(tier)
     cache_path = _optional_path(cache, "cache")
     if run_id is None:
         run_id = f"pure-s{seed_n}"
@@ -322,6 +333,7 @@ def _check_args(
         "max_experiments": experiments,
         "max_minutes": minutes,
         "max_calls": calls,
+        "tier": chosen_tier,
         "offline": offline,
         "cache": cache_path,
         "run_id": run_id,
@@ -344,6 +356,7 @@ def _prepare(state: _Run, transport: object) -> None:
         ledger_path=state.directory / "llm" / "calls.jsonl",
         max_calls=state.max_calls,
         transport=chosen,
+        tier=state.tier,
     )
     state.ledger = Ledger(state.directory / "ledger.sqlite")
     manifest = build_manifest(state.run_id)
@@ -363,6 +376,8 @@ def _prepare(state: _Run, transport: object) -> None:
         "max_calls": state.max_calls,
         "offline": state.offline,
     }
+    if state.tier is not None:
+        manifest["pure_llm"]["tier"] = state.tier
     state.ledger.start_run(state.run_id, manifest)
     state.run_started = True
     state.progress = (state.directory / "progress.jsonl").open("w", encoding="utf-8", newline="\n")
@@ -548,11 +563,7 @@ def _config(state: _Run) -> dict[str, Any]:
         "max_experiments": state.max_experiments,
         "max_minutes": state.max_minutes,
         "run_id": state.run_id,
-        "llm": {
-            "cache": str(state.cache_dir),
-            "max_calls": state.max_calls,
-            "network": not state.offline,
-        },
+        "llm": _llm_public(state),
     }
 
 
@@ -608,6 +619,34 @@ def _require_int(value: object, name: str) -> int:
     return value
 
 
+def _llm_public(state: _Run) -> dict[str, Any]:
+    """The LLM switch as stored in config.json. ``tier`` is omitted unless set."""
+    public = {
+        "cache": str(state.cache_dir),
+        "max_calls": state.max_calls,
+        "network": not state.offline,
+    }
+    if state.tier is not None:
+        public["tier"] = state.tier
+    return public
+
+
+def _optional_calls(value: object) -> int | str | None:
+    if isinstance(value, str):
+        if value == UNLIMITED:
+            return value
+        raise UsageError(f"max_calls: expected an integer >= 0 or {UNLIMITED!r}, got {value!r}")
+    return _optional_whole(value, "max_calls")
+
+
+def _optional_tier(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and value in TIERS:
+        return value
+    raise UsageError(f"tier: expected one of {', '.join(TIERS)} or null, got {value!r}")
+
+
 def _optional_whole(value: object, name: str) -> int | None:
     if value is None:
         return None
@@ -658,8 +697,36 @@ def _ascii(text: object) -> str:
     return str(text).encode("ascii", "backslashreplace").decode("ascii")
 
 
+def _install_interrupt() -> None:
+    """Turn the grid's break signal into KeyboardInterrupt.
+
+    Windows grids send ``CTRL_BREAK_EVENT``; POSIX grids send ``SIGTERM``.
+    ``SIGINT`` already raises. Installed only from ``main``, never at import.
+    """
+    if sys.platform == "win32":
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    else:
+        signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+
+def _llm_max_calls_arg(text: str) -> int | str:
+    """``--llm-max-calls``: a non-negative integer, or ``unlimited``."""
+    if text == UNLIMITED:
+        return UNLIMITED
+    try:
+        value = int(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "expected a non-negative integer or 'unlimited'"
+        ) from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("expected a non-negative integer or 'unlimited'")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command line. Returns 0, 2 for bad arguments, 1 for a run that raised, 130 for an interrupt."""
+    _install_interrupt()
     parser = argparse.ArgumentParser(prog="python -m surprise.baselines.pure_llm")
     parser.add_argument("--out", required=True)
     parser.add_argument("--seed", type=int, required=True)
@@ -668,7 +735,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-experiments", type=int, default=None)
     parser.add_argument("--max-minutes", type=float, default=None)
     parser.add_argument("--llm-cache", default=None)
-    parser.add_argument("--llm-max-calls", type=int, default=None)
+    parser.add_argument("--llm-max-calls", type=_llm_max_calls_arg, default=None)
+    parser.add_argument("--llm-tier", choices=tuple(TIERS), default=None)
     parser.add_argument("--llm-offline", action="store_true")
     parser.add_argument("--run-id", default=None)
     try:
@@ -690,6 +758,7 @@ def main(argv: list[str] | None = None) -> int:
             max_calls=args.llm_max_calls,
             offline=args.llm_offline,
             run_id=args.run_id,
+            tier=args.llm_tier,
         )
     except UsageError as exc:
         print(f"error: {_ascii(exc)}", file=sys.stderr)
