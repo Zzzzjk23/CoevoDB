@@ -352,3 +352,14 @@
 | 2026-10-19 | S15 | 冒烟包 `s15-codex-smoke`（只写报告，不提交）经 `gw spawn`/`review`/`resume` 跑通：`git tag` 被 worktree 里的规则拒绝，没有重试；执行者不读文件就答出 CLAUDE.md 要求的分支名 `grok/<包号>`；`python` 是仓库根 `.venv` 的解释器；`.codex/` 没出现在 `git status`；`resume` 续接同一会话。用完 `cleanup --abandon` | 两轮合计输入约 39 万 token（大部分命中缓存）、输出约 3700 |
 | 2026-10-19 | S15 | 门槛 s15 的 `scope` 组允许 `tools/orch/` | 换执行者要改派发工具（ORCHESTRATION §9：脚本由编排者改） |
 | 2026-10-19 | S15 | S15 前一个编排者上下文留在 scratchpad 的草稿（SERVER.md 三节、门槛 `stream` 组的期望值、上面九条决定的原稿）拷到 `.orch/s15/`（不入库），免得临时目录被清掉 | SERVER.md 要等归档模块合并后才能提交（S14 的 `docs` 组对手册里每条命令跑 `--help`） |
+| 2026-10-19 | S15 | `s15-llm`、`s15-rundata`、`s15-grid` 交给 codex 后各一轮完成，审查读完整 diff 后合并（81b80d6、7e54b0a、f8eafb3），记为"交接后一次通过" | 门槛复跑里 S08、S11 失败都是 worktree 里没有 S8 产物（S12 起已知）；S15 其余组要等别的包 |
+| 2026-10-19 | S15 | 接受 `s15-rundata` 的扩展：指标扫描里大于 32 MiB 的记录把 `label.detail` 换成 `{}` 再解析（`iter_records(keep_detail=False)`），默认的 `iter_records()` 与 `records` 照旧给完整记录 | S10 代码的长跑里一条记录的 detail 有 483 MB；`metrics/`、`features/`、φ 提取都不读 `detail`（编排者 grep 核过）；输出的 SHA256 不变 |
+| 2026-10-19 | S15 | 接受 `s15-grid` 在 Windows 上监督子进程期间忽略 `SIGBREAK`、结束时恢复 | `CTRL_BREAK_EVENT` 发给一个已经退出的进程组时可能广播到整个控制台，把网格自己打断；不扩大范围 |
+| 2026-10-19 | S15 | `s15-archive` 首轮通过，合并（9db8fab） | `prune` 先完整核对再删、只用 `unlink` 与 `rmdir` 自底向上删 |
+| 2026-10-19 | S15 | `s15-sqlancer` 第一次派发：执行者发现门槛的四份 SQLancer 样例不在 worktree 里（`.gitignore` 的 `*.log` 挡住，172e5d1 没有真的提交它们），照规矩停下。编排者补交样例（33b4cd3，`.gitignore` 给样例与驱动测试数据加例外），作废这个包（没有提交），同一包号重新派发；说明里补一句"CRLF 与 LF 都要认"（Windows 检出是 CRLF） | 编排者的错。在原 worktree 上补数据会让审查把这次提交当成执行者改了门槛 |
+| 2026-10-19 | S15 | `s15-sqlancer` 返工 1 轮：执行者把"不靠改测试让测试通过"套到本包新写的测试上（一个替身把 harness 的 Python 子进程也拦了），停下。意见：这条规则管基线里已有的测试与门槛，本包新写的测试照常改；替身改成只拦 java（`run` 与 `Popen`）；回放模式 `java`、`command`、`pid` 为 `null` | 说明第 69 行"不起 java"。CLAUDE.md 的措辞记进 HANDOFF 未决问题，改要用户同意 |
+| 2026-10-19 | S15 | 门槛 s15 `interrupt` 组修正（0b63673）：`require(cond, f"...{proc.stderr.read()}")` 先求值消息，条件成立时也阻塞到子进程退出，所以主循环跑满 5 分钟、返回 0 之后才发中断。stderr 改写到文件，只在失败时读；没人读的管道也可能让子进程卡住 | `s15-sqlancer` 的执行者发现、报告；不是放宽 |
+| 2026-10-19 | S15 | `s15-sqlancer` 合并（21dcb2c）。10 分钟真实运行：本机 601,510 条查询、8 份日志，0 条转成用例；三处宽泛 `except` 都是记下后再抛或按约定返回 1 | 门槛 `sqlancer` 组只要求跑通与计数自洽，"产出家族键"由 NoREC 样例证明 |
+| 2026-10-19 | S15 | SERVER.md §5.7、§5.8、§8 入库（2d3bef2），取自上一个编排者的草稿；"grok 不登录服务器"改成执行者（grok 或 codex）都不登录 | 归档模块合并后 S14 的 `docs` 组能对手册里的新命令跑 `--help` |
+| 2026-10-19 | S15 | 长跑在 s15-sqlancer 合并之前起跑：S8 的代码摘要只看 `hunter/`、`diagnoser/`、`experiments/`，s15-sqlancer 只改 `baselines/`、`metrics/`。结果 9236 条、0 条 harness_error；前 2936 行与 S11 代码逐行相同（去掉 `elapsed_s`），第 2937 行是 S8 以来第 1 档重跑不稳定的那条 plan variant 用例。S11 代码的长跑挪到 `results/s08/longrun-s11code`。重钉 ab37bc6，S8 四个产物组与 S11 `ciao` 通过 | S8 验收定下的办法 |
+| 2026-10-19 | S15 | 部署 `s15-deploy-1`（6c44b3e）到服务器，在 tmux `s15-check` 里跑 pytest（1070 passed, 3 skipped）与门槛 s15（九组通过；`stream` 缺 Windows 上的产物，`docs` 那时缺 HANDOFF 的 S15 一行）。只检查、不入库 | 服务器专用，部署不必先问（用户的决定）；Linux 上的 CPU 绑定与 POSIX 强杀在本机测不到 |

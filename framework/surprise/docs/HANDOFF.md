@@ -19,12 +19,13 @@
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
+| S15 | 实验基础设施 | 完成 | s15-done | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 进行中：S15（2026-10-19）
+## 最近完成会话：S15（2026-10-19）
 
-用户的指示："S14验收后执行/clear，然后开始做S15，S15做完后继续做S19 E1"。会话分支 `session/s15` 从 `s14-done-r2` 建立；起点复跑 935 passed, 3 skipped，GATES PASS 14/14。门槛 `gates/s15.py`（表在 `s15_cases.py`，数据在 `s15_data/`）十一组，派发前写好。
+用户的指示："S14验收后执行/clear，然后开始做S15，S15做完后继续做S19 E1"。会话分支 `session/s15` 从 `s14-done-r2` 建立；起点复跑 935 passed, 3 skipped，GATES PASS 14/14。门槛 `gates/s15.py`（表在 `s15_cases.py`，数据在 `s15_data/`）十一组，派发前写好。中途 grok 余额用完，用户把执行者换成 codex（见下）。五个包全部合并；长跑重跑、重钉，服务器部署与 Linux 上的复核由编排者做。收尾合并回 main，tag `s15-done`。
 
 编排者已做的环境准备（不入库，在仓库根 `.orch/` 下）：Temurin JDK 21.0.12.1+1（与服务器同版本，SHA256 已核对）、Maven 3.9.16（SHA512 已核对）、SQLancer `ab328b75`（2026-10-14 的 main）构建成 `.orch/sqlancer/`，打了一个补丁（`docs/sqlancer/log-each-select.patch`：原代码只要关掉 `--log-each-select` 就断言失败，不关的话 `-cur.log` 每格 24 小时会有几十 GB），自带的 DuckDB JDBC 1.3.0.0 换成 `override/duckdb_jdbc-1.5.5.0.jar`（SHA1 已核对；日志头确认 `Database version: v1.5.5`）。SQLancer 支持 DataFusion，但走它自己的 Flight SQL 服务端，钉在 DataFusion 40.0.0，要测 54.0.0 得先移植那个 Rust 服务端（留给 S17 决定）。
 
@@ -42,7 +43,77 @@
 
 **阻塞（2026-10-19 08:33）：grok 账户余额用完。** 第一批三个包派发约 25 分钟后，`s15-rundata` 收到 `API error (status 402 Payment Required): Grok Build usage balance exhausted` 退出（未提交，worktree 里留着 5 个文件的改动）；另外两个包在下一次调用模型时也同样退出。已做完、不依赖 grok 的：门槛 s15、SQLancer 的构建与补丁、SQLancer 已拷到服务器并冒烟通过（`.orch/sqlancer`，DuckDB 1.5.5，约 700 条查询每秒）、SERVER.md 三节的草稿（现在在 `.orch/s15/SERVER.md.draft`，不入库；归档模块合并后才能提交，因为 s14 的 `docs` 组会对手册里的每条命令跑 `--help`）。
 
-**换成 codex（2026-10-19 15:30，用户决定）：** 用户指示"暂时把grok的角色换为codex"，启动命令 `codex -m gpt-6.1-sol -c 'model_reasoning_effort="high"' --yolo`。`tools/orch/grok_worker.py` 加了 codex 后端（默认执行者现在是 codex）和 `handover` 命令；拦截改用 worktree 里的 execpolicy 规则；做法与实测见 ORCHESTRATION §11 与 DECISIONS 当天各条。冒烟包 `s15-codex-smoke` 跑通后已清理。第一批三个包用 `gw handover <包号>` 交给 codex，在原 worktree 上接着做（grok 留下的未提交改动保留）；之后的包（`s15-sqlancer`、`s15-archive`）用 codex 派发。三个包的状态用 `gw list` 看，执行者一列是 codex 的就是已交接的。
+**换成 codex（2026-10-19 15:30，用户决定）：** 用户指示"暂时把grok的角色换为codex"，启动命令 `codex -m gpt-6.1-sol -c 'model_reasoning_effort="high"' --yolo`。`tools/orch/grok_worker.py` 加了 codex 后端（默认执行者现在是 codex）和 `handover` 命令；拦截改用 worktree 里的 execpolicy 规则；做法与实测见 ORCHESTRATION §11 与 DECISIONS 当天各条。冒烟包 `s15-codex-smoke` 跑通后已清理。第一批三个包用 `gw handover <包号>` 交给 codex，在原 worktree 上接着做（grok 留下的未提交改动保留）；之后的包（`s15-sqlancer`、`s15-archive`）用 codex 派发。
+
+### 交付与门槛
+
+- **LLM 不设上限与换档**（`s15-llm`）：网关 `max_calls` 接受 `"unlimited"`（模块常数 `roles.gateway.UNLIMITED`，不进 `roles/constants.py`），环境变量 `SURPRISE_LLM_MAX_CALLS` 照旧压得住它；`Gateway(tier=...)` 让整次运行的每一次调用都改用一档（缓存键、`Reply`、`calls.jsonl` 都记实际的档与模型）。主循环与纯 LLM 基线加 `--llm-max-calls unlimited`、`--llm-tier {fast,strong}`；`main()` 里把 Windows 的 `SIGBREAK`、POSIX 的 `SIGTERM` 转成 `KeyboardInterrupt`（报告 `interrupted`，返回 130）。不传新参数时缓存键、`calls.jsonl`、`config.json`、manifest 都不变。
+- **网格**（`s15-grid`）：顶层新键 `concurrency`、`cpus_per_cell`、`engine_threads`、`kill_grace_minutes`；块调度（重复 → 种子 → 引擎集合为一块）、单线程轮询、槽位；Linux 上按槽位绑 CPU（`sched_setaffinity`），引擎线程数经 `SLURM_CPUS_ON_NODE` 交给 DuckDB；分钟预算的格到"预算 + 宽限"先中断、120 秒后杀整棵进程树，记 `done`、`killed: true`、不重跑；臂的 `tier`、`max_calls: "unlimited"`；`sqlancer` 臂的运行模式（`"run": true`）。价格表 `metrics/data/prices_deepseek.json`（官方价格页 2026-10-19）。
+- **流式读**（`s15-rundata`）：`RunData.open` 只数记录，`iter_records()` 用只读游标逐条读；`run_metrics` 一遍扫描、只留指标要用的字段；大于 32 MiB 的记录在指标扫描里把 `label.detail` 换成 `{}`（S10 代码的长跑里有一条 483 MB 的 detail；指标与 φ 都不读它）。9500 条的长跑输出与改造前逐字节相同，峰值 357 MB（改造前 8600 条 3.3 GB），账本加倍只多 42 MB。`dedup` 也改成流式。
+- **SQLancer 驱动**（`s15-sqlancer`，`baselines/sqlancer_run.py`）：在格目录里起 SQLancer（`ab328b75` 加补丁，DuckDB JDBC 1.5.5.0），每两秒收一次缺陷日志，分类（`mismatch` / `unexpected_error` / `tool_error`），能拆成"`SELECT <列> FROM <表或连接>` + 谓词"的转成 `SqlCase` 交给同一套 oracle 与 CVE 评判；SQLancer 说它是缺陷不算数。`--replay-logs` 不起 java。报告管线把运行模式的 `sqlancer` 臂当普通有格的臂。
+- **归档**（`s15-archive`，`experiments/archive.py`）：`pack`（tar.gz 加每个文件的 SHA256 清单）、`verify [--against]`、`prune`（先完整核对，对不上就什么都不删；只留 `grid.json`、`report/` 与每格的 `cell.json`、`config.json`、`report.json`、`error.txt`）。
+- **SERVER.md**：§5.7 并行网格、§5.8 归档（E1 的原始目录先不精简）、§8 SQLancer（版本、补丁、构建、部署、驱动、DataFusion）。
+- **派发工具**：codex 后端与 `handover`（见上，ORCHESTRATION §11）。
+- **门槛 s15** 十一组：`config`、`parallel`、`kill`、`interrupt`、`stream`、`llm`、`sqlancer`、`prices`、`archive`、`docs`、`scope`。派发后编排者改过三处：`scope` 允许 `tools/orch/`（换执行者）；补交被 `*.log` 挡住的四份 SQLancer 样例（`.gitignore` 加例外）；`interrupt` 组的错误消息在条件成立时也会阻塞读 stderr，改成写文件（s15-sqlancer 的执行者发现）。
+
+### 拆包清单与结论（全部已合并）
+
+| 包 | 轮数 | 合并 | 审查 |
+|---|---|---|---|
+| s15-llm | grok 做到一半余额用完；codex 交接后一次完成 | 81b80d6 | 五个文件与说明逐条对上；codex 输入 209 万 token（96% 缓存）、输出 1.2 万 |
+| s15-rundata | 同上 | 7e54b0a | 手写的 detail 定位器逐行核过；`stream` 组在 worktree 里独立复跑通过；codex 输入 329 万、输出 2.5 万 |
+| s15-grid | 同上 | f8eafb3 | 调度与强杀逐条对上；另加的"监督期间忽略 `SIGBREAK`"（防止发给已退出的子进程时被广播回网格）接受；codex 输入 474 万、输出 2.0 万 |
+| s15-archive | 首轮通过 | 9db8fab | `prune` 的保留规则与删除次序逐条核过；codex 输入 153 万、输出 1.9 万 |
+| s15-sqlancer | 第一次派发因样例缺失停下（编排者的错，作废重派）；返工 1 轮：执行者把"不改测试"套到自己新写的测试上停下，意见澄清后完成 | 21dcb2c | 三处宽泛 `except` 都是记下后再抛或按约定返回 1；codex 两轮输入 953 万、输出 4.6 万 |
+
+- 说明、报告、审查包与返工意见归档在 `docs/orch/s15/`。codex 合计输入约 2158 万 token（97% 命中缓存）、输出约 12.6 万；codex 不报美元。grok 第一批三个包在余额用完之前的花费见各自日志。
+- 五个审查包的门槛复跑都有 S08、S11 失败：worktree 里没有 `framework/results/s08/`（S12 起已知），S8 的 `longrun` 另绑着 `experiments/` 的代码摘要；合并后在主检出区重钉、通过。
+
+### 实机运行的数字
+
+**长跑**（`results/s08/longrun`，角色全关、DuckDB 1.5.5、种子 0、七类 oracle、180 分钟，五个包合并之后、s15-sqlancer 合并之前起跑：S8 的代码摘要只看 `hunter/`、`diagnoser/`、`experiments/`，s15-sqlancer 不碰）
+
+| | S11 代码 | S15 代码 |
+|---|---|---|
+| 实验 | 8600 | 9236 |
+| fail / pass / invalid | 90 / 4117 / 4393 | 93 / 4318 / 4825 |
+| 车道（探索 / 泛化 / 细化） | 8511 / 55 / 34 | 9145 / 53 / 38 |
+| 假设 / 家族 | 27 / 13 | 26 / 11 |
+| 重复率（旧系统 0.818） | 0.462 | 0.545 |
+| 窗口与齿 | 86 个窗口 | 92 个窗口，齿在 3、9、17、40、87 |
+| CIAO（代数；对角线 / 新理论看旧批 / 旧理论看新批，比特） | 88 代；0.056 / 0.029 / 0.211 | 93 代；0.014 / 0.013 / 0.094 |
+
+- 以 `budget_minutes` 结束，0 条 harness_error。去掉 `elapsed_s` 后前 2936 行与 S11 代码的长跑逐行相同；第 2937 行仍是 S8 以来那条第 1 档重跑不稳定的 plan variant 用例（这次判 `invalid / unstable_rerun`，S11 那次判 `pass`），之后路径不同。S11 代码的长跑挪到 `results/s08/longrun-s11code`（不入库）。重钉 ab37bc6。
+
+**SQLancer 在 DuckDB 1.5.5 上 10 分钟**（门槛 `sqlancer` 组）：本机 601,510 条查询、8 份日志；服务器 501,698 条、7 份。全是 SQLancer 自己的问题或预期外报错，没有一份能转换成用例，0 个家族。门槛的"产出家族键"靠编排者写的 NoREC 样例（判 `fail`，家族键 `fix|duckdb|deliminator,filter_pushdown`，与主循环相同）。
+
+**服务器**（`s15-deploy-1` = 6c44b3e，五个包与门槛修复都在内，tmux 会话 `s15-check`，结果在 `~/s15-check/`）：pytest 1070 passed, 3 skipped；S15 九组通过，其中 `parallel`（含 Linux 上的 CPU 绑定与引擎线程数）、`kill`（POSIX 的中断与 `killpg`）、`interrupt` 是本机测不到的；`stream` 失败（`results/s08/longrun-s10code` 只在 Windows 上）、`docs` 失败（那时 HANDOFF 还没有 S15 一行）。只做了检查，没有入库证据：S15 的门槛不读服务器记录。
+
+### 与计划的偏差
+
+- 执行者从 grok 换成 codex（用户的决定，PLAN 没有写执行者是谁；ORCHESTRATION §11）。第一批三个包是交接的，不是重做。
+- 门槛 s15 在派发后改了三处（见"交付与门槛"最后一条），都不是放宽：一处是扩范围（`tools/orch/`），两处是门槛自己的错（数据没进库、读 stderr 阻塞）。
+- 长跑在 s15-sqlancer 合并之前起跑（理由见上表头）。
+- 服务器上只跑了 pytest 与 S15 门槛，没有像 S14 那样入库一份全量记录。
+- SESSIONS 写"核实 SQLancer 是否支持 DataFusion"：支持，但钉在 DataFusion 40.0.0（SERVER.md §8），留给 S17 决定。
+
+### 最终复跑
+
+全部合并、长跑重钉之后，在 `session/s15` 主检出区，在 `framework/` 下，去掉密钥：
+
+| 平台 | 命令 | 结果 |
+|---|---|---|
+| 本机 | `../.venv/Scripts/python.exe -m pytest -q testing tests` | 1070 passed, 3 skipped，退出码 0（起点 935，新增 135，skip 未增加） |
+| 本机 | `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17、S12 6/6、S13 7/7、S14 5/5、S15 11/11；GATES: PASS (15/15 passed)，退出码 0。S15 `sqlancer` 组这次 711,107 条查询、9 份日志、0 条转成用例；`stream` 峰值 357 MB，加倍多 44 MB |
+| 服务器（`s15-deploy-1`） | `../.venv/bin/python -m pytest -q testing tests`；`-m surprise.gates.s15` | 1070 passed, 3 skipped；S15 9/11（`stream`、`docs` 的原因见上） |
+
+### 下一会话的起点：S19（E1 DuckDB 主对比）
+
+- 起点 `s15-done`（验收之后是 `s15-done-r2`）。用户的指示是 S15 之后做 S19 E1；按 SESSIONS，S16（PG 目标）在 E1 于服务器上跑的那几天里在本机做。
+- 范围见 SESSIONS 的 S19 一节与 `EXPERIMENT.md` §9：先在本机写 E1 的网格配置与运行单，部署 tag 到服务器；先跑预实验（2 小时，种子 9101、9102，并发 1、4、8 比吞吐与标签稳定性），据此定并发度写进协议，再起正式的 20 格。
+- 服务器专用，部署与起实验不必先问（用户的决定）；密钥只经 ssh 标准输入进 tmux 会话的环境。
+- 服务器上现在检出的是 `s15-deploy-1`（与 `s15-done` 只差收尾的门槛表、HANDOFF 与 DECISIONS）；SQLancer 与 JDK 已在 `~/CoevoDB/.orch/`。tmux 里有用户的 `s14-smoke` 与编排者的 `s15-check` 两个会话，都已空闲。
+- 执行者现在是 codex（ORCHESTRATION §11）；用户要换回 grok 时 `--executor grok`。
 
 ## 最近完成会话：S14（2026-10-19）
 
@@ -1561,6 +1632,14 @@ S13 处理与新发现（2026-10-19）：
   - 上面第 1 条仍待用户同意：`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`（DENY_BASH 加 ssh、scp、rsync、sftp）的改动稿在 `framework/surprise/docs/orch/s14/claude_md_proposal.md`（S14 收尾消息里也贴了）。用户后来改了服务器分工（PLAN §9 补充一条），改动稿已按新分工写。
   - 新：`.gitignore` 的 `*.log` 会挡住证据目录里的日志；S14 的四个日志是 `git add -f` 加进去的。以后的证据日志同样要强制加入，或者在 S15 给 `.gitignore` 加一条例外（不在 S14 范围）。
   - 新：本机 `.venv` 继承 anaconda 底座（`include-system-site-packages = true`），服务器的 venv 不继承、包逐个钉住。以后往 Windows 的 anaconda 里装或升级包，会让两边对不上，S14 的 `env` 组会在本机失败。
+- **S15 处理与新发现（2026-10-19）**：
+  - 已解决：S11 发现的"`RunData` 一次读入""网格的 `surprise` 格没有墙钟强杀""没有价格表""SQLancer 对照组只有转录的汇总"（现在真跑）；S13 第 2 条（SQLancer 支持 DataFusion，但钉在 40.0.0，S17 定）；S14 的"`*.log` 挡住日志"对 SQLancer 样例与驱动测试数据加了例外（证据目录的日志仍要 `git add -f`）。
+  - 新 1：**`CLAUDE.md` 执行者模式"不靠改测试让测试通过……认为某个测试本身有错，就写进报告，停下"对 codex 不够清楚**：s15-sqlancer 的执行者把它套到自己本包新写的测试上，停下等编排者。建议补半句："指基线里已有的测试与门槛；本包新写的测试照常修改，只要仍检查说明要求的东西"。要用户同意才能改。
+  - 新 2：codex 的 execpolicy 规则管不了它自己的编辑工具，禁区全靠审查按 diff 核对（ORCHESTRATION §11）。五个包都没有碰禁区。
+  - 新 3：**SQLancer 在 DuckDB 1.5.5 上 10 分钟报出的 7–8 份日志全是工具问题或预期外报错**，没有一份转成用例。E1 的 `sqlancer` 臂很可能 24 小时也是 0 个家族；这不是驱动的问题，报告里照实写。
+  - 新 4：S15 的 `stream` 组读 `results/s08/longrun-s10code`（只在 Windows 上），在服务器上必然失败；要在 Linux 上量内存就把它拷过去。
+  - 新 5：直接 Ctrl-C 网格本身（不是格到期）会杀掉在跑的格、不写它们的报告；续跑时这些格按原规则改名 `.stale-<k>` 重跑。要停正式实验，等格到期，或者只停个别格。
+  - 新 6：codex 在 Windows 上用 PowerShell 5.1；它写的提交带 LF→CRLF 提示，不影响内容。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
@@ -1750,6 +1829,15 @@ S2 新发现：
 - PLAN.md 决策表：第 5 条（φ 用 sqlglot、正则兜底）、第 4 条（单元先粗）、第 2 条（φ 一侧在 S5，版本空间一侧在 S6）已采用；第 8 条里 0.95 / 0.5 与分诊阈值在 S6 定值并由门槛钉住，β 留给 S8；第 7、9、10 条仍是建议，到对应会话开工时再定（第 6 条 S4 已采用）。
 
 ### 给下一个编排者的操作提醒
+
+S15 踩到的：
+
+- **门槛数据提交后用 `git ls-files` 核对一遍**：`.gitignore` 的 `*.log` 把四份 SQLancer 样例挡在库外，主检出区有、worktree 里没有，执行者因此第一次派发就停下。
+- **不要在 shell 的当前目录停在某个 worktree 时起后台任务**：后台任务继承当前目录，那个 worktree 在任务结束之前删不掉（`cleanup` 报 WinError 32）。进 worktree 跑命令用子 shell：`(cd .worktrees/<包>/framework && ...)`。
+- **门槛的 `require(cond, f"...")` 会先求值消息**：消息里不能有读管道、跑命令这类有副作用或会阻塞的东西。
+- **执行者中途退出（余额、网络）时用 `gw handover`**：原 worktree 与未提交改动保留，新会话先读懂再接着做；三个包都是这样完成的，比推翻重做省事。
+- **codex 的审查包没有美元数**，只有 token；成本按 token 记。
+- **改了 `experiments/` 的会话，长跑可以在最后一个碰 `hunter/`、`diagnoser/`、`experiments/` 的包合并后就起跑**，不必等全部合并；中途拿半截 `progress.jsonl` 与上一次长跑逐行比（去掉 `elapsed_s`），能提早看出全关时有没有变。
 
 S12 踩到的：
 
