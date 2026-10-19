@@ -19,7 +19,7 @@
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
-| S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
+| S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -113,13 +113,16 @@
 2. 接受 `s15-rundata` 在指标扫描里跳过大于 32 MiB 记录的 `label.detail`（指标与 φ 都不读它，输出逐字节不变）。
 3. 接受 SQLancer 臂在 DuckDB 1.5.5 上 10 分钟 0 个家族的现状：驱动的评判路径由 NoREC 样例证明，E1 报告里照实写。
 4. 接受长跑重钉（9236 条，第 2937 行起的分叉是已知的不稳定用例）。
-5. **没有定**：`CLAUDE.md` 的两处改动要用户同意——S14 留下的改动稿（`docs/orch/s14/claude_md_proposal.md`）与上面未决问题"S15 新 1"（"不改测试"那条补半句）。
+5. `CLAUDE.md` 的两处改动：**用户同意**（2026-10-19，"第五项同意改动"），已写入，tag `s15-done-r3`。
+   - S14 的改动稿（`docs/orch/s14/claude_md_proposal.md`）照稿写入，按现状调了三处：执行者写成"grok 或 codex"；ORCHESTRATION 的服务器一节编为 §12（§11 已是 codex）；ssh、scp、rsync、sftp 同时进 grok 的 `DENY_BASH` 与 codex 的 `CODEX_FORBIDDEN`（`codex execpolicy check` 核过：这四个被拒，`git status`、pytest 照常）。
+   - 执行者模式"不改测试"那条补上："这一条管基线里已有的测试与门槛……本包新写的测试照常修改，只要改完仍检查说明要求的东西"。说明模板 `docs/orch/BRIEF_TEMPLATE.md` 里同一句同样补上（执行者那次引用的就是说明里的原话），也加了"不登录服务器"。
+   - 顺带：CLAUDE.md 的编排命令列表补上 `handover`。
 
-S15 到此结束，tag `s15-done-r2`（只比 `s15-done` 多这段验收记录）。S19 从 `s15-done-r2` 起。
+S15 到此结束：`s15-done-r2` 只比 `s15-done` 多这段验收记录，`s15-done-r3` 再多上面第 5 项的改动。S19 从 `s15-done-r3` 起。
 
 ### 下一会话的起点：S19（E1 DuckDB 主对比）
 
-- 起点 `s15-done-r2`。用户的指示是 S15 之后做 S19 E1；按 SESSIONS，S16（PG 目标）在 E1 于服务器上跑的那几天里在本机做。
+- 起点 `s15-done-r3`。用户的指示是 S15 之后做 S19 E1；按 SESSIONS，S16（PG 目标）在 E1 于服务器上跑的那几天里在本机做。
 - 范围见 SESSIONS 的 S19 一节与 `EXPERIMENT.md` §9：先在本机写 E1 的网格配置与运行单，部署 tag 到服务器；先跑预实验（2 小时，种子 9101、9102，并发 1、4、8 比吞吐与标签稳定性），据此定并发度写进协议，再起正式的 20 格。
 - 服务器专用，部署与起实验不必先问（用户的决定）；密钥只经 ssh 标准输入进 tmux 会话的环境。
 - 服务器上现在检出的是 `s15-deploy-1`（与 `s15-done` 只差收尾的门槛表、HANDOFF 与 DECISIONS）；SQLancer 与 JDK 已在 `~/CoevoDB/.orch/`。tmux 里有用户的 `s14-smoke` 与编排者的 `s15-check` 两个会话，都已空闲。
@@ -1639,12 +1642,12 @@ S13 处理与新发现（2026-10-19）：
   6. 服务器上标准库 `sqlite3` 用系统库；版本与 Windows 上的 3.51.0 不同时，Cross-DBMS 的参照结果可能变，回放检查会过不了。S14 要单独钉住。
 - **S14 处理与新发现（2026-10-19）**：
   - 上面第 6 条已解决：服务器上的 SQLite 3.51.0 按 Windows 的编译选项自编，source id 相同（SERVER.md §2）。
-  - 上面第 1 条仍待用户同意：`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`（DENY_BASH 加 ssh、scp、rsync、sftp）的改动稿在 `framework/surprise/docs/orch/s14/claude_md_proposal.md`（S14 收尾消息里也贴了）。用户后来改了服务器分工（PLAN §9 补充一条），改动稿已按新分工写。
+  - 上面第 1 条（已解决，`s15-done-r3`：用户同意，照稿写入；原文：）`CLAUDE.md`、`ORCHESTRATION.md` 与 `tools/orch/grok_worker.py`（DENY_BASH 加 ssh、scp、rsync、sftp）的改动稿在 `framework/surprise/docs/orch/s14/claude_md_proposal.md`（S14 收尾消息里也贴了）。用户后来改了服务器分工（PLAN §9 补充一条），改动稿已按新分工写。
   - 新：`.gitignore` 的 `*.log` 会挡住证据目录里的日志；S14 的四个日志是 `git add -f` 加进去的。以后的证据日志同样要强制加入，或者在 S15 给 `.gitignore` 加一条例外（不在 S14 范围）。
   - 新：本机 `.venv` 继承 anaconda 底座（`include-system-site-packages = true`），服务器的 venv 不继承、包逐个钉住。以后往 Windows 的 anaconda 里装或升级包，会让两边对不上，S14 的 `env` 组会在本机失败。
 - **S15 处理与新发现（2026-10-19）**：
   - 已解决：S11 发现的"`RunData` 一次读入""网格的 `surprise` 格没有墙钟强杀""没有价格表""SQLancer 对照组只有转录的汇总"（现在真跑）；S13 第 2 条（SQLancer 支持 DataFusion，但钉在 40.0.0，S17 定）；S14 的"`*.log` 挡住日志"对 SQLancer 样例与驱动测试数据加了例外（证据目录的日志仍要 `git add -f`）。
-  - 新 1：**`CLAUDE.md` 执行者模式"不靠改测试让测试通过……认为某个测试本身有错，就写进报告，停下"对 codex 不够清楚**：s15-sqlancer 的执行者把它套到自己本包新写的测试上，停下等编排者。建议补半句："指基线里已有的测试与门槛；本包新写的测试照常修改，只要仍检查说明要求的东西"。要用户同意才能改。
+  - 新 1（已解决，`s15-done-r3`：用户同意，CLAUDE.md 与说明模板都补上了）：**`CLAUDE.md` 执行者模式"不靠改测试让测试通过……认为某个测试本身有错，就写进报告，停下"对 codex 不够清楚**：s15-sqlancer 的执行者把它套到自己本包新写的测试上，停下等编排者。建议补半句："指基线里已有的测试与门槛；本包新写的测试照常修改，只要仍检查说明要求的东西"。要用户同意才能改。
   - 新 2：codex 的 execpolicy 规则管不了它自己的编辑工具，禁区全靠审查按 diff 核对（ORCHESTRATION §11）。五个包都没有碰禁区。
   - 新 3：**SQLancer 在 DuckDB 1.5.5 上 10 分钟报出的 7–8 份日志全是工具问题或预期外报错**，没有一份转成用例。E1 的 `sqlancer` 臂很可能 24 小时也是 0 个家族；这不是驱动的问题，报告里照实写。
   - 新 4：S15 的 `stream` 组读 `results/s08/longrun-s10code`（只在 Windows 上），在服务器上必然失败；要在 Linux 上量内存就把它拷过去。
