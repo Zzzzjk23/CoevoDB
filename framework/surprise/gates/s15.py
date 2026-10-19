@@ -492,17 +492,25 @@ def check_kill() -> str:
 # ---- interrupt ----------------------------------------------------------------------------------
 
 def _interrupt_run(argv: list[str], out: Path, ready: Callable[[], bool], what: str) -> dict[str, Any]:
-    proc = subprocess.Popen([sys.executable, *argv], cwd=FRAMEWORK, env=clean_env(), stdout=subprocess.DEVNULL,
-                            stderr=subprocess.PIPE, **new_group_kwargs())
-    try:
-        wait_for(lambda: ready() or proc.poll() is not None, 180, f"{what} to start working")
-        require(proc.poll() is None, f"{what} ended before the interrupt: {proc.stderr.read()[-600:] if proc.stderr else ''}")
-        send_interrupt(proc)
-        code = proc.wait(timeout=240)
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-    require(code == 130, f"{what} exited {code} after the interrupt, expected 130")
+    # stderr goes to a file: an unread pipe can fill and stall the child, and reading it blocks until EOF.
+    err_path = out.parent / f"{out.name}.stderr.log"
+
+    def err_tail() -> str:
+        return err_path.read_text(encoding="utf-8", errors="replace")[-600:] if err_path.is_file() else ""
+
+    with err_path.open("wb") as err:
+        proc = subprocess.Popen([sys.executable, *argv], cwd=FRAMEWORK, env=clean_env(), stdout=subprocess.DEVNULL,
+                                stderr=err, **new_group_kwargs())
+        try:
+            wait_for(lambda: ready() or proc.poll() is not None, 180, f"{what} to start working")
+            if proc.poll() is not None:
+                require(False, f"{what} ended before the interrupt: {err_tail()}")
+            send_interrupt(proc)
+            code = proc.wait(timeout=240)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+    require(code == 130, f"{what} exited {code} after the interrupt, expected 130: {err_tail()}")
     report = load_json(out / "report.json", f"{what} report.json")
     require(report.get("status") == "interrupted", f"{what} report status {report.get('status')!r}")
     return report
