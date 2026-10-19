@@ -78,7 +78,7 @@ RQ_SECTIONS = (
 _NO_LLM = "no LLM predictions in this grid"
 _NO_CIAO = "no CIAO matrix for the reference arm"
 _NO_RECALL = "no known-bug file for this grid"
-_RUN_KINDS = ("surprise", "pure_llm")
+_RUN_KINDS = ("surprise", "pure_llm", "sqlancer")
 
 
 def build(
@@ -152,7 +152,7 @@ def _assemble(
     reference = config["reference"]
 
     for arm in arms:
-        if arm.get("kind") == "sqlancer":
+        if arm.get("kind") == "sqlancer" and not arm.get("run"):
             _collect(samples[arm["name"]], _sqlancer_row(arm), "sqlancer")
 
     for arm, seed, rep in _iter_cells(config):
@@ -321,7 +321,7 @@ def _collect(bucket: dict[str, dict[str, list]], metrics: dict[str, Any] | None,
 def _scalar(metrics: dict[str, Any] | None, kind: str, rq: str, metric: str) -> float | None:
     if metrics is None:
         return None
-    if kind == "sqlancer":
+    if kind == "sqlancer" and "rq1" not in metrics:
         if rq == "rq1" and metric in ("family_count", "families_per_1000"):
             return _number(metrics.get(metric))
         return None
@@ -923,7 +923,7 @@ def _iter_cells(config: dict[str, Any]):
     for rep in range(int(config["repeats"])):
         for seed in config["seeds"]:
             for arm in config["arms"]:
-                if arm.get("kind") == "sqlancer":
+                if arm.get("kind") == "sqlancer" and not arm.get("run"):
                     continue
                 yield arm, int(seed), int(rep)
 

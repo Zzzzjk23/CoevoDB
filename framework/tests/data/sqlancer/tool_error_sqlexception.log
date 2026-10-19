@@ -1,0 +1,27 @@
+--java.sql.SQLException: Could not find column with label INDEX_NAME
+--	at org.duckdb.DuckDBResultSet.findColumn(DuckDBResultSet.java:319)
+--	at org.duckdb.DuckDBResultSet.getString(DuckDBResultSet.java:323)
+--	at sqlancer.duckdb.DuckDBSchema.getIndexes(DuckDBSchema.java:254)
+--	at sqlancer.duckdb.DuckDBSchema.fromConnection(DuckDBSchema.java:236)
+--	at sqlancer.duckdb.DuckDBProvider$DuckDBGlobalState.readSchema(DuckDBProvider.java:99)
+--	at sqlancer.duckdb.DuckDBProvider$DuckDBGlobalState.readSchema(DuckDBProvider.java:1)
+--	at sqlancer.GlobalState.updateSchema(GlobalState.java:145)
+--	at sqlancer.SQLGlobalState.executeEpilogue(SQLGlobalState.java:27)
+--	at sqlancer.GlobalState.executeStatement(GlobalState.java:109)
+--	at sqlancer.StatementExecutor.executeStatements(StatementExecutor.java:70)
+--	at sqlancer.duckdb.DuckDBProvider.generateDatabase(DuckDBProvider.java:122)
+--	at sqlancer.duckdb.DuckDBProvider.generateDatabase(DuckDBProvider.java:1)
+--	at sqlancer.ProviderAdapter.generateAndTestDatabase(ProviderAdapter.java:52)
+--	at sqlancer.Main$DBMSExecutor.run(Main.java:483)
+--	at sqlancer.Main$2.run(Main.java:747)
+--	at sqlancer.Main$2.runThread(Main.java:729)
+--	at sqlancer.Main$2.run(Main.java:720)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+--	at java.base/java.lang.Thread.run(Thread.java:1583)
+---- Time: 2026/10/19 07:46:56
+-- Database: database0
+-- Database version: v1.1.3
+-- seed value: 11
+CREATE TABLE t13(c0 FLOAT4 DEFAULT(-2012917588), PRIMARY KEY(c0));
+CREATE INDEX i0 ON t13(c0 );
