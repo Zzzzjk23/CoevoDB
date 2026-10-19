@@ -363,3 +363,4 @@
 | 2026-10-19 | S15 | SERVER.md §5.7、§5.8、§8 入库（2d3bef2），取自上一个编排者的草稿；"grok 不登录服务器"改成执行者（grok 或 codex）都不登录 | 归档模块合并后 S14 的 `docs` 组能对手册里的新命令跑 `--help` |
 | 2026-10-19 | S15 | 长跑在 s15-sqlancer 合并之前起跑：S8 的代码摘要只看 `hunter/`、`diagnoser/`、`experiments/`，s15-sqlancer 只改 `baselines/`、`metrics/`。结果 9236 条、0 条 harness_error；前 2936 行与 S11 代码逐行相同（去掉 `elapsed_s`），第 2937 行是 S8 以来第 1 档重跑不稳定的那条 plan variant 用例。S11 代码的长跑挪到 `results/s08/longrun-s11code`。重钉 ab37bc6，S8 四个产物组与 S11 `ciao` 通过 | S8 验收定下的办法 |
 | 2026-10-19 | S15 | 部署 `s15-deploy-1`（6c44b3e）到服务器，在 tmux `s15-check` 里跑 pytest（1070 passed, 3 skipped）与门槛 s15（九组通过；`stream` 缺 Windows 上的产物，`docs` 那时缺 HANDOFF 的 S15 一行）。只检查、不入库 | 服务器专用，部署不必先问（用户的决定）；Linux 上的 CPU 绑定与 POSIX 强杀在本机测不到 |
+| 2026-10-19 | S15 验收 | 编排者照惯例自行定下收尾的人工检查项（逐项见 HANDOFF 的 S15 验收一节）：codex 后端与 `handover`、`s15-rundata` 的 detail 精简、SQLancer 臂 0 个家族的现状、长跑重钉，都照现在的样子接受；`CLAUDE.md` 的两处改动（S14 的改动稿与"不改测试"补半句）没有写，等用户同意。tag `s15-done-r2` | 记忆"验收项自己定"；用户的指示"S15做完后继续做S19 E1" |

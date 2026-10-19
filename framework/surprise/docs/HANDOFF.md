@@ -19,7 +19,7 @@
 | S12 | Phase 7 收尾 | 完成 | s12-done；s12-done-r2（用户验收之后，之后的工作从这里起） | S12 6/6；pytest 935 passed, 3 skipped；GATES PASS 12/12 |
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
-| S15 | 实验基础设施 | 完成 | s15-done | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
+| S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -107,9 +107,19 @@
 | 本机 | `../.venv/Scripts/python.exe -m surprise.gates.all` | S01 7/7、S02 5/5、S03 5/5、S04 9/9、S05 9/9、S06 12/12、S07 15/15、S08 11/11、S09 12/12、S10 12/12、S11 17/17、S12 6/6、S13 7/7、S14 5/5、S15 11/11；GATES: PASS (15/15 passed)，退出码 0。S15 `sqlancer` 组这次 711,107 条查询、9 份日志、0 条转成用例；`stream` 峰值 357 MB，加倍多 44 MB |
 | 服务器（`s15-deploy-1`） | `../.venv/bin/python -m pytest -q testing tests`；`-m surprise.gates.s15` | 1070 passed, 3 skipped；S15 9/11（`stream`、`docs` 的原因见上） |
 
+### 验收（2026-10-19，编排者照惯例自行定下，用户可以推翻）
+
+1. 派发工具的 codex 后端与 `handover`、ORCHESTRATION §11 照现在的样子接受（用户的决定；冒烟包与五个包都跑通）。
+2. 接受 `s15-rundata` 在指标扫描里跳过大于 32 MiB 记录的 `label.detail`（指标与 φ 都不读它，输出逐字节不变）。
+3. 接受 SQLancer 臂在 DuckDB 1.5.5 上 10 分钟 0 个家族的现状：驱动的评判路径由 NoREC 样例证明，E1 报告里照实写。
+4. 接受长跑重钉（9236 条，第 2937 行起的分叉是已知的不稳定用例）。
+5. **没有定**：`CLAUDE.md` 的两处改动要用户同意——S14 留下的改动稿（`docs/orch/s14/claude_md_proposal.md`）与上面未决问题"S15 新 1"（"不改测试"那条补半句）。
+
+S15 到此结束，tag `s15-done-r2`（只比 `s15-done` 多这段验收记录）。S19 从 `s15-done-r2` 起。
+
 ### 下一会话的起点：S19（E1 DuckDB 主对比）
 
-- 起点 `s15-done`（验收之后是 `s15-done-r2`）。用户的指示是 S15 之后做 S19 E1；按 SESSIONS，S16（PG 目标）在 E1 于服务器上跑的那几天里在本机做。
+- 起点 `s15-done-r2`。用户的指示是 S15 之后做 S19 E1；按 SESSIONS，S16（PG 目标）在 E1 于服务器上跑的那几天里在本机做。
 - 范围见 SESSIONS 的 S19 一节与 `EXPERIMENT.md` §9：先在本机写 E1 的网格配置与运行单，部署 tag 到服务器；先跑预实验（2 小时，种子 9101、9102，并发 1、4、8 比吞吐与标签稳定性），据此定并发度写进协议，再起正式的 20 格。
 - 服务器专用，部署与起实验不必先问（用户的决定）；密钥只经 ssh 标准输入进 tmux 会话的环境。
 - 服务器上现在检出的是 `s15-deploy-1`（与 `s15-done` 只差收尾的门槛表、HANDOFF 与 DECISIONS）；SQLancer 与 JDK 已在 `~/CoevoDB/.orch/`。tmux 里有用户的 `s14-smoke` 与编排者的 `s15-check` 两个会话，都已空闲。
