@@ -1,0 +1,45 @@
+--java.lang.AssertionError: CREATE INDEX i0 ON t1(rowid );
+--	at sqlancer.common.query.SQLQueryAdapter.checkException(SQLQueryAdapter.java:166)
+--	at sqlancer.common.query.SQLQueryAdapter.internalExecute(SQLQueryAdapter.java:147)
+--	at sqlancer.common.query.SQLQueryAdapter.execute(SQLQueryAdapter.java:122)
+--	at sqlancer.common.query.SQLQueryAdapter.execute(SQLQueryAdapter.java:102)
+--	at sqlancer.Main$QueryManager.execute(Main.java:381)
+--	at sqlancer.GlobalState.executeStatement(GlobalState.java:108)
+--	at sqlancer.StatementExecutor.executeStatements(StatementExecutor.java:70)
+--	at sqlancer.duckdb.DuckDBProvider.generateDatabase(DuckDBProvider.java:122)
+--	at sqlancer.duckdb.DuckDBProvider.generateDatabase(DuckDBProvider.java:1)
+--	at sqlancer.ProviderAdapter.generateAndTestDatabase(ProviderAdapter.java:52)
+--	at sqlancer.Main$DBMSExecutor.run(Main.java:483)
+--	at sqlancer.Main$2.run(Main.java:747)
+--	at sqlancer.Main$2.runThread(Main.java:729)
+--	at sqlancer.Main$2.run(Main.java:720)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+--	at java.base/java.lang.Thread.run(Thread.java:1583)
+--Caused by: java.sql.SQLException: java.sql.SQLException: Binder Error: Cannot create an index on the rowid!
+--	at org.duckdb.DuckDBPreparedStatement.prepare(DuckDBPreparedStatement.java:121)
+--	at org.duckdb.DuckDBPreparedStatement.execute(DuckDBPreparedStatement.java:201)
+--	at sqlancer.common.query.SQLQueryAdapter.internalExecute(SQLQueryAdapter.java:140)
+--	... 15 more
+--Caused by: java.sql.SQLException: Binder Error: Cannot create an index on the rowid!
+--	at org.duckdb.DuckDBNative.duckdb_jdbc_prepare(Native Method)
+--	at org.duckdb.DuckDBPreparedStatement.prepare(DuckDBPreparedStatement.java:115)
+--	... 17 more
+---- Time: 2026/10/19 07:50:32
+-- Database: database100
+-- Database version: v1.1.3
+-- seed value: 111
+CREATE TABLE t0(c0 TIMESTAMP);
+CREATE TABLE t1(c0 DATE CHECK(c0) DEFAULT(DATE '1969-12-09'));
+INSERT INTO t1(c0) VALUES (767107725);
+INSERT INTO t0(c0) VALUES (-1303326847), (-1303326847);
+INSERT INTO t1(c0) VALUES (DATE '1970-01-02'), (0.41841491109825224);
+INSERT INTO t0(c0) VALUES (543491441);
+INSERT INTO t0(c0) VALUES (5.43491441E8);
+INSERT INTO t0(c0) VALUES (TIMESTAMP '1970-01-06 13:22:45');
+VACUUM;
+EXPLAIN SELECT t1.rowid FROM t1 LIMIT 1582262090 OFFSET 1104778304;
+INSERT INTO t1(c0) VALUES (1310943046), (true);
+INSERT INTO t1(c0) VALUES (DEFAULT);
+INSERT INTO t0(c0) VALUES (0.6379770067415448);
+INSERT INTO t0(c0) VALUES (DEFAULT);

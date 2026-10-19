@@ -1,0 +1,10 @@
+--java.lang.AssertionError: the counts mismatch (1 and 0)!
+---- SELECT COUNT(*) FROM t1 AS a LEFT JOIN t1 b ON (a.id = b.id) WHERE (a.ch = 'FROM WHERE') AND EXISTS (SELECT 1 FROM t1 c WHERE c.id = b.id);
+---- count: 1
+-- at sqlancer.common.oracle.NoRECOracle.check(NoRECOracle.java:164)
+---- Time: 2026/10/19 08:00:00
+-- Database: database9
+-- Database version: v1.5.5
+-- seed value: 9
+CREATE TABLE t1(id INTEGER, ch VARCHAR);
+INSERT INTO t1 VALUES (1, 'FROM WHERE');

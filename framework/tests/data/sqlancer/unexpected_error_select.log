@@ -1,0 +1,10 @@
+--java.lang.AssertionError: SELECT a.id FROM t1 a WHERE ((a.id)::INTEGER > 0);
+-- at sqlancer.common.query.SQLQueryAdapter.checkException(SQLQueryAdapter.java:166)
+-- at sqlancer.common.oracle.NoRECOracle.check(NoRECOracle.java:140)
+--Caused by: java.sql.SQLException: Internal Error: unexpected SELECT failure
+---- Time: 2026/10/19 08:00:00
+-- Database: database8
+-- Database version: v1.5.5
+-- seed value: 8
+CREATE TABLE t1(id INTEGER);
+INSERT INTO t1 VALUES (1);
