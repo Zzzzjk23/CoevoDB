@@ -279,7 +279,7 @@ def run(out, *, seed: int, engine: str = "duckdb", max_minutes: float | None = N
               "threads": threads, "max_minutes": max_minutes, "replay": replay is not None}
     _write_json(directory / "config.json", config)
     stats: dict[str, Any] = {"commit": None, "jar_sha256": None, "jdbc": [], "java": None,
-                             "command": [], "oracles": list(oracles), "threads": threads,
+                             "command": None, "oracles": list(oracles), "threads": threads,
                              "reports": 0, "kinds": {k: 0 for k in ("mismatch", "unexpected_error", "tool_error")},
                              "converted": 0, "judged": 0, "unjudged": 0, "pid": None}
     proc = None

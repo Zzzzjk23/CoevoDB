@@ -148,17 +148,25 @@ def test_replay_and_grid_report(tmp_path, monkeypatch):
     (logs / "ignored-cur.log").write_text("not a report", encoding="utf-8")
     cell = tmp_path / "grid/cells/sqlancer/s7-r0"
     original_run = sq.subprocess.run
+    original_popen = sq.subprocess.Popen
 
     def no_java(command, **kwargs):
-        assert command[0] == "git", "replay must not start Java"
+        assert Path(command[0]).name.lower() not in ("java", "java.exe"), "replay must not start Java"
         return original_run(command, **kwargs)
 
+    def no_java_popen(command, **kwargs):
+        assert Path(command[0]).name.lower() not in ("java", "java.exe"), "replay must not start Java"
+        return original_popen(command, **kwargs)
+
     monkeypatch.setattr(sq.subprocess, "run", no_java)
+    monkeypatch.setattr(sq.subprocess, "Popen", no_java_popen)
     result = sq.run(cell, seed=7, replay_logs=logs)
     monkeypatch.setattr(sq.subprocess, "run", original_run)
+    monkeypatch.setattr(sq.subprocess, "Popen", original_popen)
     stats = result["sqlancer"]
     assert result["status"] == "replayed"
     assert result["executions"] is None and stats["pid"] is None
+    assert stats["java"] is None and stats["command"] is None
     assert result["labels"] == {"fail": 1}
     assert stats["kinds"] == {"mismatch": 1, "unexpected_error": 1, "tool_error": 2}
     assert (stats["reports"], stats["converted"], stats["judged"], stats["unjudged"]) == (4, 1, 1, 0)
