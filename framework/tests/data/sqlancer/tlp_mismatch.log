@@ -1,0 +1,11 @@
+--java.lang.AssertionError: The size of the result sets mismatch (2 and 1)!
+--First query: "SELECT a.id,  a.ch FROM t1 AS a", whose cardinality is: 2
+--Second query:"SELECT a.id,  a.ch FROM t1 AS a WHERE (a.id > 0) UNION ALL SELECT a.id, a.ch FROM t1 AS a WHERE NOT (a.id > 0) UNION ALL SELECT a.id, a.ch FROM t1 AS a WHERE (a.id > 0) IS NULL", whose cardinality is: 1
+-- at sqlancer.common.oracle.TLPWhereOracle.check(TLPWhereOracle.java:190)
+---- Time: 2026/10/19 08:00:00
+-- Database: database7
+-- Database version: v1.5.5
+-- seed value: 7
+CREATE TABLE t1(id INTEGER, ch VARCHAR);
+INSERT INTO t1 VALUES (1, 'A'), (NULL, 'B');
+-- SELECT a.id,  a.ch FROM t1 AS a;\n-- cardinality: 2\n-- SELECT a.id,  a.ch FROM t1 AS a WHERE (a.id > 0) UNION ALL SELECT a.id, a.ch FROM t1 AS a WHERE NOT (a.id > 0) UNION ALL SELECT a.id, a.ch FROM t1 AS a WHERE (a.id > 0) IS NULL;\n-- cardinality: 1;

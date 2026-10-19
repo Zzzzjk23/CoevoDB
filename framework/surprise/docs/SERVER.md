@@ -2,7 +2,7 @@
 
 2026-10-19 由 S14 建立。正式实验在这台服务器上跑（`EXPERIMENT.md` §7）。第 1–4 节是环境与部署，写给编排者；第 5 节是运行手册，写给用户；第 7 节是门槛 `gates/s14.py` 读取的机读版本表。
 
-分工：实验由用户自己 ssh 上服务器跑。Claude 只在搭环境（S14）与部署新引擎（S16–S18）时动服务器，而且要用户先确认服务器空闲。grok 不登录服务器。
+分工：实验由用户自己 ssh 上服务器跑。Claude 只在搭环境（S14）与部署新引擎（S16–S18）时动服务器，而且要用户先确认服务器空闲。执行者（grok，2026-10-19 起暂用 codex）不登录服务器。（2026-10-19 用户改定，见 PLAN §9 补充一条：服务器专用，Claude 直接部署、不必先问是否空闲，实验也由 Claude 照运行单起，次序按 SESSIONS；执行者仍不登录服务器。第 5 节的命令谁来敲都一样。）
 
 ## 1. 主机与布局
 
@@ -21,6 +21,7 @@
 | `.orch/sqlite-3.51.0/` | 按 Windows 编译选项自编的 SQLite 3.51.0（`lib/libsqlite3.so.3.51.0`） |
 | `.orch/pg16/` | PostgreSQL 16.15：`pgsql/`（安装）、`data/`、`sock/`、`server.log` |
 | `.orch/jdk/jdk-21.0.12.1+1/` | Temurin JDK 21（S15 的 SQLancer 用） |
+| `.orch/sqlancer/` | SQLancer `ab328b75` 加一个补丁的构建，DuckDB JDBC 换成 1.5.5.0（S15，见 §8） |
 | `.orch/dl/` | 下载的源码包与构建日志 |
 | `.src/duckdb-v1.5.5`、`.src/datafusion-54.0.0` | 引擎源码浅克隆，提交号与 Windows 相同（S9 门槛钉住） |
 | `framework/results/s08/` | S8 钉住的四个产物目录（`pre`、`longrun`、`old_no_llm`、`recall113`），从 Windows 拷来，逐字节相同 |
@@ -37,6 +38,7 @@
 | DataFusion | 54.0.0；旧版 50.0.0 | PyPI |
 | PostgreSQL | 16.15，ICU 67.1 | 官方源码包（SHA256 已核对）自编 |
 | JDK | Temurin 21.0.12.1+1 | Adoptium 官方 tar 包（SHA256 已核对） |
+| SQLancer | `ab328b756bf5d923b9d93959af3432546efe56fd` 加 `docs/sqlancer/log-each-select.patch`；DuckDB JDBC 1.5.5.0 | 在 Windows 上用 Maven 3.9.16 构建，整个目录拷来（§8） |
 
 各 venv 的包（`uv pip freeze` 的直接依赖部分，版本照 Windows 本机）：
 
@@ -193,6 +195,50 @@ cd ~/CoevoDB/framework/results && tar -czf ~/s14-smoke.tar.gz s14-smoke s14-smok
 
 跑完后可以 `exit` 退出 tmux。然后照 §5.5 在 Windows 上把 `s14-smoke.tar.gz` 拷到 `D:\CoevoDB\framework\results\server\`，告诉编排者；编排者解压后用 `python -m surprise.gates.s14 --ingest-smoke <解压出的 s14-smoke 目录>` 把门槛要读的部分放进 `framework/surprise/gates/s14_evidence/smoke/`。
 
+### 5.7 并行网格
+
+S15 起网格可以同时跑几格。网格配置的四个顶层键（都可以不写）：
+
+| 键 | 含义 | 默认 |
+|---|---|---|
+| `concurrency` | 同时跑几格 | 1 |
+| `cpus_per_cell` | 每格绑几个 CPU（Linux 上用 CPU 亲和性；各格互不重叠；`concurrency × cpus_per_cell` 不能超过可用 CPU 数） | 不绑 |
+| `engine_threads` | 每格的引擎线程数（经环境变量 `SLURM_CPUS_ON_NODE` 交给 DuckDB） | 引擎自己定 |
+| `kill_grace_minutes` | 墙钟强杀的宽限：一格跑到"预算 + 宽限"还没结束就被中断，再过 2 分钟还不结束就连同子进程一起杀掉 | 10 |
+
+- 起格的次序按块：同一种子、同一引擎下的全部臂是一块，一块的格一起起跑（`EXPERIMENT.md` §5）。
+- 正式实验的并发度由每个里程碑的预实验定（1、4、8 格比吞吐与标签稳定性），写进那个里程碑的配置，跑的过程中不改。
+- 状态里被强杀的格显示 `done (killed)`：它的报告照常写完（状态 `interrupted`），不会重跑。
+- 看负载：`uptime`；看每格的 CPU：`top -H` 或 `ps -eo pid,psr,pcpu,args | grep surprise`（`psr` 是所在的 CPU）。
+
+### 5.8 归档
+
+每个里程碑出完报告后，在服务器上打包、拷回本机、本机核对，再回服务器精简（只留报告与摘要）。**E1 的原始目录先不精简**：E3 的 A14 要它的理论存储，S16–S18 的回放检查要它的账本（`EXPERIMENT.md` §5）。
+
+服务器上：
+
+```
+cd ~/CoevoDB/framework
+$PY -m surprise.experiments.archive pack results/<名字> --dest ~/<名字>.tar.gz
+```
+
+会同时写 `~/<名字>.tar.gz.json`（每个文件的 SHA256 与整个包的 SHA256）。Windows 本机（PowerShell，仓库根）：
+
+```
+scp 3090:<名字>.tar.gz 3090:<名字>.tar.gz.json D:\CoevoDB\framework\results\server\
+cd D:\CoevoDB\framework
+..\.venv\Scripts\python.exe -m surprise.experiments.archive verify results\server\<名字>.tar.gz
+```
+
+`verify` 退出码 0 之后，回服务器精简（它会先拿归档核对一遍目录，对不上就什么都不删）：
+
+```
+cd ~/CoevoDB/framework
+$PY -m surprise.experiments.archive prune results/<名字> --archive ~/<名字>.tar.gz
+```
+
+精简后留下 `grid.json`、`report/`，以及每格的 `cell.json`、`config.json`、`report.json`（有 `error.txt` 也留）；账本、理论存储、进度、日志都只在归档里。
+
 ## 6. 平台差异
 
 S14 在服务器上第一次跑全量测试、全部门槛与冒烟网格时发现的差异，逐条记录。代码、门槛的改动都只为让同一件事在两个平台上得到同一个结果，没有放宽任何断言。
@@ -230,3 +276,30 @@ S14 在服务器上第一次跑全量测试、全部门槛与冒烟网格时发�
   "linux": {"java": "21.0.12.1", "pg_trust_rules": 0, "old_code_overrides": ["COEVO_PGBLD", "COEVO_OLD_VENV", "COEVO_DUCKDB_SRC", "COEVO_ARGUS_DIR", "COEVO_KEYS_YML"]}
 }
 ```
+
+## 8. SQLancer
+
+S15 加的外部工具基线（`EXPERIMENT.md` §3.1 的 `sqlancer` 臂）：在服务器上真跑 SQLancer，它报出的每份缺陷日志都转成 `SqlCase`，交给与其它臂相同的七类 oracle 与 CVE 流程评判，家族由同一个身份键来数。SQLancer 说它是缺陷不算数，harness 判 `fail` 才算。
+
+**版本。** SQLancer `ab328b756bf5d923b9d93959af3432546efe56fd`（2026-10-14 的 main，版本号 2.0.0），打一个补丁 `sqlancer/log-each-select.patch`（在 `framework/surprise/docs/` 下）：原代码在关掉 `--log-each-select` 时必然断言失败（`MainOptions.logExecutionTime` 要求先开它），而不关的话每个数据库的 `-cur.log` 会记下每一条查询，每格 24 小时几十 GB。补丁让两处调用先看 `logEachSelect`。SQLancer 自带 DuckDB JDBC 1.3.0.0；我们去掉它，换成 `duckdb_jdbc-1.5.5.0.jar`（Maven Central，SHA1 `c440b2f2f88bbf432799a44ba35e702486659978`），日志头 `-- Database version: v1.5.5` 可以核对。
+
+**构建（Windows 本机，编排者）。**
+
+1. JDK：Temurin 21.0.12.1+1 的 Windows zip（SHA256 `f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e`）解到 `.orch/jdk/`。Maven 3.9.16 的 bin zip（核对 SHA512）解到 `.orch/maven/`。
+2. `git init .orch/sqlancer-src`，`git fetch --depth 1 https://github.com/sqlancer/sqlancer.git <commit>`，检出；`git apply` 上面的补丁。
+3. `JAVA_HOME=.orch/jdk/jdk-21.0.12.1+1 mvn -B -DskipTests -Dmaven.repo.local=.orch/m2 package`。
+4. 组装 `.orch/sqlancer/`：`sqlancer-2.0.0.jar`；`lib/`（`target/lib` 的全部 jar，去掉 `duckdb_jdbc-1.3.0.0.jar`）；`override/duckdb_jdbc-1.5.5.0.jar`；`COMMIT`（一行 commit 哈希）。共约 450 MB。
+
+**部署到服务器。** SQLancer 是纯 Java，DuckDB JDBC 的 jar 里带着各平台的本地库，所以整个 `.orch/sqlancer/` 原样拷过去（JDK 用服务器上已有的 `.orch/jdk/`）：
+
+```
+# Windows 本机，仓库根
+tar -czf .orch/dl/sqlancer.tar.gz -C .orch sqlancer
+scp .orch/dl/sqlancer.tar.gz 3090:CoevoDB/.orch/dl/
+# 服务器
+cd ~/CoevoDB/.orch && tar -xzf dl/sqlancer.tar.gz && cat sqlancer/COMMIT
+```
+
+**驱动怎么跑。** 网格的 `sqlancer` 臂写成 `{"name": "sqlancer", "kind": "sqlancer", "engine": "duckdb", "run": true}`（可选 `"run": {"oracles": ["NOREC", "WHERE"], "threads": 1}`），每格起 `python -m surprise.baselines.sqlancer_run`：它在格目录的 `sqlancer/` 下起 java（`--log-each-select false --log-execution-time false`、`--num-tries` 设得很大、`--timeout-seconds` 为预算），每两秒收一次新的缺陷日志，当场分类（结果不一致 `mismatch`、预期外的报错 `unexpected_error`、SQLancer 或驱动自己的问题 `tool_error`）、把能拆成"`SELECT <列> FROM <表或连接>` + 谓词"的转成 `SqlCase`（NoREC → `norec`，TLP WHERE → `tlp`）、评判。`report.json` 的 `executions` 是 SQLancer 实际执行的查询数，"每千次执行的家族数"用它算。每份日志的分类与去向在 `sqlancer/reports.jsonl`。`--replay-logs <目录>` 可以不起 java、只评判已有的日志。
+
+**DataFusion。** SQLancer 有 DataFusion 支持，但不是经 Python：它连自己仓库里的一个 Rust 写的 Arrow Flight SQL 服务端（`src/sqlancer/datafusion/server/datafusion_server`），那个服务端钉在 DataFusion 40.0.0、arrow 52.1.0。要测 DataFusion 54.0.0，得先把服务端移植到 54.0.0 的 API 并在服务器上装 Rust 工具链编出来；做不做由 S17 决定，不做的话 E5 少 5 格（`EXPERIMENT.md` §6 已写明）。

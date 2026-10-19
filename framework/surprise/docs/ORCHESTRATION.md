@@ -7,7 +7,7 @@
 | 角色 | 谁 | 做 | 不做 |
 |---|---|---|---|
 | 编排者 | 你 | 读交接文件、拆工作包、先写 `gates/sNN.py`、写任务说明、派发与监控、独立复跑审查、合并、写 HANDOFF 与 DECISIONS、打 tag | 不写实现代码 |
-| 执行者 | grok 无界面模式，每个工作包一个 | 在自己的 worktree 与分支 `grok/<包号>` 上实现、跑测试、提交、写 `.orch/report.md` | 不改 `gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`tools/orch/`；不打 tag、不合并、不 push |
+| 执行者 | grok 或 codex 的无界面模式，每个工作包一个（2026-10-19 起暂用 codex，见第 11 节） | 在自己的 worktree 与分支 `grok/<包号>` 上实现、跑测试、提交、写 `.orch/report.md` | 不改 `gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`、`.codex/`、`tools/orch/`；不打 tag、不合并、不 push |
 | 用户 | — | 定参数、批准 CLAUDE.md 改动、处理升级上来的问题、会话验收 | — |
 
 你直接提交的只应是：门槛脚本、交接文件、归档、合并提交。实现代码全部来自 `grok/` 分支。
@@ -55,6 +55,7 @@
 | `gw status <包号> [--wait] [--tail N] [--timeout 分钟]` | 阶段、时长、分支上的提交数、未提交改动、日志末尾；超时就终止 | 0 正常结束；10 还在跑；2 异常结束 |
 | `gw review <包号> [--expect-passed N] [--skip-tests]` | 生成审查包并在 worktree 里复跑 pytest 与门槛 | 0 没有红旗；3 有红旗 |
 | `gw resume <包号> <审查意见.md>` | 把意见放进 worktree，续接原会话返工 | 同 spawn |
+| `gw handover <包号> [--executor codex\|grok]` | 在原 worktree 上开一个新会话（可以换执行者），保留已有提交与未提交改动；不算返工轮数 | 同 spawn |
 | `gw merge <包号> --into session/sNN` | `--no-ff` 合并，再单独提交一次归档（brief、report、审查包、各轮意见 → `orch/sNN/`） | 0 / 1 |
 | `gw cleanup <包号> [--abandon]` | 删 worktree 和分支；未合并的必须 `--abandon`（也会终止还在跑的 grok） | 0 / 1 |
 | `gw list` | 所有包及状态 | 0 |
@@ -128,3 +129,25 @@
 - 用编辑工具写 `framework/surprise/gates/`、`framework/surprise/docs/`、`CLAUDE.md`、`.grok/`，包括用绝对路径写主检出区的同名路径。
 
 不覆盖的：经 `cmd /c`、`powershell -Command`、`python -c` 等包一层再执行的命令；PowerShell 里没列出的缩写参数；用 shell 重定向或脚本写禁区文件。这些靠审查清单第 1、3 条兜住。
+
+## 11. codex 执行者（2026-10-19 起暂用）
+
+用户的决定（S15，grok 余额用完之后）：执行者暂时换成 codex，启动命令是 `codex -m gpt-6.1-sol -c 'model_reasoning_effort="high"' --yolo`。`gw spawn` 与 `gw handover` 默认 `--executor codex`；`--executor grok` 或环境变量 `ORCH_EXECUTOR=grok` 换回 grok。上面各节写"grok"的地方，除了 deny 规则（第 10 节），对 codex 同样适用。
+
+脚本实际执行的是 `codex exec --json --dangerously-bypass-approvals-and-sandbox --cd <worktree> -m gpt-6.1-sol -c model_reasoning_effort="high" -c project_doc_fallback_filenames=["CLAUDE.md"] <提示>`（那个长参数就是 `--yolo`）；返工是 `codex exec resume … <会话号> <提示>`。
+
+环境事实（codex-cli 0.163.0 实测）：
+- 会话号由 codex 自己定，出现在日志的 `thread.started` 事件里，脚本从日志读。返工续接时上下文保留。
+- codex 读的是 AGENTS.md，不读 CLAUDE.md。仓库根只有 CLAUDE.md，靠 `project_doc_fallback_filenames` 读进来。根目录以后要是加了 AGENTS.md，这一条就失效，要改脚本。
+- 名字里含 KEY、SECRET、TOKEN 的环境变量，codex 默认不传给它起的 shell。所以 `--llm-key` 的包另加 `-c shell_environment_policy.ignore_default_excludes=true`。
+- codex 不报美元，只报 token；审查包第 6 节给出 token 合计。
+- 分支照旧叫 `grok/<包号>`（CLAUDE.md 写的就是这个名字）。
+
+拦截：codex 没有 `--deny`。脚本在每个 worktree 里写 `.codex/rules/orch.rules`（execpolicy 前缀规则，清单是 `grok_worker.py` 的 `CODEX_FORBIDDEN`），`--yolo` 下照样生效（实测 `git tag` 被拒）。每轮开始前用 `codex execpolicy check` 确认 `git push` 会被拒，否则不启动。
+- 覆盖：`git push`、`tag`、`merge`、`rebase`、`worktree`，`git reset --hard`，`git branch -D/-d/--delete`，带 `-C`、`-c` 等全局选项的 git（一律拒），以及递归参数紧跟在命令后面的删除（`rm -rf`、`Remove-Item -Recurse`、`rd /s` 等）。
+- 不覆盖：codex 自己的编辑工具写禁区（没有对应的规则，全靠审查清单第 1 条按 diff 核对）；递归参数不在第二个位置的删除；包一层再执行的命令。
+- 被拒的调用只记在 `.orch/logs/<包号>.stderr.log`，审查包第 6 节会列出来；规则文件被改过或删了，审查包标红旗。
+
+`gw handover <包号>` 用于执行者中途退出（例如余额用完）的包：在原 worktree 上开新会话，提示里要求先读懂上一位留下的改动、能用的接着用。审查照常读完整 diff，接手的包不放松。
+
+codex 启动即失败：看 `.orch/logs/<包号>.stderr.log`；在一个临时目录里跑 `codex exec "hi"` 确认登录没过期；需要指定程序路径时设 `ORCH_CODEX_CMD`。

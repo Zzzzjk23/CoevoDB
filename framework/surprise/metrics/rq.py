@@ -9,7 +9,8 @@ from __future__ import annotations
 import inspect
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ from surprise.metrics.constants import (
     TEETH_AMPLITUDE,
     TEETH_WIDTH,
 )
-from surprise.metrics.curve import surprise_curve, teeth
+from surprise.metrics.curve import _Window, _check_window, teeth
 from surprise.metrics.dups import duplicate_rate, identity_key, old_reports
 from surprise.metrics.recall import score as recall_score
 from surprise.metrics.rundata import RunData
@@ -493,7 +494,7 @@ def _edits(wb: Any) -> tuple[dict[str, int], dict[str, Any]]:
     return tally, gap
 
 
-def _invalid(records: Sequence[Any], executions: int) -> dict[str, Any]:
+def _invalid(records: Sequence[Any], executions: int | None) -> dict[str, Any]:
     invalid = [record for record in records if record.label.y == "invalid"]
     by_reason: dict[str, int] = {}
     by_oracle: dict[str, int] = {}
@@ -502,9 +503,18 @@ def _invalid(records: Sequence[Any], executions: int) -> dict[str, Any]:
         oracle = record.label.oracle
         by_reason[reason] = by_reason.get(reason, 0) + 1
         by_oracle[oracle] = by_oracle.get(oracle, 0) + 1
+    return _invalid_counts(len(invalid), by_reason, by_oracle, executions)
+
+
+def _invalid_counts(
+    count: int,
+    by_reason: dict[str, int],
+    by_oracle: dict[str, int],
+    executions: int | None,
+) -> dict[str, Any]:
     return {
-        "count": len(invalid),
-        "rate": None if executions == 0 else len(invalid) / executions,
+        "count": count,
+        "rate": None if not executions else count / executions,
         "by_reason": by_reason,
         "by_oracle": by_oracle,
     }
@@ -521,7 +531,7 @@ def _roles(config: dict[str, Any]) -> list[Any]:
 
 
 def _engines(config: dict[str, Any], kind: str) -> list[Any]:
-    if kind == "pure_llm":
+    if kind == "pure_llm" or kind == "sqlancer":
         return [config["engine"]]
     raw = config.get("engines")
     if isinstance(raw, (list, tuple)):
@@ -536,15 +546,193 @@ def _oracles(config: dict[str, Any]) -> list[Any]:
     return []
 
 
-def _per_family(executions: int, family_count: int, llm_calls: int, tokens: int, usd: float | None) -> dict[str, Any]:
+def _per_family(
+    executions: int | None,
+    family_count: int,
+    llm_calls: int,
+    tokens: int,
+    usd: float | None,
+) -> dict[str, Any]:
     if family_count == 0:
         return {"executions": None, "llm_calls": None, "tokens": None, "usd": None}
     return {
-        "executions": executions / family_count,
+        "executions": None if executions is None else executions / family_count,
         "llm_calls": llm_calls / family_count,
         "tokens": tokens / family_count,
         "usd": None if usd is None else usd / family_count,
     }
+
+
+def _sqlancer_executions(report: dict[str, Any] | None) -> int | None:
+    """SQLancer's executed-query count. Missing, or not an integer, is ``None``."""
+    if report is None:
+        return None
+    value = report.get("executions")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+@dataclass
+class _Scan:
+    count: int
+    families: list[dict[str, Any]]
+    profiled_keys: list[str]
+    valid: int
+    brier: float | None
+    brier_reference: float | None
+    mean_surprise: float | None
+    calibration: list[dict[str, Any]]
+    high_surprise: dict[str, Any]
+    curve: list[float | None]
+    seq_of: dict[str, int]
+    families_via: dict[str, int]
+    pure_llm: dict[str, Any]
+    invalid_count: int
+    by_reason: dict[str, int]
+    by_oracle: dict[str, int]
+
+
+def _scan_records(
+    records: Iterable[Any],
+    *,
+    progress: dict[str, dict[str, Any]],
+    invented: set[str],
+    window: int,
+) -> _Scan:
+    """One pass over ``records``. Only the fields the metrics use are kept."""
+    _check_window(window)
+    windows = _Window(window)
+    families: list[dict[str, Any]] = []
+    features_of: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    profiled_keys: list[str] = []
+    squares: list[float] = []
+    outcomes: list[float] = []
+    surprises: list[float] = []
+    edges = CALIBRATION_EDGES
+    last_index = len(edges) - 2
+    bin_ps: list[list[Any]] = [[] for _ in range(len(edges) - 1)]
+    bin_fails = [0] * (len(edges) - 1)
+    high_count = 0
+    high_fresh = 0
+    seq_of: dict[str, int] = {}
+    kept = 0
+    broken = 0
+    invalid_count = 0
+    by_reason: dict[str, int] = {}
+    by_oracle: dict[str, int] = {}
+    count = 0
+    for record in records:
+        count += 1
+        seq_of[record.record_id] = record.seq
+        y = record.label.y
+        if y == "invalid":
+            invalid_count += 1
+            reason = record.label.invalid_reason
+            oracle = record.label.oracle
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+            by_oracle[oracle] = by_oracle.get(oracle, 0) + 1
+        elif record.p_t is not None:
+            outcome = 1.0 if y == "fail" else 0.0
+            squares.append((record.p_t - outcome) ** 2)
+            outcomes.append(outcome)
+            for index in range(len(edges) - 1):
+                lo, hi = edges[index], edges[index + 1]
+                if lo <= record.p_t < hi or (index == last_index and record.p_t == hi):
+                    bin_ps[index].append(record.p_t)
+                    if y == "fail":
+                        bin_fails[index] += 1
+                    break
+        bits = _surprise(record)
+        if bits is not None:
+            surprises.append(bits)
+            if bits >= HIGH_SURPRISE_BITS:
+                high_count += 1
+                row = progress.get(record.record_id)
+                if row is not None and row.get("triage") == "new_family":
+                    high_fresh += 1
+        windows.add(y, record.p_t)
+        key = label_key(record)
+        if key is not None:
+            profiled_keys.append(key)
+            if key not in seen:
+                seen.add(key)
+                row = progress.get(record.record_id)
+                families.append(
+                    {
+                        "key": key,
+                        "record_id": record.record_id,
+                        "seq": record.seq,
+                        "elapsed_s": None if row is None else row.get("elapsed_s"),
+                    }
+                )
+                features_of[record.record_id] = _phi_features(record)
+        spec = record.spec if isinstance(record.spec, dict) else None
+        expect = None if spec is None else spec.get("expect")
+        if expect == y:
+            kept += 1
+        elif expect in ("pass", "fail") and expect != y:
+            broken += 1
+    if not squares:
+        brier, reference = None, None
+    else:
+        brier = sum(squares) / len(squares)
+        rate = sum(outcomes) / len(outcomes)
+        reference = rate * (1.0 - rate)
+    calibration: list[dict[str, Any]] = []
+    for index in range(len(edges) - 1):
+        ps = bin_ps[index]
+        members = len(ps)
+        calibration.append(
+            {
+                "lo": edges[index],
+                "hi": edges[index + 1],
+                "count": members,
+                "mean_p": None if members == 0 else sum(ps) / members,
+                "fail_rate": None if members == 0 else bin_fails[index] / members,
+            }
+        )
+    via = {name: 0 for name in _VIA}
+    for family in families:
+        row = progress.get(family["record_id"])
+        if row is not None:
+            lane = row.get("lane")
+            if lane in _LANES:
+                via[lane] += 1
+            rule = row.get("rule") or ""
+            if isinstance(rule, str) and rule.startswith("llm:"):
+                via["llm_rule"] += 1
+        if invented and any(feature in invented for feature in features_of[family["record_id"]]):
+            via["invented_feature"] += 1
+    return _Scan(
+        count=count,
+        families=families,
+        profiled_keys=profiled_keys,
+        valid=len(squares),
+        brier=brier,
+        brier_reference=reference,
+        mean_surprise=None if not surprises else sum(surprises) / len(surprises),
+        calibration=calibration,
+        high_surprise={
+            "threshold": HIGH_SURPRISE_BITS,
+            "count": high_count,
+            "new_family": high_fresh,
+            "share": None if high_count == 0 else high_fresh / high_count,
+        },
+        curve=windows.curve,
+        seq_of=seq_of,
+        families_via=via,
+        pure_llm={
+            "total": count,
+            "kept": kept,
+            "broken": broken,
+            "accuracy": None if kept + broken == 0 else kept / (kept + broken),
+        },
+        invalid_count=invalid_count,
+        by_reason=by_reason,
+        by_oracle=by_oracle,
+    )
 
 
 def run_metrics(
@@ -556,26 +744,35 @@ def run_metrics(
 ) -> dict[str, Any]:
     """Every RQ1–RQ6 metric of ``run_dir``. The same directory yields the same dict."""
     data = RunData.open(run_dir)
-    records = data.records
     config = data.config
     report = data.report
     arm = config.get("arm")
-    executions = len(records)
     wall_s = None if report is None else report.get("wall_s")
-    families = ledger_families(records, data.progress)
+    progress = {
+        row["record_id"]: row
+        for row in data.progress
+        if isinstance(row, dict) and isinstance(row.get("record_id"), str)
+    }
+    used_window = CURVE_WINDOW if window is None else window
+    # Scan before opening the theory, so a large ledger row's transient buffer
+    # is released before the workbench is built.
+    scan = _scan_records(
+        data.iter_records(keep_detail=False),
+        progress=progress,
+        invented=_llm_features(data.registry),
+        window=used_window,
+    )
+    executions = _sqlancer_executions(report) if data.kind == "sqlancer" else scan.count
+    families = scan.families
     family_count = len(families)
-    progress = {row["record_id"]: row for row in data.progress if isinstance(row, dict) and isinstance(row.get("record_id"), str)}
     wb = data.workbench()
     rows = _family_rows(wb) if wb is not None else []
     theory_keys = None if wb is None or _frozen(arm) else [row["key"] for row in rows]
     if theory_keys is not None:
         rate = duplicate_rate(theory_keys)
     else:
-        rate = duplicate_rate(_profiled_keys(records))
+        rate = duplicate_rate(scan.profiled_keys)
     first = None if not families else {"seq": families[0]["seq"], "elapsed_s": families[0]["elapsed_s"]}
-    brier, reference = _brier(records)
-    used_window = CURVE_WINDOW if window is None else window
-    curve = surprise_curve(records, window=used_window)
     conjecture_summary, predictions, conjecture_timeline = _conjectures(data.book("conjectures"))
     translation_summary, translation_timeline = _translations(data.book("translations"))
     calls = _calls(data.book("calls"))
@@ -604,36 +801,36 @@ def run_metrics(
             "executions": executions,
             "families": families,
             "family_count": family_count,
-            "families_per_1000": None if executions == 0 else 1000.0 * family_count / executions,
+            "families_per_1000": None if not executions else 1000.0 * family_count / executions,
             "families_per_hour": _per_hour(family_count, wall_s),
             "first_family": first,
             "theory_families": theory_keys,
             "duplicate_rate": rate,
         },
         "rq2": {
-            "valid": len(_valid(records)),
-            "brier": brier,
-            "brier_reference": reference,
-            "mean_surprise": _mean([_surprise(record) for record in records]),
-            "calibration": _calibration(records),
-            "high_surprise": _high_surprise(records, progress),
+            "valid": scan.valid,
+            "brier": scan.brier,
+            "brier_reference": scan.brier_reference,
+            "mean_surprise": scan.mean_surprise,
+            "calibration": scan.calibration,
+            "high_surprise": scan.high_surprise,
             "window": used_window,
-            "curve": curve,
-            "teeth": teeth(curve, TEETH_AMPLITUDE, TEETH_WIDTH),
+            "curve": scan.curve,
+            "teeth": teeth(scan.curve, TEETH_AMPLITUDE, TEETH_WIDTH),
         },
         "rq3": {
             "conjectures": conjecture_summary,
             "predictions": predictions,
             "translations": translation_summary,
-            "timeline": _timeline(conjecture_timeline, translation_timeline, {record.record_id: record.seq for record in records}),
-            "families_via": _families_via(records, progress, _llm_features(data.registry)),
+            "timeline": _timeline(conjecture_timeline, translation_timeline, scan.seq_of),
+            "families_via": scan.families_via,
             "calls": calls,
             "calls_per_family": ratio,
             "tokens_per_family": token_ratio,
-            "pure_llm": _pure_llm(records) if data.kind == "pure_llm" else None,
+            "pure_llm": scan.pure_llm if data.kind == "pure_llm" else None,
         },
         "rq4": {
-            "invalid": _invalid(records, executions),
+            "invalid": _invalid_counts(scan.invalid_count, scan.by_reason, scan.by_oracle, executions),
             "duplicate_rate": rate,
             "theory_length": [] if wb is None else theory_lengths(wb),
             "edits": edits,

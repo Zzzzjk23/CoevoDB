@@ -11,7 +11,8 @@ match a run that has no role code loaded.
         [--engine E]... [--oracle O]...
         [--max-experiments N] [--max-minutes M]
         [--beta B] [--bootstrap FILE] [--run-id ID]
-        [--llm ROLE]... [--llm-cache DIR] [--llm-max-calls N] [--llm-offline]
+        [--llm ROLE]... [--llm-cache DIR] [--llm-max-calls N|unlimited]
+        [--llm-tier {fast,strong}] [--llm-offline]
         [--vocabulary FILE]
         [--freeze {theory,diagnoser}] [--hunter {value,random}]
         [--theory-from RUN_DIR@GEN] [--select-from RUN_DIR@GEN]
@@ -25,6 +26,7 @@ import inspect
 import json
 import math
 import os
+import signal
 import sys
 import time
 import traceback
@@ -57,7 +59,11 @@ _LLM_ROLES = (
     "vocab_inventor",
     "oracle_inventor",
 )
-_LLM_KEYS = ("roles", "cache", "max_calls", "network", "transport")
+_LLM_KEYS = ("roles", "cache", "max_calls", "network", "transport", "tier")
+# Same spelling as roles.gateway.UNLIMITED. Not imported: loading this module
+# must not load the roles.
+_LLM_UNLIMITED = "unlimited"
+_LLM_TIERS = ("fast", "strong")
 # Same name as roles.constants.REWRITE_LIBRARY_ENV. Hardcoded so an off run
 # does not import the roles.
 _REWRITE_LIBRARY_ENV = "SURPRISE_REWRITE_LIBRARY"
@@ -248,8 +254,36 @@ def run(
     return state.report
 
 
+def _install_interrupt() -> None:
+    """Turn the grid's break signal into KeyboardInterrupt.
+
+    Windows grids send ``CTRL_BREAK_EVENT``; POSIX grids send ``SIGTERM``.
+    ``SIGINT`` already raises. Installed only from ``main``, never at import.
+    """
+    if sys.platform == "win32":
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    else:
+        signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+
+def _llm_max_calls_arg(text: str) -> int | str:
+    """``--llm-max-calls``: a non-negative integer, or ``unlimited``."""
+    if text == _LLM_UNLIMITED:
+        return _LLM_UNLIMITED
+    try:
+        value = int(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "expected a non-negative integer or 'unlimited'"
+        ) from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("expected a non-negative integer or 'unlimited'")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command line. Returns 0, 2 for bad arguments, 1 for a run that raised, 130 for an interrupt."""
+    _install_interrupt()
     parser = argparse.ArgumentParser(description="Hunter loop, with optional LLM roles")
     parser.add_argument("--out", required=True)
     parser.add_argument("--seed", type=int, required=True)
@@ -274,7 +308,18 @@ def main(argv: list[str] | None = None) -> int:
         help="turn on one LLM role (repeatable)",
     )
     parser.add_argument("--llm-cache", default=None, help="directory for the role response cache")
-    parser.add_argument("--llm-max-calls", type=int, default=None, help="cap on role calls")
+    parser.add_argument(
+        "--llm-max-calls",
+        type=_llm_max_calls_arg,
+        default=None,
+        help="cap on role calls, or 'unlimited'",
+    )
+    parser.add_argument(
+        "--llm-tier",
+        choices=_LLM_TIERS,
+        default=None,
+        help="use this tier for every role call",
+    )
     parser.add_argument("--llm-offline", action="store_true", help="answer roles from the cache only")
     try:
         args = parser.parse_args(argv)
@@ -1093,8 +1138,20 @@ def _normalise_llm(llm: object) -> dict[str, Any] | None:
         max_calls = llm["max_calls"]
     else:
         max_calls = None
-    if max_calls is not None and (isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 0):
-        raise UsageError(f"llm: max_calls must be an integer >= 0 or null, got {max_calls!r}")
+    if (
+        max_calls is not None
+        and max_calls != _LLM_UNLIMITED
+        and (isinstance(max_calls, bool) or not isinstance(max_calls, int) or max_calls < 0)
+    ):
+        raise UsageError(
+            f"llm: max_calls must be an integer >= 0, null, or {_LLM_UNLIMITED!r}, got {max_calls!r}"
+        )
+    if "tier" in llm:
+        tier = llm["tier"]
+    else:
+        tier = None
+    if tier is not None and (not isinstance(tier, str) or tier not in _LLM_TIERS):
+        raise UsageError(f"llm: tier must be one of {', '.join(_LLM_TIERS)} or null, got {tier!r}")
     if "network" in llm:
         network = llm["network"]
         if not isinstance(network, bool):
@@ -1109,17 +1166,22 @@ def _normalise_llm(llm: object) -> dict[str, Any] | None:
     }
     if "transport" in llm:
         config["transport"] = llm["transport"]
+    if tier is not None:
+        config["tier"] = tier
     return config
 
 
 def _llm_public(llm: dict[str, Any]) -> dict[str, Any]:
     """The role switch as stored in config.json. ``transport`` stays in the process."""
-    return {
+    public = {
         "roles": list(llm["roles"]),
         "cache": llm["cache"],
         "max_calls": llm["max_calls"],
         "network": llm["network"],
     }
+    if llm.get("tier") is not None:
+        public["tier"] = llm["tier"]
+    return public
 
 
 def _llm_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -1127,17 +1189,21 @@ def _llm_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
     cache = args.llm_cache
     max_calls = args.llm_max_calls
     offline = args.llm_offline
+    tier = args.llm_tier
     if roles:
         if not isinstance(cache, str) or cache == "":
             raise UsageError("--llm requires --llm-cache")
-        return {
+        config = {
             "roles": list(roles),
             "cache": cache,
             "max_calls": max_calls,
             "network": not offline,
         }
-    if cache is not None or max_calls is not None or offline:
-        raise UsageError("--llm-cache, --llm-max-calls and --llm-offline require --llm")
+        if tier is not None:
+            config["tier"] = tier
+        return config
+    if cache is not None or max_calls is not None or offline or tier is not None:
+        raise UsageError("--llm-cache, --llm-max-calls, --llm-offline and --llm-tier require --llm")
     return None
 
 
