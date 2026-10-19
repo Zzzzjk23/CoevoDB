@@ -40,7 +40,9 @@
 
 全部合并后：按 S8 验收的办法重跑 3 小时长跑、重钉；补 SERVER.md 的并行、归档与 SQLancer 三节；服务器部署（SQLancer 拷过去）。
 
-**阻塞（2026-10-19 08:33）：grok 账户余额用完。** 第一批三个包派发约 25 分钟后，`s15-rundata` 收到 `API error (status 402 Payment Required): Grok Build usage balance exhausted` 退出（未提交，worktree 里留着 5 个文件的改动）；另外两个包在下一次调用模型时也会同样退出。编排者不写实现代码（ORCHESTRATION §1），所以停在这里，等用户给 grok 充值后 `gw resume <包号>`（会话上下文保留）。已做完、不依赖 grok 的：门槛 s15、SQLancer 的构建与补丁、SQLancer 已拷到服务器并冒烟通过（`.orch/sqlancer`，DuckDB 1.5.5，约 700 条查询每秒）、SERVER.md 三节的草稿（编排者 scratchpad，归档模块合并后才能提交，因为 s14 的 `docs` 组会对手册里的每条命令跑 `--help`）。
+**阻塞（2026-10-19 08:33）：grok 账户余额用完。** 第一批三个包派发约 25 分钟后，`s15-rundata` 收到 `API error (status 402 Payment Required): Grok Build usage balance exhausted` 退出（未提交，worktree 里留着 5 个文件的改动）；另外两个包在下一次调用模型时也同样退出。已做完、不依赖 grok 的：门槛 s15、SQLancer 的构建与补丁、SQLancer 已拷到服务器并冒烟通过（`.orch/sqlancer`，DuckDB 1.5.5，约 700 条查询每秒）、SERVER.md 三节的草稿（现在在 `.orch/s15/SERVER.md.draft`，不入库；归档模块合并后才能提交，因为 s14 的 `docs` 组会对手册里的每条命令跑 `--help`）。
+
+**换成 codex（2026-10-19 15:30，用户决定）：** 用户指示"暂时把grok的角色换为codex"，启动命令 `codex -m gpt-6.1-sol -c 'model_reasoning_effort="high"' --yolo`。`tools/orch/grok_worker.py` 加了 codex 后端（默认执行者现在是 codex）和 `handover` 命令；拦截改用 worktree 里的 execpolicy 规则；做法与实测见 ORCHESTRATION §11 与 DECISIONS 当天各条。冒烟包 `s15-codex-smoke` 跑通后已清理。第一批三个包用 `gw handover <包号>` 交给 codex，在原 worktree 上接着做（grok 留下的未提交改动保留）；之后的包（`s15-sqlancer`、`s15-archive`）用 codex 派发。三个包的状态用 `gw list` 看，执行者一列是 codex 的就是已交接的。
 
 ## 最近完成会话：S14（2026-10-19）
 

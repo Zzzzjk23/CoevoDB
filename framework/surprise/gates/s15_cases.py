@@ -22,6 +22,8 @@ ALLOWED_CHANGES = (
     "framework/tests/test_surprise_s15_",
     "framework/tests/data/sqlancer/",
     ".gitignore",
+    # The dispatch tool gained a codex executor (user's decision, 2026-10-19).
+    "tools/orch/",
 )
 # Not touched by S15: the frozen harness and the layers below the experiments.
 FROZEN_PATHS = (

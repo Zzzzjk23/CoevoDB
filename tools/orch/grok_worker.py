@@ -1,31 +1,36 @@
 """Dispatch tool for the CoevoDB migration (orchestrator side).
 
-The orchestrator (PI) hands each work package to a headless ``grok`` executor
-that works in its own git worktree on branch ``grok/<pkg>``:
+The orchestrator (PI) hands each work package to a headless executor, ``grok``
+or ``codex``, that works in its own git worktree on branch ``grok/<pkg>`` (the
+prefix is kept for codex packages: CLAUDE.md names it):
 
-    python tools/orch/grok_worker.py spawn   <pkg> --base <tag|branch>
-    python tools/orch/grok_worker.py status  <pkg> [--wait]
-    python tools/orch/grok_worker.py review  <pkg>
-    python tools/orch/grok_worker.py resume  <pkg> <feedback.md>
-    python tools/orch/grok_worker.py merge   <pkg> --into <branch>
-    python tools/orch/grok_worker.py cleanup <pkg> [--abandon]
+    python tools/orch/grok_worker.py spawn    <pkg> --base <tag|branch> [--executor codex|grok]
+    python tools/orch/grok_worker.py status   <pkg> [--wait]
+    python tools/orch/grok_worker.py review   <pkg>
+    python tools/orch/grok_worker.py resume   <pkg> <feedback.md>
+    python tools/orch/grok_worker.py handover <pkg> [--executor codex|grok]
+    python tools/orch/grok_worker.py merge    <pkg> --into <branch>
+    python tools/orch/grok_worker.py cleanup  <pkg> [--abandon]
     python tools/orch/grok_worker.py list
 
 Layout, all under the main checkout (``.orch/`` and ``.worktrees/`` are
 git-ignored):
 
     .orch/briefs/<pkg>.md           brief written by the orchestrator (input)
-    .orch/logs/<pkg>.jsonl          grok streaming-json output, runs appended
-    .orch/logs/<pkg>.stderr.log     grok stderr
+    .orch/logs/<pkg>.jsonl          executor JSON events (grok streaming-json,
+                                    codex exec --json), runs appended
+    .orch/logs/<pkg>.stderr.log     executor stderr
     .orch/state/<pkg>.json          package state (written by this CLI only)
-    .orch/state/<pkg>.run<N>.json   one record per grok run (supervisor-owned)
+    .orch/state/<pkg>.run<N>.json   one record per executor run (supervisor-owned)
     .orch/reviews/<pkg>.md          review package
     .worktrees/<pkg>/               worktree on branch grok/<pkg>
     .worktrees/<pkg>/.orch/         brief.md, report.md, review-<n>.md, tmp/
+    .worktrees/<pkg>/.codex/rules/  execpolicy rules for a codex executor
 
-Environment overrides: ``ORCH_GROK_CMD`` (path to the grok binary, or a JSON
-list used as the command prefix), ``ORCH_COMMIT_TRAILER`` (appended to the
-commits ``merge`` creates), ``ORCH_ROOT`` (main checkout, normally derived).
+Environment overrides: ``ORCH_GROK_CMD`` / ``ORCH_CODEX_CMD`` (path to the
+binary, or a JSON list used as the command prefix), ``ORCH_EXECUTOR`` (default
+executor for ``spawn`` and ``handover``), ``ORCH_COMMIT_TRAILER`` (appended to
+the commits ``merge`` creates), ``ORCH_ROOT`` (main checkout, normally derived).
 
 Standard library only. The flow and the review checklist this tool serves are
 in framework/surprise/docs/ORCHESTRATION.md.
@@ -52,6 +57,18 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve()
 
 BRANCH_PREFIX = "grok/"
+EXECUTORS = ("grok", "codex")
+# User's decision (2026-10-19, S15): codex stands in for grok for now; grok's
+# usage balance ran out mid-package. `--executor grok` switches back.
+DEFAULT_EXECUTOR = os.environ.get("ORCH_EXECUTOR", "codex")
+# The user's command line: codex -m gpt-6.1-sol -c 'model_reasoning_effort="high"' --yolo
+CODEX_MODEL = "gpt-6.1-sol"
+CODEX_CONFIG = (
+    'model_reasoning_effort="high"',
+    # codex reads AGENTS.md; the repo root has only CLAUDE.md (executor mode)
+    'project_doc_fallback_filenames=["CLAUDE.md"]',
+)
+CODEX_RULES = ".codex/rules/orch.rules"
 DEFAULT_TIMEOUT_MIN = 60
 DEFAULT_MAX_PARALLEL = 2
 DEFAULT_MAX_REWORK = 2
@@ -59,7 +76,7 @@ DEFAULT_TEST_TIMEOUT_MIN = 30
 
 # Never visible to the executor or to the code it wrote (review re-runs).
 # The one exception (user's decision, S9, 2026-10-15): a package spawned with
-# `--llm-key N` gets the key in its grok process, plus LLM_CAP_ENV = N, the
+# `--llm-key N` gets the key in its executor process, plus LLM_CAP_ENV = N, the
 # ceiling on real calls that the S9 gateway honours. Review re-runs never get it.
 STRIP_ENV = ("DEEPSEEK_API_KEY",)
 LLM_CAP_ENV = "SURPRISE_LLM_MAX_CALLS"
@@ -69,6 +86,11 @@ SPAWN_PROMPT = "读 .orch/brief.md，按其中说明完成工作包"
 RESUME_PROMPT = (
     "读 .orch/{name} 里的审查意见并按意见返工；范围、禁区与报告格式仍以 "
     ".orch/brief.md 为准，做完后提交并更新 .orch/report.md"
+)
+HANDOVER_PROMPT = (
+    "读 .orch/brief.md，按其中说明完成工作包。这个 worktree 里已有上一位执行者"
+    "中途退出时留下的改动（用 git status 与 git diff 查看）：先读懂它们，能用的接着用，"
+    "不对的改掉，然后完成工作包，照说明提交并写 .orch/report.md"
 )
 
 PKG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -81,6 +103,7 @@ PROTECTED = (
     "framework/surprise/docs/",
     "CLAUDE.md",
     ".grok/",
+    ".codex/",
     "tools/orch/",
 )
 # Orchestrator-side bookkeeping (untracked): denied to grok's edit tools only.
@@ -116,6 +139,25 @@ DENY_BASH += [
     for name in ("Remove-Item", "remove-item", "rm", "ri", "del", "erase",
                  "rd", "rmdir")
     for flag in ("*-Recurse*", "*-recurse*", "* -r", "* -r *")
+]
+
+# The same for codex: execpolicy prefix rules, which codex honours under --yolo
+# (probe, codex-cli 0.163.0). A rule matches leading tokens only (a list is a
+# set of alternatives), so flags later in the command are not caught and
+# `git -C`/`git -c` are refused outright. Codex has no rule for its own file
+# edits: protected paths rest on `review` alone.
+CODEX_FORBIDDEN = [
+    (["git", ["push", "tag", "merge", "rebase", "worktree"]],
+     "publishing, tags and merges are the orchestrator's"),
+    (["git", "reset", "--hard"], "no history rewriting"),
+    (["git", "branch", ["-D", "-d", "--delete"]], "no deleting branches"),
+    (["git", ["-C", "-c", "--git-dir", "--work-tree"]],
+     "run git in the worktree, without global options"),
+    (["rm", ["-rf", "-fr", "-Rf", "-fR", "-r", "-R", "--recursive"]], "no recursive deletes"),
+    ([["rd", "rmdir"], ["/s", "/S", "/q", "/Q"]], "no recursive deletes"),
+    ([["del", "erase"], ["/s", "/S"]], "no recursive deletes"),
+    ([["Remove-Item", "remove-item", "rm", "ri", "del", "erase", "rd", "rmdir"],
+      ["-Recurse", "-recurse", "-r", "-R"]], "no recursive deletes"),
 ]
 
 SKIP_RE = re.compile(
@@ -432,14 +474,28 @@ def child_env(worktree: Path | None = None) -> tuple[dict, list[str]]:
     return env, stripped
 
 
-def grok_cmd() -> list[str]:
-    raw = os.environ.get("ORCH_GROK_CMD", "").strip()
+def executor_of(state: dict) -> str:
+    return state.get("executor", "grok")  # packages from before codex were grok's
+
+
+def executor_cmd(executor: str) -> list[str]:
+    name = f"ORCH_{executor.upper()}_CMD"
+    raw = os.environ.get(name, "").strip()
     if raw:
         return [str(part) for part in json.loads(raw)] if raw.startswith("[") else [raw]
-    exe = shutil.which("grok")
+    exe = shutil.which(executor)
     if not exe:
-        raise OrchError("grok not found on PATH (or set ORCH_GROK_CMD)")
+        raise OrchError(f"{executor} not found on PATH (or set {name})")
     return [exe]
+
+
+def executor_version(executor: str) -> tuple[list[str], str]:
+    cmd = executor_cmd(executor)
+    proc = subprocess.run([*cmd, "--version"], capture_output=True)
+    if proc.returncode != 0:
+        maker = "xAI's grok" if executor == "grok" else "OpenAI's codex CLI"
+        raise OrchError(f"{cmd[0]} --version failed; is this {maker}?")
+    return cmd, _decode(proc.stdout).strip()
 
 
 def deny_rules() -> list[str]:
@@ -454,12 +510,78 @@ def deny_rules() -> list[str]:
     return rules
 
 
-def grok_argv(state: dict, prompt: str, *, resume: bool) -> list[str]:
+def executor_argv(state: dict, prompt: str, *, resume: bool) -> list[str]:
     # auto-approve is only ever granted inside a package worktree
+    executor = executor_of(state)
     if Path(state["worktree"]).resolve().parent != WORKTREES.resolve():
-        raise OrchError(f"refusing to run grok outside {rel(WORKTREES)}/: "
+        raise OrchError(f"refusing to run {executor} outside {rel(WORKTREES)}/: "
                         f"{state['worktree']}")
-    argv = [*grok_cmd(), "--no-auto-update", "--always-approve"]
+    if executor == "codex":
+        return codex_argv(state, prompt, resume=resume)
+    return grok_argv(state, prompt, resume=resume)
+
+
+def codex_argv(state: dict, prompt: str, *, resume: bool) -> list[str]:
+    argv = [*executor_cmd("codex"), "exec", *(["resume"] if resume else []), "--json",
+            # = --yolo: no approvals, no sandbox; the execpolicy rules still apply
+            "--dangerously-bypass-approvals-and-sandbox"]
+    if not resume:  # resume has no --cd; the run's cwd is the worktree either way
+        argv += ["--cd", state["worktree"]]
+    argv += ["-m", state.get("model") or CODEX_MODEL]
+    for item in CODEX_CONFIG:
+        argv += ["-c", item]
+    if state.get("llm_max_calls") is not None:
+        # codex drops *KEY*/*SECRET*/*TOKEN* variables from the shells it starts
+        argv += ["-c", "shell_environment_policy.ignore_default_excludes=true"]
+    if resume:
+        argv.append(state["session_id"])
+    argv.append(prompt)
+    return argv
+
+
+def codex_rules_text() -> str:
+    lines = ["# Written by tools/orch/grok_worker.py; the executor must not change it."]
+    for pattern, why in CODEX_FORBIDDEN:
+        lines.append(f"prefix_rule(pattern = {json.dumps(pattern)}, "
+                     f"decision = \"forbidden\", justification = {json.dumps(why)})")
+    return "\n".join(lines) + "\n"
+
+
+def install_codex_rules(state: dict) -> None:
+    """(Re)write the worktree's execpolicy rules and check codex parses them.
+    A file that differs from ours before a run is recorded for `review`."""
+    path = Path(state["worktree"]) / CODEX_RULES
+    text = codex_rules_text()
+    if path.is_file() and path.read_text(encoding="utf-8", errors="replace") != text:
+        state.setdefault("rules_changed", []).append(now_iso())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    proc = subprocess.run([*executor_cmd("codex"), "execpolicy", "check", "--rules",
+                           str(path), "--", "git", "push"], capture_output=True)
+    if '"decision":"forbidden"' not in _decode(proc.stdout).replace(" ", ""):
+        raise OrchError(f"codex does not refuse `git push` under {rel(path)}: "
+                        f"{_decode(proc.stdout + proc.stderr).strip()[:300]}")
+
+
+def session_id(state: dict) -> str | None:
+    """grok's id is chosen at launch; codex reports its thread id in the log,
+    so a codex session is the thread of the latest run that did not resume."""
+    if state.get("session_id"):
+        return state["session_id"]
+    threads, run = {}, None
+    for event in read_events(Path(state["log"])):
+        if event.get("type") == "orch.start":
+            run = event.get("run")
+        elif event.get("type") == "thread.started" and run is not None:
+            threads.setdefault(run, event.get("thread_id"))
+    for entry in reversed(state.get("runs") or []):
+        if entry["kind"] != "resume":
+            return threads.get(entry["n"])
+    return None
+
+
+def grok_argv(state: dict, prompt: str, *, resume: bool) -> list[str]:
+    argv = [*executor_cmd("grok"), "--no-auto-update", "--always-approve"]
     if state.get("trust", True):
         # a worktree is its own workspace for grok's folder trust; without
         # this, CLAUDE.md and project config are not loaded in headless mode
@@ -486,13 +608,16 @@ def _marker(handle, event: dict) -> None:
 
 
 def supervise(pkg: str, n: int) -> int:
-    """Run grok for one run of a package, enforce the timeout, record the exit.
-    Owns .orch/state/<pkg>.run<N>.json."""
+    """Run the executor for one run of a package, enforce the timeout, record
+    the exit. Owns .orch/state/<pkg>.run<N>.json (the executor's pid is kept
+    under the grok_* keys, so records from before codex still read)."""
     state = load_state(pkg)
     run = state["runs"][n - 1]
     worktree = Path(state["worktree"])
     env, _ = child_env(worktree)
-    env["GROK_DISABLE_AUTOUPDATER"] = "1"
+    executor = run.get("executor", "grok")
+    if executor == "grok":
+        env["GROK_DISABLE_AUTOUPDATER"] = "1"
     cap = state.get("llm_max_calls")
     if cap is not None:
         key = llm_key()
@@ -511,7 +636,8 @@ def supervise(pkg: str, n: int) -> int:
     with open(log_path, "ab") as log, open(err_path, "ab") as err:
         _marker(log, {
             "type": "orch.start", "pkg": pkg, "run": n, "kind": run["kind"],
-            "at": record["started_at"], "sessionId": state["session_id"],
+            "executor": executor, "at": record["started_at"],
+            "sessionId": state.get("session_id"),
             "envStripped": list(STRIP_ENV),
             "wasSetInParent": bool(run.get("key_was_set")),
             "childEnvHas": {k: any(e.upper() == k for e in env) for k in STRIP_ENV},
@@ -522,7 +648,7 @@ def supervise(pkg: str, n: int) -> int:
                 run["argv"], cwd=str(worktree), env=env,
                 stdin=subprocess.DEVNULL, stdout=log, stderr=err, **_own_group())
         except OSError as exc:
-            error = f"could not start grok: {exc}"
+            error = f"could not start {executor}: {exc}"
         else:
             record.update(grok_pid=proc.pid, grok_token=proc_token(proc.pid))
             _write_json(run_path(pkg, n), record)
@@ -545,15 +671,19 @@ def supervise(pkg: str, n: int) -> int:
 
 def start_run(state: dict, kind: str, prompt: str, timeout_min: float,
               detach: bool) -> int:
-    """Blocks until grok exits (run it as a background task of the calling
-    session) unless `detach` is set."""
+    """Blocks until the executor exits (run it as a background task of the
+    calling session) unless `detach` is set."""
     pkg = state["pkg"]
     n = len(state["runs"]) + 1
     _, stripped = child_env()
+    argv = executor_argv(state, prompt, resume=(kind == "resume"))
+    if executor_of(state) == "codex":
+        install_codex_rules(state)
     state["runs"].append({
-        "n": n, "kind": kind, "requested_at": now_iso(), "requested_ts": time.time(),
+        "n": n, "kind": kind, "executor": executor_of(state),
+        "requested_at": now_iso(), "requested_ts": time.time(),
         "timeout_min": timeout_min, "prompt": prompt, "key_was_set": bool(stripped),
-        "argv": grok_argv(state, prompt, resume=(kind == "resume")),
+        "argv": argv,
     })
     save_state(state)
     if not detach:
@@ -589,7 +719,8 @@ def start_run(state: dict, kind: str, prompt: str, timeout_min: float,
         time.sleep(0.2)
     info = run_status(state)
     if info["phase"] == "running":
-        print(f"started   run {n} ({kind}), grok pid {info['record'].get('grok_pid')}")
+        print(f"started   run {n} ({kind}), {executor_of(state)} pid "
+              f"{info['record'].get('grok_pid')}")
     else:
         print(f"WARNING   run {n} is '{info['phase']}' right after launch; "
               f"see {rel(sup_log)} and {rel(state['stderr_log'])}")
@@ -701,12 +832,65 @@ def denied_calls(events: list[dict]) -> list[str]:
     return out
 
 
+def codex_denials(stderr_log: Path) -> list[str]:
+    """Commands codex's execpolicy refused, as 'command -> reason': they show
+    up on stderr only, inside an escaped error message."""
+    try:
+        text = Path(stderr_log).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out = []
+    for line in text.splitlines():
+        if "exec_command failed" not in line or "rejected:" not in line:
+            continue
+        clean = line.replace("\\", "")
+        match = re.search(r"-Command '(.*?)'` rejected: ([^\"]*)", clean)
+        out.append(f"{_short(match.group(1), 120)} -> {match.group(2)}" if match
+                   else _short(clean.split("error=", 1)[-1], 200))
+    return out
+
+
+CODEX_EVENTS = {"thread.started", "turn.started", "turn.completed", "turn.failed",
+                "item.started", "item.updated", "item.completed"}
+
+
+def _codex_line(event: dict) -> str | None:
+    kind, item = event.get("type"), event.get("item") or {}
+    itype = item.get("type")
+    if kind == "thread.started":
+        return f"thread.started: {event.get('thread_id')}"
+    if kind == "turn.completed":
+        usage = event.get("usage") or {}
+        return (f"end: tokens in={usage.get('input_tokens')} "
+                f"cached={usage.get('cached_input_tokens')} out={usage.get('output_tokens')} "
+                f"reasoning={usage.get('reasoning_output_tokens')}")
+    if kind == "turn.failed":
+        return f"ERROR: {_short((event.get('error') or {}).get('message', event))}"
+    if kind == "item.started":  # the rest is reported on completion
+        return f"exec: {_short(item.get('command', ''))}" \
+            if itype == "command_execution" else None
+    if itype == "agent_message":
+        return f"text: {_short(item.get('text', ''))}"
+    if itype == "reasoning":
+        return f"thought: {_short(item.get('text', ''))}"
+    if itype == "command_execution":
+        return f"exec [exit {item.get('exit_code')}]: " \
+               f"{_short(item.get('aggregated_output', ''))}"
+    if itype == "file_change":
+        changes = ", ".join(f"{c.get('kind')} {c.get('path')}"
+                            for c in item.get("changes") or [])
+        return f"file_change [{item.get('status')}]: {_short(changes)}"
+    rest = {k: v for k, v in item.items() if k not in ("id", "type")}
+    return f"{itype or kind}: {_short(rest)}"
+
+
 def describe_events(events: list[dict], last: int) -> list[str]:
     merged: list[dict] = []
     for event in events:
         kind = event.get("type", "?")
-        if kind in ("available_commands", "usage") or (
-                kind == "tool_call_update" and event.get("status") is None):
+        if kind in ("available_commands", "usage", "turn.started", "item.updated") or (
+                kind == "tool_call_update" and event.get("status") is None) or (
+                kind == "item.started" and _codex_line(event) is None):
             continue  # bookkeeping noise
         if kind in ("text", "thought") and merged and merged[-1].get("type") == kind:
             merged[-1]["data"] += str(event.get("data", ""))
@@ -717,7 +901,9 @@ def describe_events(events: list[dict], last: int) -> list[str]:
     lines = []
     for event in merged[-last:] if last else merged:
         kind = event.get("type", "?")
-        if kind in ("text", "thought", "raw"):
+        if kind in CODEX_EVENTS:
+            lines.append(_codex_line(event))
+        elif kind in ("text", "thought", "raw"):
             lines.append(f"{kind}: {_short(event.get('data', ''))}")
         elif kind == "tool_call":
             name = event.get("toolName") or event.get("title") or "?"
@@ -746,12 +932,13 @@ def describe_events(events: list[dict], last: int) -> list[str]:
 # --------------------------------------------------------------------------
 
 def ensure_local_excludes() -> None:
-    """Keep .orch/ and .worktrees/ out of `git add -A` whatever the base
-    commit's .gitignore says (info/exclude is shared by every worktree)."""
+    """Keep .orch/, .worktrees/ and the codex rules out of `git add -A`
+    whatever the base commit's .gitignore says (info/exclude is shared by
+    every worktree)."""
     exclude = Path(git("rev-parse", "--path-format=absolute",
                        "--git-common-dir").strip()) / "info" / "exclude"
     current = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
-    missing = [p for p in (".orch/", ".worktrees/") if p not in current.split()]
+    missing = [p for p in (".orch/", ".worktrees/", "/.codex/") if p not in current.split()]
     if missing:
         exclude.parent.mkdir(parents=True, exist_ok=True)
         with open(exclude, "a", encoding="utf-8") as handle:
@@ -789,10 +976,7 @@ def cmd_spawn(args) -> int:
     if len(running) >= args.max_parallel:
         raise OrchError(f"{len(running)} package(s) already running "
                         f"({', '.join(running)}); limit is {args.max_parallel}")
-    cmd = grok_cmd()
-    version = subprocess.run([*cmd, "--version"], capture_output=True)
-    if version.returncode != 0:
-        raise OrchError(f"{cmd[0]} --version failed; is this xAI's grok?")
+    cmd, version = executor_version(args.executor)
 
     ensure_local_excludes()
     snapshot = refs_snapshot()
@@ -812,8 +996,10 @@ def cmd_spawn(args) -> int:
     state = {
         "pkg": pkg, "branch": branch, "worktree": str(worktree),
         "base": args.base, "base_sha": base_sha, "created_at": now_iso(),
-        "session_id": str(uuid.uuid4()), "model": args.model, "trust": not args.no_trust,
-        "grok": cmd, "grok_version": _decode(version.stdout).strip(),
+        "executor": args.executor, "executor_cmd": cmd, "executor_version": version,
+        # codex picks its own thread id; session_id() reads it from the log
+        "session_id": str(uuid.uuid4()) if args.executor == "grok" else None,
+        "model": args.model, "trust": not args.no_trust,
         "python": sys.executable,
         "brief_sha256": hashlib.sha256(brief.read_bytes()).hexdigest(),
         "allow_paths": allow_paths_from_brief(text),
@@ -823,12 +1009,13 @@ def cmd_spawn(args) -> int:
         "llm_max_calls": args.llm_key,
     }
     print(f"package   {pkg}")
+    print(f"executor  {args.executor} ({version})")
     print(f"worktree  {rel(worktree)} on {branch} from {args.base} ({base_sha[:12]})")
-    print(f"session   {state['session_id']}")
+    print(f"session   {state['session_id'] or 'reported by codex once it starts'}")
     print(f"log       {rel(state['log'])}")
     if args.llm_key is not None:
         found = "found" if llm_key() else "NOT FOUND, the package runs without it"
-        print(f"llm key   given to grok ({found}); {LLM_CAP_ENV}={args.llm_key}")
+        print(f"llm key   given to {args.executor} ({found}); {LLM_CAP_ENV}={args.llm_key}")
     if not state["allow_paths"]:
         print("note      brief has no ```allow-paths block; review will only "
               "check the protected paths")
@@ -853,6 +1040,11 @@ def cmd_resume(args) -> int:
         raise OrchError(
             f"package {pkg} already had {rounds} rework round(s); the limit is "
             f"{args.max_rework}. Stop and ask the user (or pass --force).")
+    if not state.get("session_id"):
+        state["session_id"] = session_id(state)
+        if not state["session_id"]:
+            raise OrchError(f"{executor_of(state)} reported no session id for {pkg}; "
+                            f"`handover {pkg}` starts a fresh session on the worktree")
     name = f"review-{rounds + 1}.md"
     shutil.copyfile(feedback, worktree / ".orch" / name)
     state.pop("review", None)  # the old review no longer covers the branch
@@ -860,6 +1052,31 @@ def cmd_resume(args) -> int:
           f"{rel(worktree / '.orch' / name)}")
     return start_run(state, "resume", RESUME_PROMPT.format(name=name),
                      args.timeout, args.detach)
+
+
+def cmd_handover(args) -> int:
+    """Start a fresh executor session (another executor, or the same one) on
+    a package's worktree, keeping its commits and uncommitted changes. Not a
+    rework round."""
+    pkg = check_pkg(args.pkg)
+    state = load_state(pkg)
+    if state.get("cleaned_at") or state.get("merged"):
+        raise OrchError(f"package {pkg} was already cleaned up or merged")
+    if not Path(state["worktree"]).is_dir():
+        raise OrchError(f"worktree missing: {rel(state['worktree'])}")
+    if run_status(state)["phase"] in ("running", "starting"):
+        raise OrchError(f"package {pkg} is still running")
+    cmd, version = executor_version(args.executor)
+    state.setdefault("handovers", []).append({
+        "at": now_iso(), "from": executor_of(state), "to": args.executor,
+        "from_session": session_id(state), "after_run": len(state["runs"])})
+    state.update(executor=args.executor, executor_cmd=cmd, executor_version=version,
+                 model=args.model,
+                 session_id=str(uuid.uuid4()) if args.executor == "grok" else None)
+    state.pop("review", None)
+    print(f"handover  {pkg}: {state['handovers'][-1]['from']} -> {args.executor} "
+          f"({version}); worktree and uncommitted changes kept")
+    return start_run(state, "handover", HANDOVER_PROMPT, args.timeout, args.detach)
 
 
 def branch_summary(state: dict) -> tuple[str, int]:
@@ -893,7 +1110,8 @@ def print_status(state: dict, info: dict, tail: int) -> None:
             print(f"phase     {phase} ({detail})")
         print(f"elapsed   {fmt_duration(info['elapsed'])} of "
               f"{info['run']['timeout_min']:g}m timeout")
-    print(f"session   {state['session_id']}")
+    print(f"executor  {executor_of(state)}")
+    print(f"session   {session_id(state) or '(not reported yet)'}")
     head, ahead = branch_summary(state)
     print(f"branch    {state['branch']} @ {head[:12] or '?'} "
           f"({ahead} commit(s) on top of {state['base']} {state['base_sha'][:12]})")
@@ -955,7 +1173,8 @@ def cmd_list(args) -> int:
                     f"exit {record.get('exit_code')}"
             if state.get("merged"):
                 phase += f", merged into {state['merged']['into']}"
-        print(f"{pkg:<24} {state['branch']:<30} base {state['base']:<14} {phase}")
+        print(f"{pkg:<24} {state['branch']:<30} base {state['base']:<14} "
+              f"{executor_of(state):<6} {phase}")
     return 0
 
 
@@ -1123,22 +1342,36 @@ def cmd_review(args) -> int:
         outcome = "超时被终止" if record.get("timed_out") else \
             f"退出码 {record.get('exit_code')}"
         if record.get("timed_out") or record.get("exit_code") != 0:
-            flags.append(f"grok 最近一轮非正常结束（{outcome}）")
+            flags.append(f"执行者最近一轮非正常结束（{outcome}）")
     elif info["phase"] == "lost":
         outcome = "进程丢失，没有退出记录"
-        flags.append("grok 最近一轮没有退出记录（进程丢失）")
+        flags.append("执行者最近一轮没有退出记录（进程丢失）")
     rework = sum(1 for run in state["runs"] if run["kind"] == "resume")
     commits = [ln for ln in git("log", "--reverse", "--format=%h %an: %s",
                                 f"{base}..{head}").splitlines() if ln]
+    executor = executor_of(state)
+    handovers = "；换过执行者：" + "，".join(
+        f"第 {h['after_run']} 轮之后 {h['from']} → {h['to']}"
+        for h in state["handovers"]) if state.get("handovers") else ""
     doc += [
         f"- 生成时间：{now_iso()}",
         f"- 基线：`{state['base']}`（{base[:12]}）",
         f"- 分支：`{branch}` @ {head[:12]}，基线之上 {len(commits)} 个提交",
         f"- 运行：共 {len(state['runs'])} 轮（返工 {rework} 轮），最近一轮{outcome}，"
         f"用时 {fmt_duration(info['elapsed'])}",
-        f"- grok：{state.get('grok_version') or '?'}；会话 `{state['session_id']}`",
+        f"- 执行者：{executor} "
+        f"{state.get('executor_version') or state.get('grok_version') or '?'}；"
+        f"会话 `{session_id(state)}`{handovers}",
         "",
     ]
+    if executor == "codex":
+        rules = worktree / CODEX_RULES
+        if not rules.is_file() or rules.read_text(encoding="utf-8", errors="replace") \
+                != codex_rules_text():
+            flags.append(f"codex 的 execpolicy 规则 `{CODEX_RULES}` 被改过或删了")
+        if state.get("rules_changed"):
+            flags.append(f"派发后有 {len(state['rules_changed'])} 轮开始前发现规则文件被改过"
+                         "（已重写）")
     if not commits:
         flags.append("分支上没有新提交")
     checked_out = git("rev-parse", "--abbrev-ref", "HEAD", cwd=worktree).strip()
@@ -1302,12 +1535,15 @@ def cmd_review(args) -> int:
         secrets += scan_secrets((f".orch/report.md:{i}", line)
                                 for i, line in enumerate(report.splitlines(), 1))
     events = read_events(Path(state["log"]))
+    stderr_text = Path(state["stderr_log"]).read_text(encoding="utf-8", errors="replace") \
+        if Path(state["stderr_log"]).is_file() else ""
     log_hits = len(scan_secrets(("log", json.dumps(e, ensure_ascii=False))
                                 for e in events))
+    log_hits += len(scan_secrets(("stderr", line) for line in stderr_text.splitlines()))
     if secrets or secret_files:
         flags.append(f"疑似密钥 {len(secrets)} 处、敏感文件名 {len(secret_files)} 个")
     if log_hits:
-        flags.append(f"grok 日志里有 {log_hits} 行疑似密钥（日志不入库，但要查来源）")
+        flags.append(f"执行者日志里有 {log_hits} 行疑似密钥（日志不入库，但要查来源）")
     doc += ["## 4. 扫描（只看相对基线新增或删除的行）", "",
             "### 4.1 新增的 skip / xfail / 排除测试", "", *_listing(skips), "",
             "### 4.2 测试里被删的断言", "", *_listing(removed_asserts), "",
@@ -1319,7 +1555,7 @@ def cmd_review(args) -> int:
             "### 4.6 疑似密钥（值已打码）", "",
             *_listing([f"`{where}` {what}" for where, what in secrets]
                       + [f"`{p}` 敏感文件名" for p in secret_files]),
-            f"- 日志 `{rel(state['log'])}` 中疑似密钥行数：{log_hits}", ""]
+            f"- 日志 `{rel(state['log'])}` 与 stderr 中疑似密钥行数：{log_hits}", ""]
 
     # ---- 5. refs ----
     before, now = state.get("refs_at_spawn", {}), refs_snapshot()
@@ -1350,20 +1586,34 @@ def cmd_review(args) -> int:
     kinds: dict[str, int] = {}
     for event in events:
         kinds[event.get("type", "?")] = kinds.get(event.get("type", "?"), 0) + 1
-    errors = [e for e in events if e.get("type") == "error"]
+    errors = [e for e in events if e.get("type") in ("error", "turn.failed")]
     if errors:
-        flags.append(f"grok 日志里有 {len(errors)} 条 error 事件")
+        flags.append(f"执行者日志里有 {len(errors)} 条 error / turn.failed 事件")
     ends = [e for e in events if e.get("type") == "end"]
     cost = sum(e.get("total_cost_usd") or 0 for e in ends)
     turns = sum(e.get("num_turns") or 0 for e in ends)
-    denied = denied_calls(events)
+    usage: dict[str, int] = {}
+    for event in events:
+        if event.get("type") == "turn.completed":
+            for key, value in (event.get("usage") or {}).items():
+                usage[key] = usage.get(key, 0) + (value or 0)
+    spend = []
+    if ends or not usage:
+        spend.append(f"grok：{turns} 个模型回合，上报花费 {cost:.4f} 美元（没上报的轮次按 0 计）")
+    if usage:
+        spend.append(f"codex：{sum(1 for e in events if e.get('type') == 'turn.completed')}"
+                     f" 轮，输入 {usage.get('input_tokens', 0)} token（其中缓存 "
+                     f"{usage.get('cached_input_tokens', 0)}），输出 "
+                     f"{usage.get('output_tokens', 0)}（其中推理 "
+                     f"{usage.get('reasoning_output_tokens', 0)}），codex 不报美元")
+    spend = "；".join(spend)
+    denied = denied_calls(events) + codex_denials(Path(state["stderr_log"]))
     doc += ["## 6. 执行日志摘要", "",
             f"`{rel(state['log'])}`：{len(events)} 条事件（"
             + "，".join(f"{k} {v}" for k, v in sorted(kinds.items())) + "）；"
-            f"各轮合计 {turns} 个模型回合，grok 上报花费 {cost:.4f} 美元"
-            "（没上报的轮次按 0 计）。", "",
-            f"被 deny 规则拦下的调用 {len(denied)} 次（拦下是规则在起作用；"
-            "要看的是执行者之后有没有换写法绕过去）：", "",
+            f"各轮合计 {spend}。", "",
+            f"被 deny 规则（grok）或 execpolicy 规则（codex，记在 stderr）拦下的调用 "
+            f"{len(denied)} 次（拦下是规则在起作用；要看的是执行者之后有没有换写法绕过去）：", "",
             *_listing([f"`{item}`" for item in denied]), "",
             "最后几条：", "", *_fence("\n".join(describe_events(events, 12)) or "（空）"),
             ""]
@@ -1539,26 +1789,32 @@ def cmd_cleanup(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="grok_worker.py",
-        description="Dispatch work packages to headless grok executors.")
+        description="Dispatch work packages to headless grok or codex executors.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def run_options(p):
         p.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_MIN,
-                       help="minutes before grok is terminated (default %(default)s)")
+                       help="minutes before the executor is terminated (default %(default)s)")
         p.add_argument("--detach", action="store_true",
                        help="return at once and leave a hidden supervisor process "
-                            "behind (default: block until grok exits)")
+                            "behind (default: block until the executor exits)")
 
-    p = sub.add_parser("spawn", help="create the worktree and start grok on a brief")
+    def executor_options(p):
+        p.add_argument("--executor", choices=EXECUTORS, default=DEFAULT_EXECUTOR,
+                       help="who does the package (default %(default)s; ORCH_EXECUTOR)")
+        p.add_argument("--model", help=f"model id (default: {CODEX_MODEL} for codex, "
+                                       "grok's own default for grok)")
+
+    p = sub.add_parser("spawn", help="create the worktree and start the executor on a brief")
     p.add_argument("pkg")
     p.add_argument("--base", required=True, help="tag, branch or commit to start from")
-    p.add_argument("--model", help="grok model id (default: grok's own default)")
+    executor_options(p)
     p.add_argument("--max-parallel", type=int, default=DEFAULT_MAX_PARALLEL,
                    help="refuse when this many packages are running (default %(default)s)")
     p.add_argument("--no-trust", action="store_true",
-                   help="do not pass --trust (grok then skips CLAUDE.md in the worktree)")
+                   help="grok only: do not pass --trust (grok then skips CLAUDE.md)")
     p.add_argument("--llm-key", type=int, metavar="N",
-                   help="give this package's grok DEEPSEEK_API_KEY and "
+                   help="give this package's executor DEEPSEEK_API_KEY and "
                         f"{LLM_CAP_ENV}=N (all its runs; review re-runs never get it)")
     run_options(p)
     p.set_defaults(func=cmd_spawn)
@@ -1568,7 +1824,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--timeout", type=float,
                    help="minutes; terminate when exceeded (default: the run's own)")
     p.add_argument("--tail", type=int, default=8, help="log events to show")
-    p.add_argument("--wait", action="store_true", help="block until grok has exited")
+    p.add_argument("--wait", action="store_true", help="block until the executor has exited")
     p.add_argument("--interval", type=float, default=15, help="poll seconds for --wait")
     p.set_defaults(func=cmd_status)
 
@@ -1584,7 +1840,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--print", action="store_true", help="also print the whole package")
     p.set_defaults(func=cmd_review)
 
-    p = sub.add_parser("resume", help="send review feedback into the same grok session")
+    p = sub.add_parser("resume", help="send review feedback into the same executor session")
     p.add_argument("pkg")
     p.add_argument("feedback", help="markdown file with the review comments")
     p.add_argument("--max-rework", type=int, default=DEFAULT_MAX_REWORK,
@@ -1592,6 +1848,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="exceed --max-rework")
     run_options(p)
     p.set_defaults(func=cmd_resume)
+
+    p = sub.add_parser("handover", help="start a fresh session (any executor) on the "
+                                        "package's worktree, keeping its changes")
+    p.add_argument("pkg")
+    executor_options(p)
+    run_options(p)
+    p.set_defaults(func=cmd_handover)
 
     p = sub.add_parser("merge", help="merge --no-ff and archive brief/report/review")
     p.add_argument("pkg")
