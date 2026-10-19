@@ -7,35 +7,64 @@ flat top the leftmost index is the tooth.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from surprise.harness.contracts import ExperimentRecord
 from surprise.theory.predict import surprise_bits
 
 
+def _check_window(window: int) -> None:
+    if isinstance(window, bool) or not isinstance(window, int) or window < 1:
+        raise ValueError(f"window: expected an integer >= 1, got {window!r}")
+
+
+def _outcome_surprise(y: str, p_t: float | None) -> float | None:
+    if y == "invalid" or p_t is None:
+        return None
+    return surprise_bits(p_t, y)
+
+
 def record_surprise(record: ExperimentRecord) -> float | None:
     """Surprise of one execution, in bits. Invalid outcomes and missing predictions are ``None``."""
-    if record.label.y == "invalid" or record.p_t is None:
-        return None
-    return surprise_bits(record.p_t, record.label.y)
+    return _outcome_surprise(record.label.y, record.p_t)
 
 
-def surprise_curve(records: Sequence[ExperimentRecord], window: int = 100) -> list[float | None]:
+class _Window:
+    """Non-overlapping windows of ``(y, p_t)``. A short tail is kept and never scored.
+
+    Surprise is computed only when a window fills, so a tail execution whose
+    ``p_t`` is 0 or 1 does not reach ``surprise_bits``. That matches scoring a
+    random-access slice of a finished list.
+    """
+
+    def __init__(self, window: int) -> None:
+        self._window = window
+        self._bucket: list[tuple[str, float | None]] = []
+        self.curve: list[float | None] = []
+
+    def add(self, y: str, p_t: float | None) -> None:
+        self._bucket.append((y, p_t))
+        if len(self._bucket) < self._window:
+            return
+        values = [
+            value
+            for value in (_outcome_surprise(y, p_t) for y, p_t in self._bucket)
+            if value is not None
+        ]
+        self.curve.append(None if not values else sum(values) / len(values))
+        self._bucket.clear()
+
+
+def surprise_curve(records: Iterable[ExperimentRecord], window: int = 100) -> list[float | None]:
     """Mean surprise of each whole window, in the order given. A short tail is dropped.
 
     A window whose executions are all invalid, or all without ``p_t``, is ``None``.
     """
-    if isinstance(window, bool) or not isinstance(window, int) or window < 1:
-        raise ValueError(f"window: expected an integer >= 1, got {window!r}")
-    curve: list[float | None] = []
-    for start in range(0, len(records) - window + 1, window):
-        values = [
-            value
-            for value in (record_surprise(record) for record in records[start : start + window])
-            if value is not None
-        ]
-        curve.append(None if not values else sum(values) / len(values))
-    return curve
+    _check_window(window)
+    fold = _Window(window)
+    for record in records:
+        fold.add(record.label.y, record.p_t)
+    return fold.curve
 
 
 def _present(curve: Sequence[float | None], start: int, stop: int) -> list[float]:
