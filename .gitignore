@@ -22,3 +22,7 @@ api-keys.yml
 
 # Engine source checkouts for the S9 conjecturer (read-only, shallow clones)
 .src/
+
+# SQLancer logs that are test data (gate fixtures and the driver tests), not run output
+!framework/surprise/gates/s15_data/sqlancer/*.log
+!framework/tests/data/sqlancer/*.log
