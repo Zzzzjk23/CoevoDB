@@ -1,9 +1,12 @@
 """Configuration-driven experiment grid: arm x seed x budget x repeat.
 
-One cell is one child process, run one at a time so a wall-clock budget is
-shared fairly. A cell whose ``cell.json`` says ``done`` is left untouched.
-Anything else already in that directory is renamed to ``<cell>.stale-<k>``
-and the cell runs again.
+One cell is one child process. Cells that share a repeat, a seed and an
+engine set form a block, and up to ``concurrency`` cells run at once, started
+in block order. A minute budget plus ``kill_grace_minutes`` is a wall-clock
+deadline: the child is interrupted, then its process tree is killed if it
+stays up. A cell whose ``cell.json`` says ``done`` is left untouched,
+including one that was killed. Anything else already in that directory is
+renamed to ``<cell>.stale-<k>`` and the cell runs again.
 
     python -m surprise.experiments.grid run CONFIG --out DIR [--only ARM]...
     python -m surprise.experiments.grid status DIR
@@ -20,6 +23,7 @@ import json
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -50,6 +54,18 @@ _HUNTER_OK = ("value", "random")
 # Roles that do not edit the theory. A frozen arm may turn only these on.
 _FROZEN_ROLES = ("implementer", "prior")
 _NAME = re.compile(r"[a-z0-9_-]+")
+_TIERS = ("fast", "strong")
+_UNLIMITED = "unlimited"
+# Engines a running SQLancer arm may name. S16–S18 extend this.
+_SQLANCER_RUN_ENGINES = ("duckdb",)
+_SQLANCER_ORACLES = ("NOREC", "WHERE")
+# DuckDB 1.5.5 on Linux reads this as its default thread count
+# (.src/duckdb-v1.5.5/src/main/config.cpp, DBConfig::GetSystemMaxThreads).
+_THREADS_ENV = "SLURM_CPUS_ON_NODE"
+# Seconds after the interrupt before the whole process tree is killed.
+# Read on each check so a test can patch it for one run.
+HARD_KILL_AFTER_S = 120.0
+_POLL_S = 0.05
 _TOP_KEYS = {
     "schema",
     "name",
@@ -60,6 +76,10 @@ _TOP_KEYS = {
     "window",
     "known",
     "prices",
+    "concurrency",
+    "cpus_per_cell",
+    "engine_threads",
+    "kill_grace_minutes",
     "arms",
 }
 _ARM_KEYS = {
@@ -77,12 +97,13 @@ _ARM_KEYS = {
         "vocabulary",
         "beta",
         "llm",
+        "tier",
         "python",
         "network",
     },
     "old_coevodb": {"name", "kind", "budget", "mode", "python", "network"},
-    "pure_llm": {"name", "kind", "budget", "engine", "oracles", "llm", "python", "network"},
-    "sqlancer": {"name", "kind", "summary", "engine", "network"},
+    "pure_llm": {"name", "kind", "budget", "engine", "oracles", "llm", "tier", "python", "network"},
+    "sqlancer": {"name", "kind", "summary", "engine", "network", "run", "budget"},
 }
 # Dropped from every child that does not need the network.
 _SECRET_ENV = {"DEEPSEEK_API_KEY", "SURPRISE_LLM_MAX_CALLS"}
@@ -125,18 +146,22 @@ def run_grid(config: Mapping[str, Any], out: str | Path, *, only: Sequence[str] 
     else:
         destination.mkdir(parents=True, exist_ok=True)
         _write_json(saved_path, config)
-    failed = False
     chosen = None if not only else set(only)
-    for arm, seed, rep in _expected_cells(config):
-        if chosen is not None and arm["name"] not in chosen:
-            continue
-        if _run_cell(destination, arm, seed, rep):
-            failed = True
-    return 1 if failed else 0
+    pending = [
+        (arm, seed, rep)
+        for arm, seed, rep in _block_order(_expected_cells(config))
+        if chosen is None or arm["name"] in chosen
+    ]
+    plan = _cpu_plan(config)
+    return _run_pending(destination, config, pending, plan)
 
 
 def status_text(out: str | Path) -> str:
-    """One line per expected cell, then ``done X/Y``. ``Y`` counts every non-SQLancer cell."""
+    """One line per expected cell, then ``done X/Y``.
+
+    ``Y`` counts every cell, including a running SQLancer arm. A summary-only
+    SQLancer arm has no cells. A cell that was interrupted is ``done (killed)``.
+    """
     destination = Path(out)
     path = destination / "grid.json"
     if not path.is_file():
@@ -149,7 +174,7 @@ def status_text(out: str | Path) -> str:
     cells = _expected_cells(config)
     for arm, seed, rep in cells:
         state = _cell_state(_cell_directory(destination, arm["name"], seed, rep))
-        if state == "done":
+        if state == "done" or state == "done (killed)":
             done += 1
         lines.append(f"{arm['name']}/s{seed}-r{rep} {state}")
     lines.append(f"done {done}/{len(cells)}")
@@ -160,7 +185,7 @@ def command_for(arm: Mapping[str, Any], *, out: Path, seed: int, rep: int) -> li
     """Argv of one cell. A repeat uses the same seed; ``rep`` only names the directory.
 
     Tests replace this with a stand-in. The real commands are the loop, the
-    pure-LLM baseline, and the old CoevoDB baseline.
+    pure-LLM baseline, the old CoevoDB baseline, and a running SQLancer arm.
     """
     if type(rep) is not int:
         raise ValueError(f"rep: expected an integer, got {rep!r}")
@@ -172,6 +197,8 @@ def command_for(arm: Mapping[str, Any], *, out: Path, seed: int, rep: int) -> li
         return _pure_command(arm, python=python, out=out, seed=seed)
     if kind == "old_coevodb":
         return _old_command(arm, python=python, out=out, seed=seed)
+    if kind == "sqlancer" and "run" in arm:
+        return _sqlancer_command(arm, python=python, out=out, seed=seed)
     raise ValueError(f"kind: {kind!r} has no cell")
 
 
@@ -222,6 +249,14 @@ def _normalise(raw: Mapping[str, Any]) -> dict[str, Any]:
     window = 10 if _absent(raw, "window") else _require_whole(raw["window"], "window", minimum=1)
     known = None if _absent(raw, "known") else _require_text(raw["known"], "known")
     prices = _require_prices(raw.get("prices") if not _absent(raw, "prices") else None)
+    concurrency = _require_whole(raw.get("concurrency", 1), "concurrency", minimum=1)
+    cpus_per_cell = (
+        None if _absent(raw, "cpus_per_cell") else _require_whole(raw["cpus_per_cell"], "cpus_per_cell", minimum=1)
+    )
+    engine_threads = (
+        None if _absent(raw, "engine_threads") else _require_whole(raw["engine_threads"], "engine_threads", minimum=1)
+    )
+    kill_grace_minutes = _require_minutes(raw.get("kill_grace_minutes", 10.0), "kill_grace_minutes")
     arms_raw = raw.get("arms")
     if isinstance(arms_raw, str) or not isinstance(arms_raw, list) or not arms_raw:
         raise ValueError(f"arms: expected a non-empty list, got {arms_raw!r}")
@@ -249,6 +284,10 @@ def _normalise(raw: Mapping[str, Any]) -> dict[str, Any]:
         "window": window,
         "known": known,
         "prices": prices,
+        "concurrency": concurrency,
+        "cpus_per_cell": cpus_per_cell,
+        "engine_threads": engine_threads,
+        "kill_grace_minutes": kill_grace_minutes,
         "arms": arms,
     }
 
@@ -260,7 +299,11 @@ def _normalise_arm(raw: object, index: int, top_budget: dict[str, Any]) -> dict[
     kind = raw.get("kind")
     if kind not in _ARM_KEYS:
         raise ValueError(f"{where}.kind: unknown {kind!r}")
-    unknown = sorted(str(key) for key in raw if key not in _ARM_KEYS[kind])
+    allowed = _ARM_KEYS[kind]
+    # A summary-only SQLancer arm keeps its old keys. budget belongs to run mode.
+    if kind == "sqlancer" and _absent(raw, "run"):
+        allowed = allowed - {"budget"}
+    unknown = sorted(str(key) for key in raw if key not in allowed)
     if unknown:
         raise ValueError(f"{where}: unknown keys {unknown}")
     if "name" not in raw:
@@ -273,7 +316,7 @@ def _normalise_arm(raw: object, index: int, top_budget: dict[str, Any]) -> dict[
     elif kind == "pure_llm":
         body = _arm_pure(raw, where, top_budget)
     else:
-        body = _arm_sqlancer(raw, where)
+        body = _arm_sqlancer(raw, where, top_budget)
     _check_network(raw, f"{where}.network", body["network"])
     arm = {"name": name, "kind": kind}
     arm.update(body)
@@ -303,6 +346,9 @@ def _arm_surprise(raw: Mapping[str, Any], where: str, top_budget: dict[str, Any]
     vocabulary = None if _absent(raw, "vocabulary") else _require_file(raw["vocabulary"], f"{where}.vocabulary")
     beta = None if _absent(raw, "beta") else _require_positive(raw["beta"], f"{where}.beta")
     llm = None if _absent(raw, "llm") else _surprise_llm(raw["llm"], f"{where}.llm")
+    tier = _require_tier(raw, where)
+    if tier is not None and llm is None:
+        raise ValueError(f"{where}.tier: requires an llm block")
     if freeze is not None and llm is not None:
         bad = [role for role in llm["roles"] if role not in _FROZEN_ROLES]
         if bad:
@@ -320,6 +366,7 @@ def _arm_surprise(raw: Mapping[str, Any], where: str, top_budget: dict[str, Any]
         "vocabulary": vocabulary,
         "beta": beta,
         "llm": llm,
+        "tier": tier,
         "python": python,
         "network": llm is not None and not llm["offline"],
     }
@@ -361,26 +408,59 @@ def _arm_pure(raw: Mapping[str, Any], where: str, top_budget: dict[str, Any]) ->
         "engine": engine,
         "oracles": oracles,
         "llm": llm,
+        "tier": _require_tier(raw, where),
         "python": _optional_python(raw, f"{where}.python"),
         "network": not llm["offline"],
     }
 
 
-def _arm_sqlancer(raw: Mapping[str, Any], where: str) -> dict[str, Any]:
-    if _absent(raw, "summary"):
-        summary_path: str | Path = sqlancer.SUMMARY_PATH
-        stored = str(sqlancer.SUMMARY_PATH)
+def _arm_sqlancer(raw: Mapping[str, Any], where: str, top_budget: dict[str, Any]) -> dict[str, Any]:
+    if _absent(raw, "run"):
+        if _absent(raw, "summary"):
+            summary_path: str | Path = sqlancer.SUMMARY_PATH
+            stored = str(sqlancer.SUMMARY_PATH)
+        else:
+            stored = _require_text(raw["summary"], f"{where}.summary")
+            summary_path = stored
+        try:
+            summary = sqlancer.load(summary_path)
+        except ValueError as exc:
+            raise ValueError(f"{where}.summary: {exc}") from exc
+        engine = "duckdb" if _absent(raw, "engine") else raw["engine"]
+        if not isinstance(engine, str) or engine not in summary["engines"]:
+            raise ValueError(f"{where}.engine: unknown {engine!r}")
+        return {"summary": stored, "engine": engine, "network": False}
+    if "summary" in raw:
+        raise ValueError(f"{where}.summary: not valid when run is set")
+    run = _sqlancer_run(raw["run"], f"{where}.run")
+    if _absent(raw, "engine"):
+        engine = "duckdb"
     else:
-        stored = _require_text(raw["summary"], f"{where}.summary")
-        summary_path = stored
-    try:
-        summary = sqlancer.load(summary_path)
-    except ValueError as exc:
-        raise ValueError(f"{where}.summary: {exc}") from exc
-    engine = "duckdb" if _absent(raw, "engine") else raw["engine"]
-    if not isinstance(engine, str) or engine not in summary["engines"]:
-        raise ValueError(f"{where}.engine: unknown {engine!r}")
-    return {"summary": stored, "engine": engine, "network": False}
+        engine = raw["engine"]
+        if not isinstance(engine, str) or engine not in _SQLANCER_RUN_ENGINES:
+            raise ValueError(
+                f"{where}.engine: expected one of {', '.join(_SQLANCER_RUN_ENGINES)}, got {engine!r}"
+            )
+    budget = _arm_budget(raw, where, top_budget)
+    if "minutes" not in budget:
+        raise ValueError(f"{where}.budget: sqlancer run requires a minutes budget")
+    return {"engine": engine, "run": run, "budget": budget, "network": False}
+
+
+def _sqlancer_run(value: object, where: str) -> dict[str, Any]:
+    if value is True:
+        return {"oracles": list(_SQLANCER_ORACLES), "threads": 1}
+    if value is False or not isinstance(value, dict):
+        raise ValueError(f"{where}: expected true or an object, got {value!r}")
+    unknown = sorted(set(value) - {"oracles", "threads"})
+    if unknown:
+        raise ValueError(f"{where}: unknown keys {unknown}")
+    if "oracles" not in value:
+        oracles = list(_SQLANCER_ORACLES)
+    else:
+        oracles = _string_list(value["oracles"], f"{where}.oracles", allowed=_SQLANCER_ORACLES)
+    threads = _require_whole(value.get("threads", 1), f"{where}.threads", minimum=1)
+    return {"oracles": oracles, "threads": threads}
 
 
 def _arm_budget(raw: Mapping[str, Any], where: str, top_budget: dict[str, Any]) -> dict[str, Any]:
@@ -401,7 +481,7 @@ def _surprise_llm(value: object, where: str) -> dict[str, Any]:
     cache = _require_text(value["cache"], f"{where}.cache")
     if "max_calls" not in value or value["max_calls"] is None:
         raise ValueError(f"{where}.max_calls: required when roles are set")
-    max_calls = _require_whole(value["max_calls"], f"{where}.max_calls", minimum=0)
+    max_calls = _require_max_calls(value["max_calls"], f"{where}.max_calls")
     offline = False if _absent(value, "offline") else _require_bool(value["offline"], f"{where}.offline")
     return {"roles": roles, "cache": cache, "max_calls": max_calls, "offline": offline}
 
@@ -422,7 +502,7 @@ def _pure_llm(value: object, where: str) -> dict[str, Any]:
     if _absent(value, "max_calls"):
         max_calls = None
     else:
-        max_calls = _require_whole(value["max_calls"], f"{where}.max_calls", minimum=0)
+        max_calls = _require_max_calls(value["max_calls"], f"{where}.max_calls")
     if not offline and max_calls is None:
         raise ValueError(f"{where}.max_calls: required when not offline")
     return {"cache": cache, "max_calls": max_calls, "offline": offline}
@@ -526,6 +606,18 @@ def _require_whole(value: object, where: str, *, minimum: int) -> int:
     return number
 
 
+def _require_max_calls(value: object, where: str) -> int | str:
+    if value == _UNLIMITED:
+        return _UNLIMITED
+    return _require_whole(value, where, minimum=0)
+
+
+def _require_tier(raw: Mapping[str, Any], where: str) -> str | None:
+    if _absent(raw, "tier"):
+        return None
+    return _require_choice(raw["tier"], f"{where}.tier", _TIERS)
+
+
 def _require_minutes(value: object, where: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{where}: expected a number > 0, got {value!r}")
@@ -615,10 +707,34 @@ def _expected_cells(config: Mapping[str, Any]) -> list[tuple[dict[str, Any], int
     for rep in range(int(config["repeats"])):
         for seed in config["seeds"]:
             for arm in config["arms"]:
-                if arm["kind"] == "sqlancer":
+                if arm["kind"] == "sqlancer" and "run" not in arm:
                     continue
                 cells.append((arm, int(seed), rep))
     return cells
+
+
+def _engine_key(arm: Mapping[str, Any]) -> tuple[str, ...]:
+    kind = arm["kind"]
+    if kind == "surprise":
+        return tuple(arm["engines"])
+    if kind in ("pure_llm", "sqlancer"):
+        return (arm["engine"],)
+    return ("duckdb",)
+
+
+def _block_order(
+    cells: Sequence[tuple[dict[str, Any], int, int]],
+) -> list[tuple[dict[str, Any], int, int]]:
+    """Group by (repeat, seed, engine set), first-seen order, arms in config order."""
+    groups: dict[tuple[Any, ...], list[tuple[dict[str, Any], int, int]]] = {}
+    order: list[tuple[Any, ...]] = []
+    for arm, seed, rep in cells:
+        key = (rep, seed, _engine_key(arm))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append((arm, seed, rep))
+    return [item for key in order for item in groups[key]]
 
 
 def _known_only(config: Mapping[str, Any], only: Sequence[str] | None) -> None:
@@ -632,14 +748,121 @@ def _known_only(config: Mapping[str, Any], only: Sequence[str] | None) -> None:
             raise ValueError(f"only: unknown arm {name!r}")
 
 
-def _run_cell(out: Path, arm: Mapping[str, Any], seed: int, rep: int) -> bool:
-    """Run one cell unless it is already done. Return True when this attempt failed."""
-    directory = _cell_directory(out, arm["name"], seed, rep)
-    label = f"{arm['name']}/s{seed}-r{rep}"
-    # A done cell is not opened for writing, and its log and bootstrap file stay as they are.
-    if _is_done(directory):
-        print(label + " done", flush=True)
-        return False
+class _CellProc:
+    """One child process and the bookkeeping the poll loop needs."""
+
+    def __init__(
+        self,
+        proc: subprocess.Popen[bytes],
+        log: object,
+        slot: int,
+        arm: Mapping[str, Any],
+        seed: int,
+        rep: int,
+        argv: list[str],
+        started: datetime,
+        clock: float,
+        deadline_s: float | None,
+        cpus: list[int] | None,
+        engine_threads: int | None,
+        directory: Path,
+    ) -> None:
+        self.proc = proc
+        self.log = log
+        self.slot = slot
+        self.arm = arm
+        self.seed = seed
+        self.rep = rep
+        self.argv = argv
+        self.started = started
+        self.clock = clock
+        self.deadline_s = deadline_s
+        self.cpus = cpus
+        self.engine_threads = engine_threads
+        self.directory = directory
+        self.interrupted = False
+        self.interrupted_at = 0.0
+        self.hard_killed = False
+
+    @property
+    def label(self) -> str:
+        return f"{self.arm['name']}/s{self.seed}-r{self.rep}"
+
+
+def _run_pending(
+    out: Path,
+    config: Mapping[str, Any],
+    pending: Sequence[tuple[dict[str, Any], int, int]],
+    plan: dict[int, list[int]] | None,
+) -> int:
+    """Poll children on this thread. Return 1 when any selected cell failed."""
+    concurrency = int(config.get("concurrency", 1))
+    grace = float(config.get("kill_grace_minutes", 10.0))
+    threads = config.get("engine_threads")
+    running: dict[int, _CellProc] = {}
+    failed = False
+    index = 0
+    previous_break = _ignore_console_break()
+    try:
+        while index < len(pending) or running:
+            while index < len(pending) and len(running) < concurrency:
+                arm, seed, rep = pending[index]
+                index += 1
+                directory = _cell_directory(out, arm["name"], seed, rep)
+                label = f"{arm['name']}/s{seed}-r{rep}"
+                # A done cell is not opened for writing, and its log and bootstrap file stay as they are.
+                if _is_done(directory):
+                    print(label + " done", flush=True)
+                    continue
+                slot = _free_slot(running, concurrency)
+                cpus = None if plan is None else list(plan[slot])
+                cell = _launch(arm, seed, rep, directory, slot, cpus, threads, grace)
+                if cell is None:
+                    failed = True
+                    continue
+                running[slot] = cell
+            if not running:
+                continue
+            _supervise(running)
+            # Record cells that have already exited before waiting on a hard kill,
+            # so one stuck tree does not stretch another cell's wall clock.
+            for slot in [slot for slot, cell in running.items() if cell.proc.poll() is not None]:
+                if _finish(running.pop(slot)) == "failed":
+                    failed = True
+            for cell in running.values():
+                if cell.hard_killed and cell.proc.poll() is None:
+                    try:
+                        cell.proc.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        _kill_tree(cell.proc)
+            if running:
+                time.sleep(_POLL_S)
+    finally:
+        for cell in running.values():
+            if cell.proc.poll() is None:
+                _kill_tree(cell.proc)
+                try:
+                    cell.proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            if sys.platform != "win32":
+                _kill_group(cell.proc.pid)
+            if hasattr(cell.log, "close"):
+                cell.log.close()
+        _restore_console_break(previous_break)
+    return 1 if failed else 0
+
+
+def _launch(
+    arm: Mapping[str, Any],
+    seed: int,
+    rep: int,
+    directory: Path,
+    slot: int,
+    cpus: list[int] | None,
+    engine_threads: int | None,
+    grace: float,
+) -> _CellProc | None:
     if directory.exists():
         _retire(directory)
     directory.parent.mkdir(parents=True, exist_ok=True)
@@ -647,66 +870,275 @@ def _run_cell(out: Path, arm: Mapping[str, Any], seed: int, rep: int) -> bool:
         # Beside the cell directory: the loop refuses a non-empty output directory.
         _write_json(_bootstrap_file(directory), arm["bootstrap"])
     argv = command_for(arm, out=directory, seed=seed, rep=rep)
-    code = _spawn(directory, argv, _child_env(bool(arm["network"])), arm, seed, rep)
-    failed = code != 0
-    print(f"{label} {'failed' if failed else 'done'}", flush=True)
-    return failed
+    deadline = _deadline_s(arm, grace)
+    env = _child_env(bool(arm["network"]), engine_threads)
+    started = datetime.now(timezone.utc)
+    clock = time.monotonic()
+    log_path = _cell_log(directory)
+    try:
+        log = log_path.open("wb")
+    except OSError as exc:
+        _write_cell(directory, arm, seed, rep, argv, started, clock, None, slot, cpus, engine_threads, deadline, False, False)
+        _note_log(log_path, exc)
+        print(f"{arm['name']}/s{seed}-r{rep} failed", flush=True)
+        return None
+    try:
+        proc = subprocess.Popen(argv, **_popen_kwargs(env, log, cpus))
+    except OSError as exc:
+        _note_log_handle(log, exc)
+        log.close()
+        _write_cell(directory, arm, seed, rep, argv, started, clock, None, slot, cpus, engine_threads, deadline, False, False)
+        print(f"{arm['name']}/s{seed}-r{rep} failed", flush=True)
+        return None
+    return _CellProc(proc, log, slot, arm, seed, rep, argv, started, clock, deadline, cpus, engine_threads, directory)
 
 
-def _spawn(
+def _popen_kwargs(env: dict[str, str], log: object, cpus: list[int] | None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "cwd": str(FRAMEWORK),
+        "env": env,
+        "stdin": subprocess.DEVNULL,
+        "stdout": log,
+        "stderr": subprocess.STDOUT,
+    }
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+        if cpus:
+            kwargs["preexec_fn"] = _bind_cpus(cpus)
+    return kwargs
+
+
+def _bind_cpus(cpus: Sequence[int]):
+    pinned = list(cpus)
+
+    def bind() -> None:
+        os.sched_setaffinity(0, pinned)
+
+    return bind
+
+
+def _supervise(running: Mapping[int, _CellProc]) -> None:
+    now = time.monotonic()
+    for cell in running.values():
+        if cell.proc.poll() is not None or cell.deadline_s is None or cell.hard_killed:
+            continue
+        if not cell.interrupted:
+            if now - cell.clock >= cell.deadline_s and _send_interrupt(cell.proc):
+                cell.interrupted = True
+                cell.interrupted_at = time.monotonic()
+            continue
+        # HARD_KILL_AFTER_S is a module global so a test can patch it between checks.
+        if time.monotonic() - cell.interrupted_at >= HARD_KILL_AFTER_S:
+            _kill_tree(cell.proc)
+            cell.hard_killed = True
+
+
+def _finish(cell: _CellProc) -> str:
+    """Write ``cell.json`` after the child has exited. Return the printed result word."""
+    try:
+        if cell.proc.poll() is None:
+            try:
+                cell.proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                _kill_tree(cell.proc)
+                cell.hard_killed = True
+                cell.interrupted = True
+                cell.proc.wait(timeout=30)
+        code: int | None = cell.proc.returncode
+    finally:
+        log = cell.log
+        if hasattr(log, "close"):
+            log.close()
+    if sys.platform != "win32":
+        _kill_group(cell.proc.pid)
+    if cell.interrupted:
+        status = "done"
+        word = "done (killed)"
+    elif code == 0:
+        status = "done"
+        word = "done"
+    else:
+        status = "failed"
+        word = "failed"
+    _write_cell(
+        cell.directory,
+        cell.arm,
+        cell.seed,
+        cell.rep,
+        cell.argv,
+        cell.started,
+        cell.clock,
+        code,
+        cell.slot,
+        cell.cpus,
+        cell.engine_threads,
+        cell.deadline_s,
+        cell.interrupted,
+        cell.hard_killed,
+        status=status,
+    )
+    print(f"{cell.label} {word}", flush=True)
+    return word
+
+
+def _write_cell(
     directory: Path,
-    argv: list[str],
-    env: dict[str, str],
     arm: Mapping[str, Any],
     seed: int,
     rep: int,
-) -> int | None:
-    log_path = _cell_log(directory)
-    code: int | None = None
-    started = datetime.now(timezone.utc)
-    clock = time.monotonic()
+    argv: list[str],
+    started: datetime,
+    clock: float,
+    code: int | None,
+    slot: int,
+    cpus: list[int] | None,
+    engine_threads: int | None,
+    deadline_s: float | None,
+    killed: bool,
+    hard_killed: bool,
+    *,
+    status: str | None = None,
+) -> None:
+    if status is None:
+        status = "done" if code == 0 else "failed"
+    payload = {
+        "arm": arm["name"],
+        "kind": arm["kind"],
+        "seed": seed,
+        "rep": rep,
+        "status": status,
+        "started_at": started.isoformat(),
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "wall_s": time.monotonic() - clock,
+        "returncode": code,
+        "command": list(argv),
+        "slot": slot,
+        "cpus": cpus,
+        "engine_threads": engine_threads,
+        "deadline_s": deadline_s,
+        "killed": killed,
+        "hard_killed": hard_killed,
+    }
+    directory.mkdir(parents=True, exist_ok=True)
+    _write_json(directory / "cell.json", payload)
+
+
+def _deadline_s(arm: Mapping[str, Any], grace: float) -> float | None:
+    budget = arm.get("budget")
+    if not isinstance(budget, Mapping) or "minutes" not in budget:
+        return None
+    return 60.0 * (float(budget["minutes"]) + grace)
+
+
+def _cpu_plan(config: Mapping[str, Any]) -> dict[int, list[int]] | None:
+    count = config.get("cpus_per_cell")
+    if count is None:
+        return None
+    if not hasattr(os, "sched_setaffinity") or not hasattr(os, "sched_getaffinity"):
+        print(
+            "cpus_per_cell is set but os.sched_setaffinity is unavailable; cells will not be pinned",
+            flush=True,
+        )
+        return None
+    pool = sorted(os.sched_getaffinity(0))
+    concurrency = int(config["concurrency"])
+    need = concurrency * int(count)
+    if need > len(pool):
+        raise ValueError(
+            f"cpus_per_cell: {concurrency} * {count} = {need} CPUs, only {len(pool)} available"
+        )
+    return {slot: list(pool[slot * int(count):(slot + 1) * int(count)]) for slot in range(concurrency)}
+
+
+def _free_slot(running: Mapping[int, object], concurrency: int) -> int:
+    for slot in range(concurrency):
+        if slot not in running:
+            return slot
+    raise RuntimeError("no free slot")
+
+
+def _send_interrupt(proc: subprocess.Popen[bytes]) -> bool:
+    """Interrupt the cell's main process. False when it has already exited."""
+    if proc.poll() is not None:
+        return False
     try:
-        with log_path.open("wb") as handle:
-            proc = subprocess.run(
-                argv,
-                cwd=str(FRAMEWORK),
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=handle,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            code = proc.returncode
-    except OSError as exc:
-        code = None
-        note = f"{type(exc).__name__}: {_ascii(exc)}\n".encode("ascii")
-        try:
-            with log_path.open("ab") as handle:
-                handle.write(note)
-        except OSError:
-            pass
-    finally:
-        payload = {
-            "arm": arm["name"],
-            "kind": arm["kind"],
-            "seed": seed,
-            "rep": rep,
-            "status": "done" if code == 0 else "failed",
-            "started_at": started.isoformat(),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-            "wall_s": time.monotonic() - clock,
-            "returncode": code,
-            "command": list(argv),
-        }
-        directory.mkdir(parents=True, exist_ok=True)
-        _write_json(directory / "cell.json", payload)
-    return code
+        if sys.platform == "win32":
+            os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
+        else:
+            os.kill(proc.pid, signal.SIGINT)
+    except OSError:
+        return proc.poll() is None
+    return True
 
 
-def _child_env(network: bool) -> dict[str, str]:
+def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    _kill_group(proc.pid)
+
+
+def _kill_group(pid: int) -> None:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def _ignore_console_break() -> Any:
+    """Guard the grid against console breaks while supervising child groups.
+
+    Children install their own handler; the grid's handler is restored when
+    the run returns.
+    """
+    if sys.platform != "win32" or not hasattr(signal, "SIGBREAK"):
+        return None
+    return signal.signal(signal.SIGBREAK, signal.SIG_IGN)
+
+
+def _restore_console_break(previous: Any) -> None:
+    if previous is None:
+        return
+    # Let a break that was already queued land while it is still ignored.
+    time.sleep(0.05)
+    signal.signal(signal.SIGBREAK, previous)
+
+
+def _note_log(path: Path, exc: BaseException) -> None:
+    note = f"{type(exc).__name__}: {_ascii(exc)}\n".encode("ascii")
+    try:
+        with path.open("ab") as handle:
+            handle.write(note)
+    except OSError:
+        pass
+
+
+def _note_log_handle(log: Any, exc: BaseException) -> None:
+    note = f"{type(exc).__name__}: {_ascii(exc)}\n".encode("ascii")
+    try:
+        log.write(note)
+    except OSError:
+        pass
+
+
+def _child_env(network: bool, engine_threads: int | None = None) -> dict[str, str]:
     if network:
-        return dict(os.environ)
-    return {key: value for key, value in os.environ.items() if key.upper() not in _SECRET_ENV}
+        env = dict(os.environ)
+    else:
+        env = {key: value for key, value in os.environ.items() if key.upper() not in _SECRET_ENV}
+    if engine_threads is not None:
+        env[_THREADS_ENV] = str(engine_threads)
+    return env
 
 
 def _is_done(directory: Path) -> bool:
@@ -720,20 +1152,25 @@ def _is_done(directory: Path) -> bool:
     return isinstance(data, dict) and data.get("status") == "done"
 
 
-def _cell_state(directory: Path) -> str:
-    if _is_done(directory):
-        return "done"
-    if not directory.exists():
-        return "missing"
+def _cell_record(directory: Path) -> dict[str, Any] | None:
     path = directory / "cell.json"
     if not path.is_file():
-        return "failed"
+        return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return "failed"
-    if isinstance(data, dict) and data.get("status") == "failed":
-        return "failed"
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _cell_state(directory: Path) -> str:
+    data = _cell_record(directory)
+    if data is not None and data.get("status") == "done":
+        if data.get("killed") is True:
+            return "done (killed)"
+        return "done"
+    if not directory.exists():
+        return "missing"
     return "failed"
 
 
@@ -788,6 +1225,8 @@ def _surprise_command(arm: Mapping[str, Any], *, python: str, out: Path, seed: i
         argv += ["--llm-max-calls", str(llm["max_calls"])]
         if llm["offline"]:
             argv += ["--llm-offline"]
+        if arm.get("tier"):
+            argv += ["--llm-tier", arm["tier"]]
     return argv
 
 
@@ -813,6 +1252,8 @@ def _pure_command(arm: Mapping[str, Any], *, python: str, out: Path, seed: int) 
         argv += ["--llm-max-calls", str(llm["max_calls"])]
     if llm.get("offline"):
         argv += ["--llm-offline"]
+    if arm.get("tier"):
+        argv += ["--llm-tier", arm["tier"]]
     return argv
 
 
@@ -830,6 +1271,27 @@ def _old_command(arm: Mapping[str, Any], *, python: str, out: Path, seed: int) -
         "--mode",
         arm["mode"],
     ]
+
+
+def _sqlancer_command(arm: Mapping[str, Any], *, python: str, out: Path, seed: int) -> list[str]:
+    run = arm["run"]
+    argv = [
+        python,
+        "-m",
+        "surprise.baselines.sqlancer_run",
+        "--out",
+        str(out),
+        "--seed",
+        str(seed),
+        "--engine",
+        arm["engine"],
+        "--max-minutes",
+        _cli_number(arm["budget"]["minutes"]),
+    ]
+    for oracle in run["oracles"]:
+        argv += ["--oracle", oracle]
+    argv += ["--threads", str(run["threads"])]
+    return argv
 
 
 def _budget_flags(budget: Mapping[str, Any], *, minutes: str, experiments: str) -> list[str]:
