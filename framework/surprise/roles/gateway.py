@@ -12,6 +12,7 @@ from typing import Any
 
 from .cache import ResponseCache, cache_key
 from .constants import CAP_ENV, DEFAULT_MAX_CALLS, TIERS, as_dict
+from .providers import EXTRA_TIERS, endpoint_for_tier
 from .schema import parse_reply
 
 # Not a name in roles.constants: as_dict() would copy every uppercase constant
@@ -101,9 +102,10 @@ def _resolve_tier(tier: object) -> str | None:
     """A tier forced on every call, or None to keep the tier the caller passed."""
     if tier is None:
         return None
-    if isinstance(tier, str) and tier in TIERS:
+    if isinstance(tier, str) and (tier in TIERS or tier in EXTRA_TIERS):
         return tier
-    raise ValueError(f"tier must be one of {', '.join(TIERS)} or null, got {tier!r}")
+    choices = (*TIERS, *EXTRA_TIERS)
+    raise ValueError(f"tier must be one of {', '.join(choices)} or null, got {tier!r}")
 
 
 def _blank_role() -> dict[str, int]:
@@ -167,9 +169,12 @@ class Gateway:
     ) -> Reply:
         if self._tier is not None:
             tier = self._tier
-        if tier not in TIERS:
+        if tier in EXTRA_TIERS:
+            model = EXTRA_TIERS[tier]["model"]
+        elif tier in TIERS:
+            model = TIERS[tier]
+        else:
             raise ValueError(f"unknown tier: {tier!r}")
-        model = TIERS[tier]
         key = cache_key(prompt, model, seed)
         started = time.perf_counter()
         reply = self._invoke(
@@ -200,6 +205,9 @@ class Gateway:
         }
         if self._tier is not None:
             result["tier"] = self._tier
+            endpoint = endpoint_for_tier(self._tier)
+            if endpoint is not None:
+                result["endpoint"] = endpoint
         return result
 
     def _invoke(

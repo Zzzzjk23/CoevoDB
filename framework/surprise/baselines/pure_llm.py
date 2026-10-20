@@ -28,6 +28,7 @@ from surprise.harness.oracles.registry import TARGET_ENGINES
 from surprise.hunter.extractor import PhiExtractor
 from surprise.roles.constants import TIERS
 from surprise.roles.gateway import UNLIMITED, Gateway
+from surprise.roles.providers import EXTRA_TIERS
 
 # fast tier; reasoning tokens on deepseek-flash count toward max_tokens, and
 # 8000 truncated real replies in S9/S10.
@@ -642,9 +643,10 @@ def _optional_calls(value: object) -> int | str | None:
 def _optional_tier(value: object) -> str | None:
     if value is None:
         return None
-    if isinstance(value, str) and value in TIERS:
+    if isinstance(value, str) and (value in TIERS or value in EXTRA_TIERS):
         return value
-    raise UsageError(f"tier: expected one of {', '.join(TIERS)} or null, got {value!r}")
+    choices = (*TIERS, *EXTRA_TIERS)
+    raise UsageError(f"tier: expected one of {', '.join(choices)} or null, got {value!r}")
 
 
 def _optional_whole(value: object, name: str) -> int | None:
@@ -736,7 +738,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-minutes", type=float, default=None)
     parser.add_argument("--llm-cache", default=None)
     parser.add_argument("--llm-max-calls", type=_llm_max_calls_arg, default=None)
-    parser.add_argument("--llm-tier", choices=tuple(TIERS), default=None)
+    parser.add_argument("--llm-tier", choices=(*TIERS, *EXTRA_TIERS), default=None)
     parser.add_argument("--llm-offline", action="store_true")
     parser.add_argument("--run-id", default=None)
     try:

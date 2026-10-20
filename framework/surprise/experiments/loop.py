@@ -12,7 +12,7 @@ match a run that has no role code loaded.
         [--max-experiments N] [--max-minutes M]
         [--beta B] [--bootstrap FILE] [--run-id ID]
         [--llm ROLE]... [--llm-cache DIR] [--llm-max-calls N|unlimited]
-        [--llm-tier {fast,strong}] [--llm-offline]
+        [--llm-tier {fast,strong,glm-flash}] [--llm-offline]
         [--vocabulary FILE]
         [--freeze {theory,diagnoser}] [--hunter {value,random}]
         [--theory-from RUN_DIR@GEN] [--select-from RUN_DIR@GEN]
@@ -63,7 +63,7 @@ _LLM_KEYS = ("roles", "cache", "max_calls", "network", "transport", "tier")
 # Same spelling as roles.gateway.UNLIMITED. Not imported: loading this module
 # must not load the roles.
 _LLM_UNLIMITED = "unlimited"
-_LLM_TIERS = ("fast", "strong")
+_LLM_TIERS = ("fast", "strong", "glm-flash")
 # Same name as roles.constants.REWRITE_LIBRARY_ENV. Hardcoded so an off run
 # does not import the roles.
 _REWRITE_LIBRARY_ENV = "SURPRISE_REWRITE_LIBRARY"

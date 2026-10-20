@@ -23,6 +23,7 @@ from .conjecturer import ConjectureBook, Conjecturer
 from .constants import IMPLEMENTER_PER_CHOICE, TIERS
 from .gateway import UNLIMITED, Gateway
 from .implementer import Implementer
+from .providers import endpoint_for_tier
 from .source import SourceError, open_sources
 
 _CALL_STATUSES = ("ok", "rejected", "blocked", "miss", "error")
@@ -299,6 +300,9 @@ class RoleSet:
         }
         if self._gateway.tier is not None:
             result["tier"] = self._gateway.tier
+            endpoint = endpoint_for_tier(self._gateway.tier)
+            if endpoint is not None:
+                result["endpoint"] = endpoint
         if self.plugins:
             result["plugins"] = {name: role.manifest() for name, role in self.plugins.items()}
         return result
