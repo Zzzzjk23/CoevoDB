@@ -62,8 +62,14 @@
 - 失败之前整个预实验花了约 $15.2（每格 2 小时：`full` $1.31–1.83，`pure-llm` $1.87–1.90；按 `grid` 一节的高峰价，是上界）。
 - 另一个现象，不是欠费：c4 `full` s9102 只有 263 条记录（同一臂 s9101 有 1243 条）。它 120 分钟里有 115 分钟在等 LLM 回复；`full` 每格等 LLM 的时间在 85–115 分钟之间，主循环的吞吐受 LLM 延迟限制。
 
+### 换模型：GLM 5.3 Flash（OpenRouter），工作包 `s19-glm`（进行中）
+
+用户 2026-10-20 决定 LLM 角色改用 OpenRouter 的 `z-ai/glm-5.3-flash`，只用提供商 `open-inference/fp4`，不回退，开推理；密钥仍放在 `DEEPSEEK_API_KEY`（用户稍后换成 OpenRouter 的密钥）。做法见 DECISIONS 当天三条：加一档 `glm-flash`，默认两档不变，配置放新模块 `roles/providers.py`，照旧用 httpx。门槛 `gates/s19.py` 有六组，派发前写好（12f4f1b）；说明在 `.orch/briefs/s19-glm.md`；从 `session/s19` 派给 codex。
+- 合并后：在主检出区跑测试与全部门槛；按 S8 验收的办法重跑长跑、重钉（`experiments/` 改了）；用户换好密钥之后，经网关做一次真实调用冒烟（要先问用户）。
+- 按 OpenRouter 的价格，Open Inference 的输出是 $0.16 每百万 token（deepseek-flash 是 $1.2）。拿预实验的 token 量估算，`full` 每格 24 小时约 $2–3。实际 token 量要等新模型的冒烟才知道。
+
 下一步（等用户说）：
-- 恢复之前先给 DeepSeek 充值。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。
+- 恢复之前先换好 OpenRouter 的密钥并确认余额（LLM 臂改用 `glm-flash` 档）。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。
 - E1 正式运行：配置 `docs/grids/e1.json` 还没写，四个臂里 `pure_llm` 暂不跑。并发度还没定：吞吐与标签稳定性的比较还没做，c1 的 LLM 臂只能用前 113 分钟。
 - 预实验结果都在服务器上，没有拷回；本次核实只读，没有改动结果目录。
 
