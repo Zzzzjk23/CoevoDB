@@ -299,6 +299,7 @@ S0–S12 是迁移到惊讶驱动框架的改造（已完成）。S13 起是正�
 - 用户跑正式格、生成报告、把结果压缩拷回本机；Claude 核对结果，写分析报告与缺陷候选清单（在最新版上复核过）。
 - 本会话：DuckDB 1.5.5 上 `full`、`nollm`、`pure_llm`、`sqlancer` × 种子 1001–1005，20 格。
 - 2026-10-20：预实验跑完后暂停（用户的决定，PLAN §9 补充一条）。正式格等用户说了再跑；`pure_llm` 暂不跑。
+- 2026-10-20 用户加进本会话的范围：LLM 角色换成 OpenRouter 上的 GLM 5.3 Flash（PLAN §9 补充一条），工作包 `s19-glm`。门槛 `gates/s19.py` 先有六组：`transport`、`gateway`、`replay`、`grid`、`prices`、`scope`；E1 结果的几组等正式结果拷回时再加。下面"不做：改代码"一条不适用于这个包。改了 `experiments/`，合并后要按 S8 验收的办法重跑长跑、重钉。
 
 门槛 `gates/s19.py`：拷回的结果里所有格 `done`；配置与 `EXPERIMENT.md` 一致；harness 哈希与部署时相同；报告的每个 RQ 节都有内容。
 
