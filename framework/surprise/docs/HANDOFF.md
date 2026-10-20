@@ -74,8 +74,8 @@
 
 ### 额度不足与报错的提醒（pushplus），工作包 `s19-notify`（进行中）
 
-用户 2026-10-21："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"。token 已写进本机用户级环境变量 `PUSHPLUS_TOKEN`（编排者进程里还没有，要从用户级环境变量取）。做法见 DECISIONS 当天两条：独立的看守进程 `surprise.notify.watch` 只读网格结果目录，按事件推送；`roles/gateway.py` 失败调用的 `reason` 记下 HTTP 状态码。不改 `experiments/`，不用重钉长跑。门槛 `gates/s19.py` 加五组（`pushplus`、`reason`、`watch`、`balance`、`cli`），派发前写好；说明在 `.orch/briefs/s19-notify.md`；从 `session/s19` 派给 codex。
-- 合并后：在主检出区跑测试与全部门槛；运行手册（SERVER.md 的密钥一节、E1 的运行脚本）加上 `PUSHPLUS_TOKEN` 进 tmux 会话、与网格一起起看守；经用户同意后发一条真实的测试推送。
+用户 2026-10-21："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"。token 已写进本机用户级环境变量 `PUSHPLUS_TOKEN`（编排者进程里还没有，要从用户级环境变量取），并按用户指示写进服务器的 `~/.config/coevodb/pushplus.env`（600，`~/.bashrc` 加载；见 SERVER.md §5.2）。做法见 DECISIONS 当天两条：独立的看守进程 `surprise.notify.watch` 只读网格结果目录，按事件推送；`roles/gateway.py` 失败调用的 `reason` 记下 HTTP 状态码。不改 `experiments/`，不用重钉长跑。门槛 `gates/s19.py` 加五组（`pushplus`、`reason`、`watch`、`balance`、`cli`），派发前写好；说明在 `.orch/briefs/s19-notify.md`；从 `session/s19` 派给 codex。
+- 合并后：在主检出区跑测试与全部门槛；运行手册（SERVER.md §5.2、E1 的运行脚本）加上与网格一起起看守（token 在服务器上已经有了）；经用户同意后发一条真实的测试推送。
 - 想让余额提前预警，要在 OpenRouter 给这把 key 设额度上限（普通 key 查不到账户余额）；不设上限时，欠费只能靠调用失败（402）发现。
 
 下一步（等用户说）：

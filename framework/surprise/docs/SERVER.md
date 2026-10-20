@@ -141,6 +141,8 @@ $PY -m surprise.experiments.grid run <配置.json> --out results/<名字> 2>&1 |
 
 不带 LLM 的格，子进程里没有密钥。带 LLM 的格要密钥：只在启动网格的那个 shell 里设 `DEEPSEEK_API_KEY`（例如 `read -s DEEPSEEK_API_KEY && export DEEPSEEK_API_KEY`），不要写进文件、命令行参数或 `~/.bashrc`。
 
+pushplus 提醒的 token 不同（2026-10-21，用户指示写进服务器）：存在 `~/.config/coevodb/pushplus.env`（文件 600、目录 700，只有本账号能读），`~/.bashrc` 末尾一行加载它，新开的 shell 与 tmux 会话里都有 `PUSHPLUS_TOKEN`；`echo ${#PUSHPLUS_TOKEN}` 应是 32。token 本身不要写进 `~/.bashrc`（它是 644，同机的人都能读）。换 token 时由编排者从本机的用户级环境变量经 ssh 标准输入重写这个文件。看守进程的用法等 `s19-notify` 合并后补在这里。
+
 ### 5.3 查看状态
 
 ```
