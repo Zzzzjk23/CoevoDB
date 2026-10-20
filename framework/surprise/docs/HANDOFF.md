@@ -81,14 +81,15 @@
 - 推送测试（用户同意）：编排者把 `pushplus.py` 经 ssh 标准输入交给服务器的解释器执行（服务器上没有落文件、检出不变），token 取自服务器上的文件；pushplus 回 code 200，用户确认微信收到了。
 - 想让余额提前预警，要在 OpenRouter 给这把 key 设额度上限（普通 key 查不到账户余额）；不设上限时，欠费只能靠调用失败（402）发现。
 
-### GLM 真实调用冒烟与推理强度（2026-10-21），工作包 `s19-effort`（进行中）
+### GLM 真实调用冒烟与推理强度（2026-10-21），工作包 `s19-effort`（已合并）
 
 用户同意后，编排者在本机经网关（真实的 `DeepSeekTransport`、`glm-flash` 档）发了 S10 M3 录制缓存里三个角色的真实 prompt，参数用各角色自己的 temperature 与 max_tokens：
 - 默认推理（`enabled: true`）：prior 正常（29 秒，2015 个输出 token 里 1892 个是推理，JSON 字段与 DeepSeek 相同）；implementer（上限 8000）推理 10048 个 token 后 `finish_reason: length`、正文为空，132 秒；conjecturer（上限 16000）16293 个 token 全是推理、没有 JSON，249 秒。
 - 关推理：`enabled: false` 与 `effort: "none"` 都回 HTTP 400 "Reasoning is mandatory for this endpoint and cannot be disabled."；`effort: "minimal"` 可以用（小 prompt 推理 6 个 token）。
 - `effort: "low"`：implementer 1897 个输出 token（推理 1758）、14 秒，conjecturer 4323 个（推理 3731）、58 秒，都正常结束、给出合法 JSON，字段与 DeepSeek 的回复相同。
 - 以前的 deepseek-flash 也在推理：没传推理参数，录制缓存里每个输出 token 只对应 0.11–0.27 个正文字符（implementer 平均约 2500 个输出 token、conjecturer 约 6600 个），`roles/constants.py` 的注释也记着推理算在 max_tokens 里。
-- 用户先说"直接关闭推理"，又问"之前的deepseek flash开推理了吗？把当前的GLM和之前的方法对齐"，看过上面的数后定为 `effort: low`（开推理、各角色 max_tokens 不变）。门槛 `s19_cases.NEW_PROFILE` 已改；代码那一行派给 codex（`s19-effort`）。合并后经用户同意再用同样三条 prompt 测一次。
+- 用户先说"直接关闭推理"，又问"之前的deepseek flash开推理了吗？把当前的GLM和之前的方法对齐"，看过上面的数后定为 `effort: low`（开推理、各角色 max_tokens 不变）。门槛 `s19_cases.NEW_PROFILE` 已改；代码那一行派给 codex（`s19-effort`，ccf3ddc，只改 `providers.py` 一处与测试里写死的配置），合并 daed8a6，归档 00c0066，worktree 已清理；合并后本机 `pytest -q testing tests` 1157 passed、3 skipped，`gates.all` PASS 16/16。
+- 复测（用户同意；同样三条 prompt，新缓存）：prior 1113 个输出 token（推理 1029）、29 秒；implementer 2219 个（推理 2074）、32 秒；conjecturer 2295 个（推理 1851）、36 秒。三个都 `finish_reason: stop`、JSON 字段与 DeepSeek 的回复相同。conjecturer 第一次请求回了 HTTP 429（限流），一分钟后重试成功（见未决问题"S19 新发现"第 5 条）。
 - 冒烟一共 10 次请求，花费不到 1 美分；脚本与结果在编排者的 scratchpad，不入库。
 
 
@@ -1732,6 +1733,7 @@ S13 处理与新发现（2026-10-19）：
   2. **`calls.jsonl` 只记异常类名**（`TransportError`；`s19-notify` 改为记下传输层的消息）：`transport.py` 把 HTTP 状态写进了异常消息，网关记 `reason` 时只取了 `type(exc).__name__`，所以欠费、限流、网络中断分不出来。
   3. **同种子的 `nollm` 在不同并发下标签会分叉**（预实验 progress 逐条比 `case_digest`、oracle、`y`、`kind`）：s9101 的 c1 对 c4 在第 302 条分叉（cross_dbms：`fail/crash` 对 `invalid/unattributed_crash`），c1 对 c8 在第 1316 条（version_differential：`pass` 对 `invalid/direction_unknown`）；s9102 的 c4 对 c8 在第 957 条（plan_variant：`pass` 对 `invalid/unstable_rerun`）。分叉之后路径完全不同。分叉早晚与并发高低不单调（c1 与 c8 一致得比 c1 与 c4 久），像是个别用例本身不稳定，不像负载造成；要分清，得在同一并发下重复跑同一种子。影响：`EXPERIMENT.md` §4 的"同种子重跑结果一致"在实机条件下不成立（统计靠 5 个种子，不受影响，报告要改写这句）；§8 回放检查要求逐条相同，这几类标签可能过不了。超时（4–7 条）与重跑不稳定（1–2 条）的数量在三种并发下差不多。
   4. **`full` 的吞吐受 LLM 延迟限制**：每格 2 小时里有 85–115 分钟在等 LLM，执行数只有同种子 `nollm` 的 4%–26%。24 小时的正式格里，"每小时家族数"会把这个差别算进去，报告里要同时给"每千次执行"。
+  5. **OpenRouter 会回 429（限流），网关不重试**（2026-10-21 复测时遇到一次）：`glm-flash` 只用 Open Inference 一个提供商、不回退，网关把 429 当成一次失败的调用，角色随即放弃（`_STOP` 含 `error`）。E1 并发 8 时几格的 `full` 同时调用，可能频繁被限流，LLM 臂会悄悄变成少用 LLM 的运行；看守会对连续 5 次失败（cause `rate`）报警，但调用本身丢了。可选的修法：网关遇到 429 按退避重试几次（改 `roles/gateway.py` 或 `transport.py`），要用户定。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
