@@ -61,6 +61,8 @@ ALLOWED_CHANGES = (
     "framework/surprise/baselines/pure_llm.py",
     PRICES_FILE,
     "framework/tests/test_surprise_s19_",
+    # alerts (user's request, 2026-10-21)
+    "framework/surprise/notify/",
 )
 FROZEN_PATHS = (
     "framework/surprise/harness",
@@ -71,3 +73,31 @@ FROZEN_PATHS = (
     "framework/oracles",
     "framework/targets",
 )
+
+# ---- alerts through pushplus (user's request, 2026-10-21) -------------------------------------------
+# "添加额度不足、报错等的提醒：使用pushplus的一对一消息功能". The token lives in PUSH_ENV only.
+
+PUSH_ENV = "PUSHPLUS_TOKEN"
+PUSH_URL = "https://www.pushplus.plus/send"
+# One-to-one message: no topic, no friend list; plain text.
+PUSH_BODY_KEYS = {"token", "title", "content", "template"}
+PUSH_TEMPLATE = "txt"
+# pushplus codes after which the account cannot send (900 too many requests, 905 not verified,
+# 888 no points): the sender stops for the rest of the process.
+PUSH_STOP_CODES = (900, 905, 888)
+KEY_INFO_URL = "https://openrouter.ai/api/v1/key"
+# Gateway reason of a failed call -> the cause the watcher reports.
+CAUSES = {
+    "TransportError: HTTPStatusError 402": "credit",
+    "TransportError: HTTPStatusError 401": "auth",
+    "TransportError: HTTPStatusError 403": "auth",
+    "TransportError: HTTPStatusError 429": "rate",
+    "TransportError: DeadlineExceeded": "timeout",
+    "TransportError: DEEPSEEK_API_KEY is not set": "nokey",
+    "TransportError: HTTPStatusError 500": "other",
+    "TransportError: ConnectError": "other",
+    "TransportError": "other",
+    "RuntimeError": "other",
+    None: "other",
+}
+KINDS = ("start", "llm_errors", "llm_blocked", "cell_failed", "stall", "balance", "finished", "exited")

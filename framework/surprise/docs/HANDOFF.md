@@ -72,6 +72,12 @@
 - 还没做：用新密钥经网关做一次真实调用冒烟（本机、1–2 次调用、不到 1 美分），等用户同意。要看的是回复能不能解析、推理会不会把 `max_tokens` 用完、实际 token 量与延迟。编排者进程里的 `DEEPSEEK_API_KEY` 还是旧值，冒烟要从用户级环境变量取。
 - 按 OpenRouter 的价格，Open Inference 的输出是 $0.16 每百万 token（deepseek-flash 是 $1.2）。拿预实验的 token 量估算，`full` 每格 24 小时约 $2–3。实际 token 量要等新模型的冒烟才知道。
 
+### 额度不足与报错的提醒（pushplus），工作包 `s19-notify`（进行中）
+
+用户 2026-10-21："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"。token 已写进本机用户级环境变量 `PUSHPLUS_TOKEN`（编排者进程里还没有，要从用户级环境变量取）。做法见 DECISIONS 当天两条：独立的看守进程 `surprise.notify.watch` 只读网格结果目录，按事件推送；`roles/gateway.py` 失败调用的 `reason` 记下 HTTP 状态码。不改 `experiments/`，不用重钉长跑。门槛 `gates/s19.py` 加五组（`pushplus`、`reason`、`watch`、`balance`、`cli`），派发前写好；说明在 `.orch/briefs/s19-notify.md`；从 `session/s19` 派给 codex。
+- 合并后：在主检出区跑测试与全部门槛；运行手册（SERVER.md 的密钥一节、E1 的运行脚本）加上 `PUSHPLUS_TOKEN` 进 tmux 会话、与网格一起起看守；经用户同意后发一条真实的测试推送。
+- 想让余额提前预警，要在 OpenRouter 给这把 key 设额度上限（普通 key 查不到账户余额）；不设上限时，欠费只能靠调用失败（402）发现。
+
 下一步（等用户说）：
 - 恢复之前先换好 OpenRouter 的密钥并确认余额（LLM 臂改用 `glm-flash` 档）。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。
 - E1 正式运行：配置 `docs/grids/e1.json` 还没写，四个臂里 `pure_llm` 暂不跑，LLM 臂用 `glm-flash` 档。并发度还没定。吞吐与标签稳定性已经比过（见未决问题的"S19 新发现"第 3、4 条）：c8 的吞吐够用，标签分叉与并发高低不单调；c1 的 LLM 臂虽然只能用前 113 分钟，也不必为此重跑 c1。想分清标签分叉是不是负载造成的，可以在同一并发下把 `nollm` 同种子重复跑一次（可选，要用户定）。换了模型之后，LLM 臂的延迟会变，`full` 的吞吐要重新看。
@@ -1708,8 +1714,8 @@ S13 处理与新发现（2026-10-19）：
   - 新 5：直接 Ctrl-C 网格本身（不是格到期）会杀掉在跑的格、不写它们的报告；续跑时这些格按原规则改名 `.stale-<k>` 重跑。要停正式实验，等格到期，或者只停个别格。
   - 新 6：codex 在 Windows 上用 PowerShell 5.1；它写的提交带 LF→CRLF 提示，不影响内容。
 - **S19 新发现（2026-10-20）**：
-  1. **欠费时网格不报警，LLM 臂照样跑满预算**：网关把每次调用失败记成 `error`，然后接着跑；`pure_llm` 在 2 小时里空转了 11,922 次调用、0 条记录，格仍记 `done`。`full` 在欠费后退化成没有 LLM 的运行，从 `cell.json` 看不出来。可能的修法：LLM 臂起跑前先试一次调用；连续失败到一定次数就中断这一格、写 `error.txt`。这要改 `roles/` 与 `experiments/`，不在 S19 范围里。
-  2. **`calls.jsonl` 只记异常类名**（`TransportError`）：`transport.py` 把 HTTP 状态写进了异常消息，网关记 `reason` 时只取了 `type(exc).__name__`，所以欠费、限流、网络中断分不出来。
+  1. **欠费时网格不报警（提醒由 `s19-notify` 解决；中断这一格仍未做），LLM 臂照样跑满预算**：网关把每次调用失败记成 `error`，然后接着跑；`pure_llm` 在 2 小时里空转了 11,922 次调用、0 条记录，格仍记 `done`。`full` 在欠费后退化成没有 LLM 的运行，从 `cell.json` 看不出来。可能的修法：LLM 臂起跑前先试一次调用；连续失败到一定次数就中断这一格、写 `error.txt`。这要改 `roles/` 与 `experiments/`，不在 S19 范围里。
+  2. **`calls.jsonl` 只记异常类名**（`TransportError`；`s19-notify` 改为记下传输层的消息）：`transport.py` 把 HTTP 状态写进了异常消息，网关记 `reason` 时只取了 `type(exc).__name__`，所以欠费、限流、网络中断分不出来。
   3. **同种子的 `nollm` 在不同并发下标签会分叉**（预实验 progress 逐条比 `case_digest`、oracle、`y`、`kind`）：s9101 的 c1 对 c4 在第 302 条分叉（cross_dbms：`fail/crash` 对 `invalid/unattributed_crash`），c1 对 c8 在第 1316 条（version_differential：`pass` 对 `invalid/direction_unknown`）；s9102 的 c4 对 c8 在第 957 条（plan_variant：`pass` 对 `invalid/unstable_rerun`）。分叉之后路径完全不同。分叉早晚与并发高低不单调（c1 与 c8 一致得比 c1 与 c4 久），像是个别用例本身不稳定，不像负载造成；要分清，得在同一并发下重复跑同一种子。影响：`EXPERIMENT.md` §4 的"同种子重跑结果一致"在实机条件下不成立（统计靠 5 个种子，不受影响，报告要改写这句）；§8 回放检查要求逐条相同，这几类标签可能过不了。超时（4–7 条）与重跑不稳定（1–2 条）的数量在三种并发下差不多。
   4. **`full` 的吞吐受 LLM 延迟限制**：每格 2 小时里有 85–115 分钟在等 LLM，执行数只有同种子 `nollm` 的 4%–26%。24 小时的正式格里，"每小时家族数"会把这个差别算进去，报告里要同时给"每千次执行"。
 

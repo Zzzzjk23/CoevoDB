@@ -167,3 +167,4 @@ CVE 的另一半（测量 oracle 覆盖哪些缺陷：召回基准、上游回�
 - 新发现的缺陷在每个里程碑之后、到最新版复核过，交给用户提交上游。
 - （2026-10-20 补充，用户，S19 期间；DeepSeek 余额在预实验后半段用完）用户先说"当前实验太繁杂了，我的tokens不够用。现在先去掉各种消融实验的实验，并且优先跑postgre sql的实验"，讨论后定下：`pure_llm` 先不跑，方法照原样保留，以后需要时再定；E3–E6 保留，只是现在不跑（取代"去掉消融"）；服务器现在什么都不跑，等用户说（暂时收回上面"Claude 在服务器上起实验"的授权）；暂不开始 PostgreSQL 的部署（S16）；恢复时 PG 优先。
 - （2026-10-20 补充，用户，S19 期间）LLM 角色换模型：OpenRouter 上的 Z.ai GLM 5.3 Flash（`z-ai/glm-5.3-flash`），只用提供商 Open Inference（`open-inference/fp4`），不回退到别的提供商，开推理；接口与 OpenAI 兼容；密钥仍放在 `DEEPSEEK_API_KEY` 里（用户稍后换成 OpenRouter 的密钥）。实现为网关的新档 `glm-flash`，原来的 fast / strong 两档与默认行为不变（决策 10 仍成立）。
+- （2026-10-21 补充，用户，S19 期间）加提醒：额度不足、报错等经 pushplus 的一对一消息推给用户本人（用户的话："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"）。token 只放在环境变量 `PUSHPLUS_TOKEN`，同 `DEEPSEEK_API_KEY` 的规矩。实现为独立的看守进程 `surprise.notify.watch`，只读网格结果目录，实验代码不变。
