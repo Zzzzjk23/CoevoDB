@@ -15,7 +15,10 @@ NEW_PROFILE = {
     "base_url": "https://openrouter.ai/api/v1",
     "body": {
         "provider": {"only": ["open-inference/fp4"], "allow_fallbacks": False},
-        "reasoning": {"enabled": True},
+        # 2026-10-21 (user): reasoning effort low, aligned with deepseek-flash, which reasons by default.
+        # The endpoint refuses to disable reasoning (enabled false / effort none: HTTP 400); with the
+        # default effort the implementer and conjecturer spent all of max_tokens on reasoning.
+        "reasoning": {"effort": "low"},
     },
 }
 NEW_URL = "https://openrouter.ai/api/v1/chat/completions"

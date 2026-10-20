@@ -141,7 +141,16 @@ $PY -m surprise.experiments.grid run <配置.json> --out results/<名字> 2>&1 |
 
 不带 LLM 的格，子进程里没有密钥（网格从子进程环境里去掉 `DEEPSEEK_API_KEY`）。
 
-密钥与 token 存在服务器上（2026-10-21，用户指示）：`~/.config/coevodb/llm.env` 导出 `DEEPSEEK_API_KEY`（现在是 OpenRouter 的密钥，73 个字符），`~/.config/coevodb/pushplus.env` 导出 `PUSHPLUS_TOKEN`（32 个字符）；文件 600、目录 700，只有本账号能读。`~/.bashrc` 末尾两行加载它们，所以新开的交互 shell 与 tmux 会话里都有这两个变量，不用再 `read -s`；在这之前开的 tmux 会话里没有，要新开或 `. ~/.bashrc`。核对只看长度：`echo ${#DEEPSEEK_API_KEY} ${#PUSHPLUS_TOKEN}`。不要把值写进 `~/.bashrc`（它是 644，同机的人都能读）、命令行参数或日志；不要 `cat` 这两个文件。换密钥时由编排者从本机的用户级环境变量经 ssh 标准输入重写对应文件。服务器上的 shell 都带着密钥，所以测试照 CLAUDE.md 只跑 `pytest -q testing tests`（`framework/test_api.py` 在有密钥时会真的发请求）。看守进程的用法等 `s19-notify` 合并后补在这里。
+密钥与 token 存在服务器上（2026-10-21，用户指示）：`~/.config/coevodb/llm.env` 导出 `DEEPSEEK_API_KEY`（现在是 OpenRouter 的密钥，73 个字符），`~/.config/coevodb/pushplus.env` 导出 `PUSHPLUS_TOKEN`（32 个字符）；文件 600、目录 700，只有本账号能读。`~/.bashrc` 末尾两行加载它们，所以新开的交互 shell 与 tmux 会话里都有这两个变量，不用再 `read -s`；在这之前开的 tmux 会话里没有，要新开或 `. ~/.bashrc`。核对只看长度：`echo ${#DEEPSEEK_API_KEY} ${#PUSHPLUS_TOKEN}`。不要把值写进 `~/.bashrc`（它是 644，同机的人都能读）、命令行参数或日志；不要 `cat` 这两个文件。换密钥时由编排者从本机的用户级环境变量经 ssh 标准输入重写对应文件。服务器上的 shell 都带着密钥，所以测试照 CLAUDE.md 只跑 `pytest -q testing tests`（`framework/test_api.py` 在有密钥时会真的发请求）。
+
+提醒（`s19-notify`，2026-10-21；部署了含它的 tag 之后才有）：网格起来之后，在同一个 tmux 会话里开第二个窗口（`Ctrl-b c`）起看守。它只读 `results/<名字>`，每 60 秒查一次，有事就经 pushplus 推给用户；网格结束（每格都有 `cell.json`）或网格进程退出后自己停：
+
+```
+cd ~/CoevoDB/framework
+$PY -m surprise.notify.watch results/<名字> --pid "$(pgrep -f -o 'surprise.experiments.grid run .*results/<名字>')" 2>&1 | tee -a results/<名字>.notify.log
+```
+
+推送的事件：开始看守（顺带确认推送通了）；某格连续 5 次 LLM 调用失败（标题写原因：402 额度不足、401/403 密钥、429 限流、超时）；调用上限用完；格失败（附日志末 3 行）；在跑的格 30 分钟没有任何文件活动；OpenRouter 的 key 剩余额度低于 $1 或用完（只有在 OpenRouter 给 key 设了额度上限时才查得到）；看守自己连续 3 次出错；网格结束或网格进程退出。同一次轮询的事件合成一条，一天最多 30 条。手动试推送：`$PY -m surprise.notify.pushplus "[CoevoDB] 测试" "来自 3090"`（退出码 0 是发出去了，2 是没有 token）。
 
 ### 5.3 查看状态
 

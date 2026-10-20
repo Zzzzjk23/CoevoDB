@@ -72,11 +72,25 @@
 - 还没做：用新密钥经网关做一次真实调用冒烟（本机、1–2 次调用、不到 1 美分），等用户同意。要看的是回复能不能解析、推理会不会把 `max_tokens` 用完、实际 token 量与延迟。编排者进程里的 `DEEPSEEK_API_KEY` 还是旧值，冒烟要从用户级环境变量取。
 - 按 OpenRouter 的价格，Open Inference 的输出是 $0.16 每百万 token（deepseek-flash 是 $1.2）。拿预实验的 token 量估算，`full` 每格 24 小时约 $2–3。实际 token 量要等新模型的冒烟才知道。
 
-### 额度不足与报错的提醒（pushplus），工作包 `s19-notify`（进行中）
+### 额度不足与报错的提醒（pushplus），工作包 `s19-notify`（已合并）
 
 用户 2026-10-21："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"。token 已写进本机用户级环境变量 `PUSHPLUS_TOKEN`（编排者进程里还没有，要从用户级环境变量取），并按用户指示写进服务器的 `~/.config/coevodb/pushplus.env`（600，`~/.bashrc` 加载；见 SERVER.md §5.2）。用户随后让 LLM 密钥也照此存到服务器（`~/.config/coevodb/llm.env`）；CLAUDE.md 与 `framework/AGENTS.md` 的密钥规则相应改了。服务器上已有的 tmux 会话 `e1-pilot`、`s14-smoke` 是之前开的，没有这两个变量，以后起实验新开会话。做法见 DECISIONS 当天两条：独立的看守进程 `surprise.notify.watch` 只读网格结果目录，按事件推送；`roles/gateway.py` 失败调用的 `reason` 记下 HTTP 状态码。不改 `experiments/`，不用重钉长跑。门槛 `gates/s19.py` 加五组（`pushplus`、`reason`、`watch`、`balance`、`cli`），派发前写好；说明在 `.orch/briefs/s19-notify.md`；从 `session/s19` 派给 codex。
-- 合并后：在主检出区跑测试与全部门槛；运行手册（SERVER.md §5.2、E1 的运行脚本）加上与网格一起起看守（token 在服务器上已经有了）；经用户同意后发一条真实的测试推送。
+- codex 两轮交付（232febd；返工 d84588b：停滞判断改看格目录整棵树，因为预实验的 SQLancer 格 2 小时里只有 `sqlancer/stdout.txt` 在写；遍历时消失的文件与目录跳过；`run` 里一次轮询出错不再结束看守，连续 3 次出错推一条"看守出错"）。合并 f6da2d7，归档 2f89ae5，worktree 已清理。
+- 最终复跑（`session/s19` 主检出区，去掉两个密钥）：pytest 1157 passed, 3 skipped；GATES PASS 16/16（S19 11/11）。`experiments/` 没改，S8 长跑不用重钉。
+- 用法写进 SERVER.md §5.2：网格起来之后，在同一 tmux 会话的第二个窗口起 `$PY -m surprise.notify.watch results/<名字> --pid <网格进程>`。服务器现在部署的 `s19-deploy-1` 还没有这些代码，要部署新 tag 之后才能用。
+- 推送测试（用户同意）：编排者把 `pushplus.py` 经 ssh 标准输入交给服务器的解释器执行（服务器上没有落文件、检出不变），token 取自服务器上的文件；pushplus 回 code 200，用户确认微信收到了。
 - 想让余额提前预警，要在 OpenRouter 给这把 key 设额度上限（普通 key 查不到账户余额）；不设上限时，欠费只能靠调用失败（402）发现。
+
+### GLM 真实调用冒烟与推理强度（2026-10-21），工作包 `s19-effort`（进行中）
+
+用户同意后，编排者在本机经网关（真实的 `DeepSeekTransport`、`glm-flash` 档）发了 S10 M3 录制缓存里三个角色的真实 prompt，参数用各角色自己的 temperature 与 max_tokens：
+- 默认推理（`enabled: true`）：prior 正常（29 秒，2015 个输出 token 里 1892 个是推理，JSON 字段与 DeepSeek 相同）；implementer（上限 8000）推理 10048 个 token 后 `finish_reason: length`、正文为空，132 秒；conjecturer（上限 16000）16293 个 token 全是推理、没有 JSON，249 秒。
+- 关推理：`enabled: false` 与 `effort: "none"` 都回 HTTP 400 "Reasoning is mandatory for this endpoint and cannot be disabled."；`effort: "minimal"` 可以用（小 prompt 推理 6 个 token）。
+- `effort: "low"`：implementer 1897 个输出 token（推理 1758）、14 秒，conjecturer 4323 个（推理 3731）、58 秒，都正常结束、给出合法 JSON，字段与 DeepSeek 的回复相同。
+- 以前的 deepseek-flash 也在推理：没传推理参数，录制缓存里每个输出 token 只对应 0.11–0.27 个正文字符（implementer 平均约 2500 个输出 token、conjecturer 约 6600 个），`roles/constants.py` 的注释也记着推理算在 max_tokens 里。
+- 用户先说"直接关闭推理"，又问"之前的deepseek flash开推理了吗？把当前的GLM和之前的方法对齐"，看过上面的数后定为 `effort: low`（开推理、各角色 max_tokens 不变）。门槛 `s19_cases.NEW_PROFILE` 已改；代码那一行派给 codex（`s19-effort`）。合并后经用户同意再用同样三条 prompt 测一次。
+- 冒烟一共 10 次请求，花费不到 1 美分；脚本与结果在编排者的 scratchpad，不入库。
+
 
 下一步（等用户说）：
 - 恢复之前确认 OpenRouter 的余额（密钥已在本机与服务器上；LLM 臂改用 `glm-flash` 档）。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。

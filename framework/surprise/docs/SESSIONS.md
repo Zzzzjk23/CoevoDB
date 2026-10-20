@@ -301,6 +301,7 @@ S0–S12 是迁移到惊讶驱动框架的改造（已完成）。S13 起是正�
 - 2026-10-20：预实验跑完后暂停（用户的决定，PLAN §9 补充一条）。正式格等用户说了再跑；`pure_llm` 暂不跑。
 - 2026-10-20 用户加进本会话的范围：LLM 角色换成 OpenRouter 上的 GLM 5.3 Flash（PLAN §9 补充一条），工作包 `s19-glm`。门槛 `gates/s19.py` 先有六组：`transport`、`gateway`、`replay`、`grid`、`prices`、`scope`；E1 结果的几组等正式结果拷回时再加。下面"不做：改代码"一条不适用于这个包。改了 `experiments/`，合并后要按 S8 验收的办法重跑长跑、重钉。
 - 2026-10-21 用户加进本会话的范围：额度不足与报错的提醒，经 pushplus 一对一消息（PLAN §9 补充一条），工作包 `s19-notify`：新包 `surprise/notify/`（发送器与看守进程），`roles/gateway.py` 失败调用的 `reason` 记下传输层的消息（HTTP 状态码）。门槛 `gates/s19.py` 加五组：`pushplus`、`reason`、`watch`、`balance`、`cli`。不改 `experiments/`，不用重钉长跑。"不做：改代码"同样不适用于这个包。
+- 2026-10-21 用户定下 GLM 的推理强度为 low（PLAN §9 补充一条），工作包 `s19-effort` 只改 `roles/providers.py` 的一处配置；门槛 `s19_cases.NEW_PROFILE` 跟着改。
 
 门槛 `gates/s19.py`：拷回的结果里所有格 `done`；配置与 `EXPERIMENT.md` 一致；harness 哈希与部署时相同；报告的每个 RQ 节都有内容。
 
