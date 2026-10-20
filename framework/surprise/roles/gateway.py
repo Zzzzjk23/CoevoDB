@@ -294,7 +294,7 @@ class Gateway:
                 source="network",
                 data=None,
                 text=None,
-                reason=type(exc).__name__,
+                reason=f"TransportError: {exc}" if isinstance(exc, TransportError) and str(exc) else type(exc).__name__,
                 input_tokens=0,
                 output_tokens=0,
             )
