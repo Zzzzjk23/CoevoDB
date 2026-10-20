@@ -54,7 +54,7 @@ _HUNTER_OK = ("value", "random")
 # Roles that do not edit the theory. A frozen arm may turn only these on.
 _FROZEN_ROLES = ("implementer", "prior")
 _NAME = re.compile(r"[a-z0-9_-]+")
-_TIERS = ("fast", "strong")
+_TIERS = ("fast", "strong", "glm-flash")
 _UNLIMITED = "unlimited"
 # Engines a running SQLancer arm may name. S16–S18 extend this.
 _SQLANCER_RUN_ENGINES = ("duckdb",)

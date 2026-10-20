@@ -12,6 +12,7 @@ from llm.ledger import ledger
 
 from .constants import REQUEST_DEADLINE_S, TIERS
 from .gateway import Completion, TransportError
+from .providers import endpoint_for_model
 
 
 class DeepSeekTransport(BaseAgent):
@@ -53,7 +54,12 @@ class DeepSeekTransport(BaseAgent):
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
-            body = _read_with_deadline(client, payload, self.deadline_s, self.close_client)
+            endpoint = endpoint_for_model(model)
+            url = "/chat/completions"
+            if endpoint is not None:
+                payload.update(endpoint["body"])
+                url = endpoint["base_url"] + "/chat/completions"
+            body = _read_with_deadline(client, payload, self.deadline_s, self.close_client, url=url)
             content = body["choices"][0]["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError("content")
@@ -91,7 +97,10 @@ class DeepSeekTransport(BaseAgent):
         return Completion(text=content, input_tokens=input_tokens, output_tokens=output_tokens)
 
 
-def _read_with_deadline(client: Any, payload: dict[str, Any], deadline_s: float, closer: Any) -> dict[str, Any]:
+def _read_with_deadline(
+    client: Any, payload: dict[str, Any], deadline_s: float, closer: Any,
+    *, url: str = "/chat/completions",
+) -> dict[str, Any]:
     """POST and read the JSON body, giving up when ``deadline_s`` has elapsed."""
     started = time.monotonic()
     box: dict[str, Any] = {}
@@ -102,7 +111,7 @@ def _read_with_deadline(client: Any, payload: dict[str, Any], deadline_s: float,
             if left <= 0:
                 raise TransportError("DeadlineExceeded")
             chunks: list[bytes] = []
-            with client.stream("POST", "/chat/completions", json=payload, timeout=left) as response:
+            with client.stream("POST", url, json=payload, timeout=left) as response:
                 response.raise_for_status()
                 for chunk in response.iter_bytes():
                     if time.monotonic() - started >= deadline_s:
