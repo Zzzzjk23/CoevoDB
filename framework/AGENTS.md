@@ -5,6 +5,7 @@
 - The DeepSeek credential is supplied only through `DEEPSEEK_API_KEY`.
 - Interactive and new zsh shells load it from `~/.config/coevo/secrets.env` via `~/.zshenv`.
 - On this Windows machine the key is a user-level environment variable `DEEPSEEK_API_KEY`.
+- On the experiment server (`ssh 3090`) interactive bash shells, tmux included, load it from `~/.config/coevodb/llm.env` (mode 600) via `~/.bashrc`; the pushplus alert token `PUSHPLUS_TOKEN` comes the same way from `~/.config/coevodb/pushplus.env`. Both files are written over ssh stdin only.
 - For a process that did not inherit the environment, run `source ~/.config/coevo/secrets.env` first.
 - Check availability without revealing the value: `[[ -n ${DEEPSEEK_API_KEY:-} ]]`.
 - The project configuration must reference `${DEEPSEEK_API_KEY}`; never copy the credential into source code, YAML, prompts, tests, command-line arguments, result archives, or logs.

@@ -74,12 +74,12 @@
 
 ### 额度不足与报错的提醒（pushplus），工作包 `s19-notify`（进行中）
 
-用户 2026-10-21："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"。token 已写进本机用户级环境变量 `PUSHPLUS_TOKEN`（编排者进程里还没有，要从用户级环境变量取），并按用户指示写进服务器的 `~/.config/coevodb/pushplus.env`（600，`~/.bashrc` 加载；见 SERVER.md §5.2）。做法见 DECISIONS 当天两条：独立的看守进程 `surprise.notify.watch` 只读网格结果目录，按事件推送；`roles/gateway.py` 失败调用的 `reason` 记下 HTTP 状态码。不改 `experiments/`，不用重钉长跑。门槛 `gates/s19.py` 加五组（`pushplus`、`reason`、`watch`、`balance`、`cli`），派发前写好；说明在 `.orch/briefs/s19-notify.md`；从 `session/s19` 派给 codex。
+用户 2026-10-21："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"。token 已写进本机用户级环境变量 `PUSHPLUS_TOKEN`（编排者进程里还没有，要从用户级环境变量取），并按用户指示写进服务器的 `~/.config/coevodb/pushplus.env`（600，`~/.bashrc` 加载；见 SERVER.md §5.2）。用户随后让 LLM 密钥也照此存到服务器（`~/.config/coevodb/llm.env`）；CLAUDE.md 与 `framework/AGENTS.md` 的密钥规则相应改了。服务器上已有的 tmux 会话 `e1-pilot`、`s14-smoke` 是之前开的，没有这两个变量，以后起实验新开会话。做法见 DECISIONS 当天两条：独立的看守进程 `surprise.notify.watch` 只读网格结果目录，按事件推送；`roles/gateway.py` 失败调用的 `reason` 记下 HTTP 状态码。不改 `experiments/`，不用重钉长跑。门槛 `gates/s19.py` 加五组（`pushplus`、`reason`、`watch`、`balance`、`cli`），派发前写好；说明在 `.orch/briefs/s19-notify.md`；从 `session/s19` 派给 codex。
 - 合并后：在主检出区跑测试与全部门槛；运行手册（SERVER.md §5.2、E1 的运行脚本）加上与网格一起起看守（token 在服务器上已经有了）；经用户同意后发一条真实的测试推送。
 - 想让余额提前预警，要在 OpenRouter 给这把 key 设额度上限（普通 key 查不到账户余额）；不设上限时，欠费只能靠调用失败（402）发现。
 
 下一步（等用户说）：
-- 恢复之前先换好 OpenRouter 的密钥并确认余额（LLM 臂改用 `glm-flash` 档）。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。
+- 恢复之前确认 OpenRouter 的余额（密钥已在本机与服务器上；LLM 臂改用 `glm-flash` 档）。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。
 - E1 正式运行：配置 `docs/grids/e1.json` 还没写，四个臂里 `pure_llm` 暂不跑，LLM 臂用 `glm-flash` 档。并发度还没定。吞吐与标签稳定性已经比过（见未决问题的"S19 新发现"第 3、4 条）：c8 的吞吐够用，标签分叉与并发高低不单调；c1 的 LLM 臂虽然只能用前 113 分钟，也不必为此重跑 c1。想分清标签分叉是不是负载造成的，可以在同一并发下把 `nollm` 同种子重复跑一次（可选，要用户定）。换了模型之后，LLM 臂的延迟会变，`full` 的吞吐要重新看。
 - 预实验结果都在服务器上，没有拷回；本次核实只读，没有改动结果目录。
 

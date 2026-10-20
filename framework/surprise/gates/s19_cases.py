@@ -63,6 +63,9 @@ ALLOWED_CHANGES = (
     "framework/tests/test_surprise_s19_",
     # alerts (user's request, 2026-10-21)
     "framework/surprise/notify/",
+    # keys stored on the server (user's instruction, 2026-10-21): the rule in both files changed
+    "CLAUDE.md",
+    "framework/AGENTS.md",
 )
 FROZEN_PATHS = (
     "framework/surprise/harness",

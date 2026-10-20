@@ -139,9 +139,9 @@ $PY -m surprise.experiments.grid run <配置.json> --out results/<名字> 2>&1 |
 
 按 `Ctrl-b` 再按 `d` 离开 tmux，网格继续跑；`tmux attach -t <名字>` 回来看。网格中途被打断（断电、误按 `Ctrl-c`）时，用同一条命令续跑：已经 `done` 的格不会重跑，没跑完的格改名成 `<格>.stale-<k>` 保留，再从头跑。`tee -a` 是追加，续跑时日志里前后两段都在。
 
-不带 LLM 的格，子进程里没有密钥。带 LLM 的格要密钥：只在启动网格的那个 shell 里设 `DEEPSEEK_API_KEY`（例如 `read -s DEEPSEEK_API_KEY && export DEEPSEEK_API_KEY`），不要写进文件、命令行参数或 `~/.bashrc`。
+不带 LLM 的格，子进程里没有密钥（网格从子进程环境里去掉 `DEEPSEEK_API_KEY`）。
 
-pushplus 提醒的 token 不同（2026-10-21，用户指示写进服务器）：存在 `~/.config/coevodb/pushplus.env`（文件 600、目录 700，只有本账号能读），`~/.bashrc` 末尾一行加载它，新开的 shell 与 tmux 会话里都有 `PUSHPLUS_TOKEN`；`echo ${#PUSHPLUS_TOKEN}` 应是 32。token 本身不要写进 `~/.bashrc`（它是 644，同机的人都能读）。换 token 时由编排者从本机的用户级环境变量经 ssh 标准输入重写这个文件。看守进程的用法等 `s19-notify` 合并后补在这里。
+密钥与 token 存在服务器上（2026-10-21，用户指示）：`~/.config/coevodb/llm.env` 导出 `DEEPSEEK_API_KEY`（现在是 OpenRouter 的密钥，73 个字符），`~/.config/coevodb/pushplus.env` 导出 `PUSHPLUS_TOKEN`（32 个字符）；文件 600、目录 700，只有本账号能读。`~/.bashrc` 末尾两行加载它们，所以新开的交互 shell 与 tmux 会话里都有这两个变量，不用再 `read -s`；在这之前开的 tmux 会话里没有，要新开或 `. ~/.bashrc`。核对只看长度：`echo ${#DEEPSEEK_API_KEY} ${#PUSHPLUS_TOKEN}`。不要把值写进 `~/.bashrc`（它是 644，同机的人都能读）、命令行参数或日志；不要 `cat` 这两个文件。换密钥时由编排者从本机的用户级环境变量经 ssh 标准输入重写对应文件。服务器上的 shell 都带着密钥，所以测试照 CLAUDE.md 只跑 `pytest -q testing tests`（`framework/test_api.py` 在有密钥时会真的发请求）。看守进程的用法等 `s19-notify` 合并后补在这里。
 
 ### 5.3 查看状态
 
