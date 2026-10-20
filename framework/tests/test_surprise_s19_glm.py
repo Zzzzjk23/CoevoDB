@@ -25,7 +25,7 @@ PROFILE = {
     "base_url": "https://openrouter.ai/api/v1",
     "body": {
         "provider": {"only": ["open-inference/fp4"], "allow_fallbacks": False},
-        "reasoning": {"enabled": True},
+        "reasoning": {"effort": "low"},
     },
 }
 
