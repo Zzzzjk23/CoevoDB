@@ -8,6 +8,7 @@ import math
 import os
 import re
 import socket
+import stat
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -162,12 +163,28 @@ class Watcher:
                      f"格运行失败，returncode={info.get('returncode')}；日志最后三行：{tail}")
 
     def _stall(self, cell: _Cell, now: float) -> list[Event]:
-        paths = list(cell.directory.iterdir())
-        llm = cell.directory / "llm"
-        if llm.is_dir():
-            paths.extend(llm.iterdir())
-        paths.append(_cell_log(cell.directory))
-        mtimes = [path.stat().st_mtime for path in paths if path.is_file()]
+        def walk_error(exc: OSError) -> None:
+            if not isinstance(exc, FileNotFoundError):
+                raise exc
+
+        mtimes = []
+
+        def activity(path: Path) -> None:
+            try:
+                info = path.stat()
+            except FileNotFoundError:
+                return
+            if stat.S_ISREG(info.st_mode):
+                mtimes.append(info.st_mtime)
+
+        scanned = False
+        for root, _, files in os.walk(cell.directory, onerror=walk_error):
+            scanned = True
+            for name in files:
+                activity(Path(root) / name)
+        if not scanned:
+            return []  # The cell directory vanished after the snapshot.
+        activity(_cell_log(cell.directory))
         if not mtimes:
             return []
         latest = max(mtimes)
@@ -225,16 +242,22 @@ class Watcher:
         for event in events:
             text = " ".join(event.text.splitlines())
             print(f"{stamp.isoformat()} {event.kind} {event.cell or '-'} {event.cause or '-'} {text}", flush=True)
-        if stamp.date() != self._day:
-            self._day = stamp.date()
-            self._daily_sent = 0
-        if self._daily_sent >= self.max_per_day:
-            return events
         chosen = next((e for e in events if e.kind != "start"), events[0])
         headline = "额度不足" if chosen.cause == "credit" else chosen.text
         suffix = f"（共 {len(events)} 条）" if len(events) > 1 else ""
         title = "[CoevoDB] " + headline[:100 - len("[CoevoDB] ") - len(suffix)] + suffix
         content = "\n".join(f"{e.cell or '-'} {e.kind} {e.cause or '-'} {e.text}" for e in events)
+        self._notify(title, content, now)
+        return events
+
+    def _notify(self, title: str, content: str, now: float) -> None:
+        day = datetime.fromtimestamp(now, timezone.utc).date()
+        if day != self._day:
+            self._day = day
+            self._daily_sent = 0
+        if self._daily_sent >= self.max_per_day:
+            return
+        title, content = _safe_text(title), _safe_text(content)
         self._daily_sent += 1  # Count attempts, including failures, to bound requests.
         if self._daily_sent == self.max_per_day:
             note = "今天的推送已到上限，之后的事件只写日志"
@@ -246,7 +269,6 @@ class Watcher:
             sent = False
         if not sent:
             print("Notification failed; monitoring continues.", flush=True)
-        return events
 
     def poll(self) -> list[Event]:
         if self._finished:
@@ -284,8 +306,19 @@ class Watcher:
 
     def run(self, *, pid: int | None = None, interval_s: float = 60.0) -> int:
         self._pid = pid
+        failures = 0
         while not self._finished:
-            self.poll()
+            try:
+                self.poll()
+            except Exception as exc:
+                self._finished = False  # Only a successful poll can finish the watcher.
+                failures += 1
+                detail = _safe_text(f"{type(exc).__name__}: {exc}")
+                print("Watch poll failed: " + " ".join(detail.splitlines()), flush=True)
+                if failures == 3:
+                    self._notify("[CoevoDB] 看守出错", f"OUT={self.out}\n{detail}", self.clock())
+            else:
+                failures = 0
             if self._finished:
                 break
             time.sleep(interval_s)

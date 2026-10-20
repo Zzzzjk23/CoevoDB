@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -280,6 +282,97 @@ def test_stall_considers_each_file_source(setup, activity):
     assert kinds(poll(setup)) == [("start", None, None)]
 
 
+@pytest.mark.parametrize("activity", ["sqlancer/stdout.txt", "sqlancer/logs/worker/stdout.txt"])
+def test_stall_uses_nested_activity_and_reports_when_whole_tree_is_old(setup, activity):
+    directory = cell(setup)
+    old = setup.now[0] - 31 * 60
+    os.utime(directory / "progress.jsonl", (old, old))
+    log = grid._cell_log(directory)
+    log.write_text("old log", encoding="utf-8")
+    os.utime(log, (old, old))
+    output = directory / activity
+    output.parent.mkdir(parents=True)
+    output.write_text("SQLancer progress", encoding="utf-8")
+    os.utime(output, (setup.now[0], setup.now[0]))
+    assert kinds(poll(setup)) == [("start", None, None)]
+    os.utime(output, (old, old))
+    assert kinds(poll(setup)) == [("stall", "full/s1-r0", None)]
+
+
+@pytest.mark.parametrize("name", ["ledger.sqlite-journal", "sqlancer/state-journal", "cell-log"])
+def test_stall_skips_file_that_vanishes_before_stat(setup, monkeypatch, name):
+    directory = cell(setup)
+    path = grid._cell_log(directory) if name == "cell-log" else directory / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    real_stat = Path.stat
+    missing = []
+
+    def vanished(self, *args, **kwargs):
+        if self == path:
+            missing.append(self)
+            raise FileNotFoundError("journal disappeared")
+        return real_stat(self, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "stat", vanished)
+        assert kinds(setup.watcher.poll()) == [("start", None, None)]
+    assert missing == [path]
+    assert path.is_file()
+
+
+def test_stall_skips_nested_directory_that_vanishes_during_walk(setup, monkeypatch):
+    directory = cell(setup)
+    nested = directory / "sqlancer"
+    nested.mkdir()
+    (nested / "stdout.txt").touch()
+    real_scandir = os.scandir
+    missing = []
+
+    def vanished(path):
+        if Path(path) == nested:
+            missing.append(path)
+            raise FileNotFoundError("directory disappeared")
+        return real_scandir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "scandir", vanished)
+        assert kinds(setup.watcher.poll()) == [("start", None, None)]
+    assert len(missing) == 1
+
+
+def test_stall_handles_cell_directory_removed_after_snapshot(setup, monkeypatch):
+    directory = cell(setup)
+    snapshot = setup.watcher._snapshot
+
+    def removed():
+        result = snapshot()
+        target = directory.resolve()
+        assert target != setup.out.resolve() and target.is_relative_to(setup.out.resolve())
+        shutil.rmtree(target)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(setup.watcher, "_snapshot", removed)
+        assert kinds(setup.watcher.poll()) == [("start", None, None)]
+    assert not directory.exists()
+    assert poll(setup) == []
+
+
+def test_poll_preserves_non_disappearance_walk_errors(setup, monkeypatch):
+    directory = cell(setup)
+    real_scandir = os.scandir
+
+    def denied(path):
+        if Path(path) == directory:
+            raise PermissionError("cannot scan cell")
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", denied)
+    with pytest.raises(PermissionError, match="cannot scan cell"):
+        setup.watcher.poll()
+
+
 @pytest.mark.parametrize("error,result", [(None, False), (RuntimeError("private credential"), True)])
 def test_failed_notifier_is_bounded_and_does_not_stop_monitoring(setup, error, result, capsys):
     inbox = Inbox(result=result, error=error)
@@ -388,6 +481,111 @@ def test_run_poll_loop_exits_when_all_cells_complete(setup, monkeypatch):
 
     monkeypatch.setattr(watch.time, "sleep", finish)
     assert setup.watcher.run(interval_s=0.25) == 0
+    assert "finished" in setup.inbox.messages[-1][1]
+
+
+@pytest.mark.parametrize("delivery", ["ok", "false", "exception"])
+def test_run_survives_poll_failures_alerts_once_and_redacts_secrets(setup, monkeypatch, wire, capsys, delivery):
+    monkeypatch.setenv("PUSHPLUS_TOKEN", "synthetic-push-secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "synthetic-api-secret")
+    wire.body = {"data": {"limit_remaining": 5.0}}
+    setup.inbox.result = delivery != "false"
+    if delivery == "exception":
+        setup.inbox.error = RuntimeError("synthetic-push-secret synthetic-api-secret")
+    real_poll = setup.watcher.poll
+    attempts = []
+    sleeps = []
+
+    def flaky():
+        attempts.append(1)
+        if len(attempts) <= 5:
+            raise RuntimeError("scan failed: synthetic-push-secret\nsynthetic-api-secret")
+        for label in ("full/s1-r0", "full/s2-r0", "nollm/s1-r0", "nollm/s2-r0"):
+            end(setup, label)
+        return real_poll()
+
+    monkeypatch.setattr(setup.watcher, "poll", flaky)
+    monkeypatch.setattr(watch.time, "sleep", sleeps.append)
+    assert setup.watcher.run(interval_s=0.25) == 0
+    assert len(attempts) == 6 and sleeps == [0.25] * 5
+    alerts = [(title, body) for title, body in setup.inbox.messages if title == "[CoevoDB] 看守出错"]
+    assert len(alerts) == 1
+    assert f"OUT={setup.out}" in alerts[0][1] and "RuntimeError: scan failed:" in alerts[0][1]
+    assert "[REDACTED]" in alerts[0][1]
+    output = capsys.readouterr().out
+    assert len([line for line in output.splitlines() if line.startswith("Watch poll failed: RuntimeError:")]) == 5
+    assert "finished" in output
+    for secret in ("synthetic-push-secret", "synthetic-api-secret"):
+        assert secret not in output and secret not in repr(setup.inbox.messages)
+    if delivery != "ok":
+        assert "Notification failed" in output
+
+
+def test_run_rearms_failure_alarm_after_successful_polls(setup, monkeypatch):
+    real_poll = setup.watcher.poll
+    steps = iter([RuntimeError("first")] * 3 + [None] + [RuntimeError("short")] * 2 + [None]
+                 + [ValueError("second")] * 4 + ["finish"])
+    sleeps = []
+
+    def flaky():
+        step = next(steps)
+        if isinstance(step, Exception):
+            raise step
+        if step == "finish":
+            for label in ("full/s1-r0", "full/s2-r0", "nollm/s1-r0", "nollm/s2-r0"):
+                end(setup, label)
+        return real_poll()
+
+    monkeypatch.setattr(setup.watcher, "poll", flaky)
+    monkeypatch.setattr(watch.time, "sleep", sleeps.append)
+    assert setup.watcher.run(interval_s=0.5) == 0
+    alerts = [body for title, body in setup.inbox.messages if title == "[CoevoDB] 看守出错"]
+    assert len(alerts) == 2
+    assert "RuntimeError: first" in alerts[0] and "ValueError: second" in alerts[1]
+    assert len(sleeps) == 11 and all(interval == 0.5 for interval in sleeps)
+
+
+@pytest.mark.parametrize("cap", [0, 1])
+def test_run_failure_alarm_shares_daily_limit_with_normal_events(setup, monkeypatch, cap):
+    setup.watcher.max_per_day = cap
+    real_poll = setup.watcher.poll
+    attempts = []
+
+    def flaky():
+        attempts.append(1)
+        if len(attempts) <= 3:
+            raise OSError("scan failed")
+        for label in ("full/s1-r0", "full/s2-r0", "nollm/s1-r0", "nollm/s2-r0"):
+            end(setup, label)
+        return real_poll()
+
+    monkeypatch.setattr(setup.watcher, "poll", flaky)
+    monkeypatch.setattr(watch.time, "sleep", lambda _: None)
+    assert setup.watcher.run(interval_s=0) == 0
+    assert len(setup.inbox.messages) == cap
+    if cap:
+        title, body = setup.inbox.messages[0]
+        assert title == "[CoevoDB] 看守出错"
+        assert body.endswith("今天的推送已到上限，之后的事件只写日志")
+
+
+def test_run_retries_when_failed_poll_had_set_finished(setup, monkeypatch):
+    real_poll = setup.watcher.poll
+    attempts = []
+
+    def flaky():
+        attempts.append(1)
+        if len(attempts) == 1:
+            setup.watcher._finished = True
+            raise RuntimeError("failed while finishing")
+        for label in ("full/s1-r0", "full/s2-r0", "nollm/s1-r0", "nollm/s2-r0"):
+            end(setup, label)
+        return real_poll()
+
+    monkeypatch.setattr(setup.watcher, "poll", flaky)
+    monkeypatch.setattr(watch.time, "sleep", lambda _: None)
+    assert setup.watcher.run(interval_s=0) == 0
+    assert len(attempts) == 2
     assert "finished" in setup.inbox.messages[-1][1]
 
 
