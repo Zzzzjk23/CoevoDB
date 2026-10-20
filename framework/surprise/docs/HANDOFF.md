@@ -20,13 +20,13 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说） | s19-deploy-1（预实验部署） | 未跑（`gates/s19.py` 在结果拷回前写） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；换模型已合并） | s19-deploy-1（预实验部署） | S19 6/6（换模型的门槛）；pytest 1086 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
 ## 暂停中：S19（E1 DuckDB 主对比，2026-10-20 开始）
 
-用户的指示："开始S19，注意你只需要把实验跑起来，并告诉我结果会储存到哪里，以及进入实验terminal的tmux指令，不需要监控它是否跑完"。会话分支 `session/s19` 从 `s15-done-r3` 建立；本会话只加了文档与配置，代码与 `s15-done-r3` 相同。
+用户的指示："开始S19，注意你只需要把实验跑起来，并告诉我结果会储存到哪里，以及进入实验terminal的tmux指令，不需要监控它是否跑完"。会话分支 `session/s19` 从 `s15-done-r3` 建立；预实验部署（`s19-deploy-1`）的代码与 `s15-done-r3` 相同，之后只有换模型（见下）改了代码。
 
 - 交付：预实验配置 `docs/grids/e1_pilot_c{8,4,1}.json`、脚本 `docs/runs/e1_pilot.sh`、运行单 `docs/runs/E1.md`（正式配置等预实验之后写）。
 - 部署 `s19-deploy-1` 到服务器，tmux 会话 `e1-pilot` 里依次跑 c8 → c4 → c1，约 15 小时；结果在服务器 `~/CoevoDB/framework/results/e1-pilot-c{8,4,1}/` 与同名 `.log`。密钥经 ssh 标准输入（`tmux load-buffer -`）粘进会话里的 `read -rs`，没有进命令行、文件与日志。
@@ -62,15 +62,19 @@
 - 失败之前整个预实验花了约 $15.2（每格 2 小时：`full` $1.31–1.83，`pure-llm` $1.87–1.90；按 `grid` 一节的高峰价，是上界）。
 - 另一个现象，不是欠费：c4 `full` s9102 只有 263 条记录（同一臂 s9101 有 1243 条）。它 120 分钟里有 115 分钟在等 LLM 回复；`full` 每格等 LLM 的时间在 85–115 分钟之间，主循环的吞吐受 LLM 延迟限制。
 
-### 换模型：GLM 5.3 Flash（OpenRouter），工作包 `s19-glm`（进行中）
+### 换模型：GLM 5.3 Flash（OpenRouter），工作包 `s19-glm`（已合并）
 
-用户 2026-10-20 决定 LLM 角色改用 OpenRouter 的 `z-ai/glm-5.3-flash`，只用提供商 `open-inference/fp4`，不回退，开推理；密钥仍放在 `DEEPSEEK_API_KEY`（用户稍后换成 OpenRouter 的密钥）。做法见 DECISIONS 当天三条：加一档 `glm-flash`，默认两档不变，配置放新模块 `roles/providers.py`，照旧用 httpx。门槛 `gates/s19.py` 有六组，派发前写好（12f4f1b）；说明在 `.orch/briefs/s19-glm.md`；从 `session/s19` 派给 codex。
-- 合并后：在主检出区跑测试与全部门槛；按 S8 验收的办法重跑长跑、重钉（`experiments/` 改了）；用户换好密钥之后，经网关做一次真实调用冒烟（要先问用户）。
+用户 2026-10-20 决定 LLM 角色改用 OpenRouter 的 `z-ai/glm-5.3-flash`，只用提供商 `open-inference/fp4`，不回退，开推理；密钥仍放在 `DEEPSEEK_API_KEY`（用户已把 OpenRouter 的密钥给编排者，写进了本机用户级环境变量）。做法见 DECISIONS 当天三条：加一档 `glm-flash`，默认两档不变，配置放新模块 `roles/providers.py`，照旧用 httpx。门槛 `gates/s19.py` 有六组，派发前写好（12f4f1b）；说明在 `.orch/briefs/s19-glm.md`；从 `session/s19` 派给 codex。
+- codex 一次交付（342727f），改 9 个文件，与说明逐条对上；`roles/constants.py`、harness、DeepSeek 价格表没碰。合并 5828c1d，归档 cc26838（`docs/orch/s19/`），worktree 已清理。
+- 用法：主循环与 `pure_llm` 传 `--llm-tier glm-flash`，网格的臂写 `"tier": "glm-flash"`。不传时缓存键、`calls.jsonl`、`config.json`、manifest 与以前逐字节相同；用了新档，运行 manifest 的 `llm` 一节多一个 `endpoint`（模型、`base_url`、请求体附加字段）。价格表 `metrics/data/prices_openrouter.json`。
+- 长跑重跑（LLM 全关，DuckDB 1.5.5，种子 0，七类 oracle，180 分钟）：以 `budget_minutes` 结束，9400 条，0 条 harness_error，11 个家族。去掉 `elapsed_s` 后前 7143 行与 S15 代码的长跑逐行相同；第 7144 行是 plan variant 用例的第 1 档重跑不稳定（这次判 `invalid / unstable_rerun`，S15 那次判 `pass`），之后路径不同，与 S8 以来同一类不稳定。S15 代码的长跑挪到 `results/s08/longrun-s15code`（不入库）。重钉 4d0c74b；S8 的四个产物组与 S11 `ciao` 通过。
+- 最终复跑（在 `session/s19` 主检出区，在 `framework/` 下，去掉密钥）：pytest 1086 passed, 3 skipped（比 S15 多 16 个，都是本包的离线测试）；GATES PASS 16/16。
+- 还没做：用新密钥经网关做一次真实调用冒烟（本机、1–2 次调用、不到 1 美分），等用户同意。要看的是回复能不能解析、推理会不会把 `max_tokens` 用完、实际 token 量与延迟。编排者进程里的 `DEEPSEEK_API_KEY` 还是旧值，冒烟要从用户级环境变量取。
 - 按 OpenRouter 的价格，Open Inference 的输出是 $0.16 每百万 token（deepseek-flash 是 $1.2）。拿预实验的 token 量估算，`full` 每格 24 小时约 $2–3。实际 token 量要等新模型的冒烟才知道。
 
 下一步（等用户说）：
 - 恢复之前先换好 OpenRouter 的密钥并确认余额（LLM 臂改用 `glm-flash` 档）。恢复时按用户的第一句话 PG 优先：S16 → E2。回放检查要用 E1 的账本，E1 正式还没跑，到时候改用预实验 c8、c4 的账本，要先问用户。
-- E1 正式运行：配置 `docs/grids/e1.json` 还没写，四个臂里 `pure_llm` 暂不跑。并发度还没定：吞吐与标签稳定性的比较还没做，c1 的 LLM 臂只能用前 113 分钟。
+- E1 正式运行：配置 `docs/grids/e1.json` 还没写，四个臂里 `pure_llm` 暂不跑，LLM 臂用 `glm-flash` 档。并发度还没定。吞吐与标签稳定性已经比过（见未决问题的"S19 新发现"第 3、4 条）：c8 的吞吐够用，标签分叉与并发高低不单调；c1 的 LLM 臂虽然只能用前 113 分钟，也不必为此重跑 c1。想分清标签分叉是不是负载造成的，可以在同一并发下把 `nollm` 同种子重复跑一次（可选，要用户定）。换了模型之后，LLM 臂的延迟会变，`full` 的吞吐要重新看。
 - 预实验结果都在服务器上，没有拷回；本次核实只读，没有改动结果目录。
 
 ## 最近完成会话：S15（2026-10-19）
