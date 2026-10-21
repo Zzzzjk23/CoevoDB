@@ -112,7 +112,7 @@
 用户看过编排者的建议（先在 OpenRouter 给 key 设额度上限，再跑一次 GLM 小预实验，然后 E1 正式）后说："1不用做了，调用失败再报警即可。2现在开始跑，你只需要挂到服务器上跑，不用监控"。
 - 不给 key 设额度上限：看守查不到余额，欠费只靠调用失败（402）报警，用户接受。
 - 配置 `docs/grids/e1_pilot_glm.json`：只有 `full` 臂、`glm-flash` 档，种子 9101、9102，每格 2 小时，两格同时跑；脚本 `docs/runs/e1_pilot_glm.sh` 同时起看守；运行单 `docs/runs/E1.md` §1b。`s19-deploy-3` 与 `s19-deploy-2` 只差文档与这两个文件。
-- tmux 会话 `e1-glm`；结果 `~/CoevoDB/framework/results/e1-pilot-glm/`，日志 `results/e1-pilot-glm.log`，看守日志 `results/e1-pilot-glm.notify.log`。按用户的话起跑后不监控（只在起跑后看了一次是否正常起来）。
+- tmux 会话 `e1-glm`；结果 `~/CoevoDB/framework/results/e1-pilot-glm/`，日志 `results/e1-pilot-glm.log`，看守日志 `results/e1-pilot-glm.notify.log`。按用户的话起跑后不监控（只在起跑后看了一次是否正常起来）。起跑检查（07:45:46 UTC 起，约 2 分钟后）：两格的 loop 进程与看守都在，看守已发出"开始看守"；17 次 LLM 调用（prior 与 oracle_inventor）全部 ok，每次 9–18 秒，还没有 429。`grid status` 此时把两格显示成 `failed`，是显示问题（见"S19 新发现"第 6 条）。
 - 跑完之后要比的东西见 E1.md §1b；据此定 E1 正式的并发度、写 `e1.json`（`full`、`nollm`、`sqlancer` × 种子 1001–1005，`pure_llm` 不跑），E1 正式等用户说。
 
 
@@ -1757,6 +1757,7 @@ S13 处理与新发现（2026-10-19）：
   3. **同种子的 `nollm` 在不同并发下标签会分叉**（预实验 progress 逐条比 `case_digest`、oracle、`y`、`kind`）：s9101 的 c1 对 c4 在第 302 条分叉（cross_dbms：`fail/crash` 对 `invalid/unattributed_crash`），c1 对 c8 在第 1316 条（version_differential：`pass` 对 `invalid/direction_unknown`）；s9102 的 c4 对 c8 在第 957 条（plan_variant：`pass` 对 `invalid/unstable_rerun`）。分叉之后路径完全不同。分叉早晚与并发高低不单调（c1 与 c8 一致得比 c1 与 c4 久），像是个别用例本身不稳定，不像负载造成；要分清，得在同一并发下重复跑同一种子。影响：`EXPERIMENT.md` §4 的"同种子重跑结果一致"在实机条件下不成立（统计靠 5 个种子，不受影响，报告要改写这句）；§8 回放检查要求逐条相同，这几类标签可能过不了。超时（4–7 条）与重跑不稳定（1–2 条）的数量在三种并发下差不多。
   4. **`full` 的吞吐受 LLM 延迟限制**：每格 2 小时里有 85–115 分钟在等 LLM，执行数只有同种子 `nollm` 的 4%–26%。24 小时的正式格里，"每小时家族数"会把这个差别算进去，报告里要同时给"每千次执行"。
   5. **（已解决：`s19-retry`，传输层退避重试 429）OpenRouter 会回 429（限流），网关不重试**（2026-10-21 复测时遇到一次）：`glm-flash` 只用 Open Inference 一个提供商、不回退，网关把 429 当成一次失败的调用，角色随即放弃（`_STOP` 含 `error`）。E1 并发 8 时几格的 `full` 同时调用，可能频繁被限流，LLM 臂会悄悄变成少用 LLM 的运行；看守会对连续 5 次失败（cause `rate`）报警，但调用本身丢了。可选的修法：网关遇到 429 按退避重试几次（改 `roles/gateway.py` 或 `transport.py`），要用户定。
+  6. **`grid status` 把在跑的格显示成 `failed`**（2026-10-21 起跑 `e1-pilot-glm` 时看到）：`_cell_state` 只认 `cell.json`，格还没写 `cell.json` 就算 `failed`，没有"在跑"这个状态。只是显示问题，网格本身照常跑；看是否真的失败要看格进程是否还在、格日志与 `cell.json`。要不要加"running"状态（改 `experiments/grid.py`，要重钉 S8 长跑），等用户定。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
