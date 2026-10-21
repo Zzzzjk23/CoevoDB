@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`，14:03 UTC 跑完；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-4；s19-deploy-5（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`，14:03 UTC 跑完；10-22 用户定 max 后 15:45 UTC 起跑 `e1-pilot-glm3`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-5；s19-deploy-6（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -158,6 +158,9 @@ GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inf
 
 用户看过上面的小测后说"用max挡，做一下两小时预实验"（PLAN §9 补充一条）。
 - 门槛 `NEW_PROFILE` 先改（d315831，同时加了配置 `grids/e1_pilot_glm3.json`）；codex 的 272c630 只把 6 处 medium 改成 max（`providers.py` 一处、S19 三个测试文件）。审查红旗：`ciao`（已知）与 2 处由 medium 改成 max 的断言，都无害；审查包在分支头上 pytest 1205 passed、3 skipped。合并 1bcc2fa 时 session/s19 没有新提交，代码与审查的分支头相同。归档 d42b077，worktree 已清理。
+- 部署 `s19-deploy-6`（e276440；与 `s19-deploy-5` 的代码只差 `providers.py` 一行）。部署前服务器检出里多了一个未跟踪的 `framework/c.csv`（15 字节，10-22 00:31 AEDT 生成），S19 的 `scope` 组因此不过。查明是 `e1-pilot-glm2` s9102 的 implementer 生成的建表语句 `COPY (…) TO 'c.csv'` 被 DuckDB 执行后写进了格进程的工作目录（见"S19 新发现"第 7 条）；不是用户的文件。把它挪进 `results/e1-pilot-glm2/stray-c.csv` 留证（没删），检出恢复干净，`scope` 通过；S19 的四个测试文件 135 passed，其余 11 组通过。
+- 起跑 `e1-pilot-glm3`（tmux 会话 `e1-glm3`，15:45:12 UTC 起，约 2.2 小时；`bash …/e1_pilot_glm.sh e1-pilot-glm3`）。结果 `results/e1-pilot-glm3/`，日志与看守日志同名。按用户的话不监控，只做一次起跑检查。
+- 起跑检查（约 5 分钟后，只看这一次）：网格、看守、两格都在，看守已发"开始看守"，检出干净。s9101 两次调用都 `ok`（prior 2214 个输出 token、31 秒；oracle_inventor 11300 个、162 秒），1 条实验；s9102 第一次 prior 失败（null 正文 `TypeError`，118 秒），还没有实验。慢在意料之中，失败率与截断要等跑完再算。
 
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
@@ -1809,6 +1812,7 @@ S13 处理与新发现（2026-10-19）：
   4. **`full` 的吞吐受 LLM 延迟限制**：每格 2 小时里有 85–115 分钟在等 LLM，执行数只有同种子 `nollm` 的 4%–26%。24 小时的正式格里，"每小时家族数"会把这个差别算进去，报告里要同时给"每千次执行"。
   5. **（已解决：`s19-retry`，传输层退避重试 429）OpenRouter 会回 429（限流），网关不重试**（2026-10-21 复测时遇到一次）：`glm-flash` 只用 Open Inference 一个提供商、不回退，网关把 429 当成一次失败的调用，角色随即放弃（`_STOP` 含 `error`）。E1 并发 8 时几格的 `full` 同时调用，可能频繁被限流，LLM 臂会悄悄变成少用 LLM 的运行；看守会对连续 5 次失败（cause `rate`）报警，但调用本身丢了。可选的修法：网关遇到 429 按退避重试几次（改 `roles/gateway.py` 或 `transport.py`），要用户定。
   6. **`grid status` 把在跑的格显示成 `failed`**（2026-10-21 起跑 `e1-pilot-glm` 时看到）：`_cell_state` 只认 `cell.json`，格还没写 `cell.json` 就算 `failed`，没有"在跑"这个状态。只是显示问题，网格本身照常跑；看是否真的失败要看格进程是否还在、格日志与 `cell.json`。要不要加"running"状态（改 `experiments/grid.py`，要重钉 S8 长跑），等用户定。
+  7. **实验里的 SQL 能在服务器的代码检出里写文件**（2026-10-22 部署时发现）：`e1-pilot-glm2` s9102 的 implementer（GLM）给的建表语句里有 `COPY (SELECT …) TO 'c.csv' (FORMAT CSV, HEADER)`，查询再用 `read_csv('c.csv')` 读回；DuckDB 照做，文件落在格进程的工作目录，也就是服务器检出的 `framework/`。后果：检出变脏（S19 `scope` 不过、SERVER.md 要求 `git status` 为空）；同时跑的格共用这个目录，同名文件会互相覆盖、读到别格写的内容，结果不再只由种子决定；相对路径可以写到检出里的任何地方（例如覆盖仓库文件）。`side_effecting_statement` 只拦了查询里的一部分写操作，没拦建表语句里的 `COPY … TO`。DeepSeek 时没见到，但机制相同。可选的修法：每格以自己的格目录为工作目录起子进程（改 `experiments/grid.py`，要重钉 S8 长跑）；或在 DuckDB 连接上关掉外部文件访问、或拦下 `COPY … TO` 与写文件的函数（改 harness，冻结，要用户同意）。E1 正式 6 格同时跑 3 天之前要用户定。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
