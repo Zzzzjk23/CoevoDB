@@ -9,16 +9,18 @@
     "CVE_WALL_TIMEOUT_S": 120.0,
     "QUERY_TIMEOUT_S": 10.0
   },
-  "created_at": "2026-10-15T10:05:44.523458+00:00",
+  "created_at": "2026-10-21T14:14:03.876004+00:00",
   "environment": {
     "engines": {
       "datafusion": "54.0.0",
       "duckdb": "1.5.5",
+      "postgres": "16.15",
       "sqlite": "3.51.0"
     },
     "old_engines": {
       "datafusion": "50.0.0",
-      "duckdb": "1.1.3"
+      "duckdb": "1.1.3",
+      "postgres": "15.19"
     },
     "packages": {
       "datafusion": "54.0.0",
@@ -33,7 +35,7 @@
       "postgres": "16.15"
     }
   },
-  "git_commit": "476c23ce9f39ead59eb977fa11289d52d3975913",
+  "git_commit": "d0aa9eca49c3d186427f5d84cf0a0c17583f7103",
   "harness": {
     "algorithm": "sha256",
     "files": {
@@ -58,39 +60,40 @@
       "surprise/harness/constants.py": "6c0f5743c7de342a135f477745b9683a98260cbc464be2abc323678fb146eab6",
       "surprise/harness/contracts.py": "08a68417d2faaa508a6865a021f9979855e06aac70dcc34333461ef4377d1aac",
       "surprise/harness/cve/__init__.py": "889224fc33ffa3f0abb48021eac5914e5c039705674cb26f0534e6d6ea193817",
-      "surprise/harness/cve/certify.py": "278a48d0dc06ced9a6d0abb4fc1e603166473d1d1ee191f3fdaf236255794b1a",
+      "surprise/harness/cve/certify.py": "6e805cfdeec54beebfce191aac715926bc2b814197a9eb02dbf8418b5acd1f22",
       "surprise/harness/cve/criterion.py": "f43cc5f6502709f3c2b6ab68b7fa71ead6ee005869e0f64712f76cd8f0ae10d3",
       "surprise/harness/cve/hypothesis.py": "62081d186579a3261439cf60d181a21c4973b6bcad74853c9cca17a151346422",
       "surprise/harness/cve/isolate.py": "24488c0503d0a14f684c4bc6ec221740747f8430b491bb672c93547fc30e1d01",
       "surprise/harness/cve/premise.py": "2d326c39e5753f4b807dba54acccd9d6c453a720ab261033a05efee8e24ecd8b",
       "surprise/harness/cve/session.py": "1443bcdff275a45320de982c725a1c27ab87442e43cfdc4ab5e904f774f1fe45",
       "surprise/harness/cve/shape.py": "87722c617dcf3d9980dc762843745655328b2326cfd58842955e419b97b39b06",
-      "surprise/harness/cve/tier3.py": "9f19e1d6d813cc49f7d64ab2439ec1ca6dfa32401b2e98f7afc1ab1b201c4636",
+      "surprise/harness/cve/tier3.py": "4f04840fe4072fe3b0b63244f30412d31e87fa3778af5001a7663481448eea4d",
       "surprise/harness/cve/worker.py": "a3d386daa014a8f60d5958c8829de85b9246c39413677ae9abb3583d1afc4984",
       "surprise/harness/evaluate.py": "4b79c2d3d9beb96f456abf62057e7aeba670e2f342d1bcf9541ce1f9cb76ec47",
       "surprise/harness/ledger.py": "a83ab0b0b29311eb11c58ad3ab4f98c1b7ca5e36cf7893855adff7d7c4c2ca53",
-      "surprise/harness/manifest.py": "185d48fde04ed1745c5d785ec4db6464a6a5df1df4f09ccfe992875e96a348cd",
+      "surprise/harness/manifest.py": "f835eb4d2cc8fd9be9480bed6ad1178f60a0e854eeeca7b1f3efeac193760e12",
       "surprise/harness/oracles/__init__.py": "d591c34dc17f9bc69f459bde719db9ef5e8aaadc7270fc4b6bebfe37e6121ffd",
       "surprise/harness/oracles/common.py": "2d8fea41fead99c5629e04c8cd49ef5f3a9efe90fc4064154090af344cc11ee5",
       "surprise/harness/oracles/cross_dbms.py": "df29d36920b0b455463e1577499c3736f02337a957fefc72e4e21707c9775569",
       "surprise/harness/oracles/equivalent_query.py": "af49a1c521e24dd848b3efc7ec0e5312ec0338664a3ba577f8aa588950a4a7ff",
       "surprise/harness/oracles/forms.py": "8762527f5010f30fe8a7bd544078865f91481854769c028c63a9d201661feb69",
-      "surprise/harness/oracles/index_presence.py": "b7451c4651842c4b4a813f7a73114cad6eb960200df29fe020a3cefb777b09a2",
+      "surprise/harness/oracles/index_presence.py": "caff69bb00e4aeeb5cf7d2ba685c8ebd0b9a145424da25caca987a60063b488c",
       "surprise/harness/oracles/norec.py": "d0c0d9bf25847ed0ea7dbd0c84cd6329e62bcda6584b45178e443f7a13211197",
       "surprise/harness/oracles/pg_reference.py": "128de61d36c73bc792da16762cf20f6240e675a7160c6edb19ef1c933141bded",
+      "surprise/harness/oracles/pg_target.py": "c630db6533e8f24da15d0f874e62c2a74ac2efffadf4a35435e8de7c4dbf0697",
       "surprise/harness/oracles/plan_variant.py": "8fe229204b9ac67ed22c2b59c9b37848a3ea12fe129df0749d7d82403f7cd77a",
-      "surprise/harness/oracles/registry.py": "eeca9eb11f9e5a26c9f642b65bad17f81ac5b576b4a2f3acfd6c73d2cc8c22a6",
+      "surprise/harness/oracles/registry.py": "7fb70c397863b3bb4bfb94d15a42c0aec73cf8b388a7c7369d948c4e1dfeb6fe",
       "surprise/harness/oracles/rewrites.py": "3229fca604c40e1f9669f0639ddfb0714fe5061af047fc000b5f19558ba8c0da",
       "surprise/harness/oracles/sound.py": "0b078d9c3aee4d704075602aceb628439ea27f404a831eac67771077b781f12c",
       "surprise/harness/oracles/tlp.py": "f2dc9db9a151ca293b741a9c4ce3c9b252c354e9b1ca1dd1bb7320255def9965",
-      "surprise/harness/oracles/version_differential.py": "2cb0f5e0cb8c65ff725d3f16c4d4e77c8a0f72118d5e357ce25cbedb4b66d099",
+      "surprise/harness/oracles/version_differential.py": "b9c9a55d3a3d2557439ef919824c3a387f479c8e6917676dc24c1227e9bde1a7",
       "surprise/harness/oracles/version_worker.py": "689826e6e77d2e6d7bacbc2c20b416cb64f9420e71a044f78ea070f3a60f837d",
       "targets/datafusion_runner.py": "69c3172034ad6675f649d1db5e31cc90aa85a78876f5bf7845dec3e542eea047",
       "targets/duckdb_runner.py": "94047ec60dc7f4984c7e756ed1ed67b04b1a27234be765eb9304b3cabb35e5b9",
       "targets/sqlite_runner.py": "1072b95dc055520391aa06b64b0e1476815eefcc229636ae460f586fe3e201f2"
     },
-    "hash": "98b70d9e81fced1606a03b02e9db5ee574ecd7b8121f786c88f8380a333c12dc"
+    "hash": "80b92846bce195dad4696ba94b3defae559bd5f0a93c7cacf2b193c9c2c0ccea"
   },
-  "run_id": "s10-refreeze",
+  "run_id": "s16-refreeze",
   "schema": 1
 }

@@ -38,13 +38,13 @@
 
 | 包号 | 目标 | 允许路径（摘要） | 依赖 | 状态 |
 |---|---|---|---|---|
-| s16-core | 每格 PG 实例管理；harness 的 PG 目标 runner；registry 认 `postgres` 为目标 | `experiments/pg_instance.py`、`harness/oracles/pg_target.py`、`harness/oracles/registry.py`、新测试 | — | 已派发 |
+| s16-core | 每格 PG 实例管理；harness 的 PG 目标 runner；registry 认 `postgres` 为目标 | `experiments/pg_instance.py`、`harness/oracles/pg_target.py`、`harness/oracles/registry.py`、新测试 | — | 已合并（72c8216；返工 1 轮：没配实例时工厂抛 ValueError、close 不抛、崩溃恢复期重连） |
 | s16-roles | （推翻：说明要求改 `roles/constants.py` 的 `SOURCE_DIRS`，与现有测试和 S09 门槛写死的两个引擎冲突，执行者如实停下） | — | — | 推翻 |
-| s16-roles-b | LLM 角色读可选的 PG 源码检出（`readers_for(engines)`，`roles/constants.py` 不动）、prior 只读 16.x 发布说明、conjecturer 的 GUC→源码表、implementer 方言提示 | `roles/`（不含 `constants.py`） | — | 已派发 |
-| s16-oracles | Index presence 原生（旧 `IndexVariantOracle`）、Version differential 连 15.19、CVE 的单线程开关与版本梯、manifest 的 PG 版本 | `harness/oracles/index_presence.py`、`version_differential.py`、`harness/cve/`、`harness/manifest.py`、新测试 | s16-core | 待派发 |
-| s16-replay | §8 回放工具 | `metrics/replay.py`、新测试 | — | 已派发 |
-| s16-loop | φ 计划层的 PG 分支、Hunter 对 PG 开 Index presence、主循环 / pure_llm 自起实例、网格清理残留实例、报告与召回认 PG | `features/`、`hunter/`、`experiments/`、`baselines/pure_llm.py`、`metrics/`、新测试 | s16-oracles | 待派发 |
-| s16-sqlancer | SQLancer 臂的 PG 模式 | `baselines/sqlancer_run.py`、新测试 | s16-core | 待派发 |
+| s16-roles-b | LLM 角色读可选的 PG 源码检出（`readers_for(engines)`，`roles/constants.py` 不动）、prior 只读 16.x 发布说明、conjecturer 的 GUC→源码表、implementer 方言提示 | `roles/`（不含 `constants.py`） | — | 已合并（19cb4e6，一次通过） |
+| s16-oracles | Index presence 原生（旧 `IndexVariantOracle`）、Version differential 连 15.19、CVE 的单线程开关与版本梯、manifest 的 PG 版本 | `harness/oracles/index_presence.py`、`version_differential.py`、`harness/cve/`、`harness/manifest.py`、新测试 | s16-core | 已合并（ea7c02a，一次通过；两处失败是门槛期望写错，已按实测改正） |
+| s16-replay | §8 回放工具 | `metrics/replay.py`、新测试 | — | 已合并（09e3471，一次通过） |
+| s16-loop | φ 计划层的 PG 分支、Hunter 对 PG 开 Index presence、主循环 / pure_llm 自起实例、网格清理残留实例、报告与召回认 PG | `features/`、`hunter/`、`experiments/`、`baselines/pure_llm.py`、`metrics/`、新测试 | s16-oracles | 已派发 |
+| s16-sqlancer | SQLancer 臂的 PG 模式 | `baselines/sqlancer_run.py`、新测试 | s16-core | 已合并（e319097，一次通过；网格实跑等 s16-loop） |
 
 ## 暂停中：S19（E1 DuckDB 主对比，2026-10-20 开始）
 
