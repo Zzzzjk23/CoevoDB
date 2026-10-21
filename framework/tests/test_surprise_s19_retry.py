@@ -1,4 +1,4 @@
-"""HTTP 429 backoff stays inside one accounted call; all requests and waits are offline."""
+"""HTTP 429/503 backoff stays inside one accounted call; requests and waits are offline."""
 
 from __future__ import annotations
 
@@ -17,10 +17,19 @@ from surprise.roles.gateway import Gateway, TransportError
 from surprise.roles.transport import DeepSeekTransport
 
 MODEL = "z-ai/glm-5.3-flash"
+PROVIDERS = ["sail-research/fp4", "open-inference/fp4", "sail-research/us"]
 ANSWER = '{"prediction": "retry succeeded"}'
 RETRY_LINE = (
-    "surprise.roles.transport: HTTP 429 for role {role}, model {model}; "
+    "surprise.roles.transport: HTTP {status} for role {role}, model {model}; "
     "retry {attempt}/{retries} in {wait:g} s"
+)
+RETRY_LINE_VIA = (
+    "surprise.roles.transport: HTTP {status} for role {role}, model {model} via {provider}; "
+    "retry {attempt}/{retries} in {wait:g} s"
+)
+SWITCH_LINE = (
+    "surprise.roles.transport: HTTP {status} for role {role}, model {model} via {provider}; "
+    "retries used up, switching to {next}"
 )
 
 
@@ -71,10 +80,21 @@ def _complete(client, model=MODEL, role="implementer"):
                            max_tokens=100, role=role)
 
 
-def _lines(waits, *, model=MODEL, role="implementer", retries=None):
-    return [RETRY_LINE.format(role=role, model=model, attempt=i,
+def _lines(waits, *, model=MODEL, role="implementer", retries=None, status=429, provider=PROVIDERS[0]):
+    template = RETRY_LINE_VIA if model == MODEL else RETRY_LINE
+    return [template.format(status=status, role=role, model=model, provider=provider, attempt=i,
                               retries=len(waits) if retries is None else retries, wait=wait)
             for i, wait in enumerate(waits, 1)]
+
+
+def _exhausted_lines(waits):
+    lines = []
+    for index, provider in enumerate(PROVIDERS):
+        lines.extend(_lines(waits, provider=provider))
+        if index + 1 < len(PROVIDERS):
+            lines.append(SWITCH_LINE.format(status=429, role="implementer", model=MODEL,
+                                          provider=provider, next=PROVIDERS[index + 1]))
+    return lines
 
 
 def _event(wire, status, retries):
@@ -103,15 +123,16 @@ def test_wait_configuration_is_detached_float_tuple(make_transport):
 
 
 @pytest.mark.parametrize("model", [MODEL, "deepseek-flash", "deepseek-v4-pro"])
-def test_two_rate_limits_then_success_keep_request_and_record_once(wire, make_transport, model):
-    wire.queue = [429, 429, 200]
+@pytest.mark.parametrize("status", [429, 503])
+def test_two_rate_limits_then_success_keep_request_and_record_once(wire, make_transport, model, status):
+    wire.queue = [status, status, 200]
     stderr = io.StringIO()
 
     def sleep(wait):
         # The diagnostic must already be written when the wait starts.
         wire.sleeps.append(wait)
         assert stderr.getvalue().splitlines() == _lines(
-            wire.sleeps, model=model, retries=len(RATE_LIMIT_WAITS_S))
+            wire.sleeps, model=model, retries=len(RATE_LIMIT_WAITS_S), status=status)
 
     client = make_transport(sleep=sleep)
     with contextlib.redirect_stderr(stderr):
@@ -122,8 +143,8 @@ def test_two_rate_limits_then_success_keep_request_and_record_once(wire, make_tr
     expected = {"model": model, "messages": [{"role": "user", "content": "prompt"}],
                 "temperature": 0.2, "max_tokens": 100}
     if model == MODEL:
-        expected.update(provider={"only": ["open-inference/fp4"], "allow_fallbacks": False},
-                        reasoning={"effort": "low"})
+        expected.update(reasoning={"effort": "low"},
+                        provider={"only": [PROVIDERS[0]], "allow_fallbacks": False})
         url = "https://openrouter.ai/api/v1/chat/completions"
     else:
         url = "https://api.deepseek.com/v1/chat/completions"
@@ -143,17 +164,18 @@ def test_exhausted_rate_limits_keep_error_and_actual_retry_count(wire, make_tran
     with pytest.raises(TransportError, match="^HTTPStatusError 429$"):
         _complete(client)
     expected = RATE_LIMIT_WAITS_S if waits is None else list(waits)
-    assert len(wire.requests) == len(expected) + 1
-    assert wire.sleeps == expected
+    attempts = len(PROVIDERS) * (len(expected) + 1)
+    assert len(wire.requests) == attempts
+    assert wire.sleeps == expected * len(PROVIDERS)
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err.splitlines() == _lines(expected)
+    assert captured.err.splitlines() == _exhausted_lines(expected)
     assert "s19-offline-credential" not in captured.err
     assert ANSWER not in captured.err
-    _event(wire, "error", len(expected))
+    _event(wire, "error", attempts - 1)
 
 
-@pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 500, 502, 503])
+@pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 500, 502])
 def test_other_http_statuses_are_not_retried(wire, make_transport, capsys, status):
     wire.status = status
     with pytest.raises(TransportError, match=f"^HTTPStatusError {status}$"):
@@ -186,8 +208,8 @@ def test_other_failures_are_not_retried(wire, make_transport, capsys, kind, reas
 
 
 def test_non_rate_error_after_retry_stops_and_records_retries(wire, make_transport, capsys):
-    wire.queue = [429, 503, 200]
-    with pytest.raises(TransportError, match="^HTTPStatusError 503$"):
+    wire.queue = [429, 402, 200]
+    with pytest.raises(TransportError, match="^HTTPStatusError 402$"):
         _complete(make_transport())
     assert len(wire.requests) == 2
     assert wire.sleeps == [10.0]
@@ -213,7 +235,7 @@ def test_retry_gets_full_deadline_after_wait(wire, make_transport, monkeypatch):
 
 @pytest.mark.parametrize("exhausted", [False, True])
 def test_gateway_counts_one_call_row_and_cap_unit(wire, make_transport, tmp_path, exhausted):
-    wire.queue = [429] * (5 if exhausted else 2)
+    wire.queue = [429] * (15 if exhausted else 2)
     path = tmp_path / "calls.jsonl"
     gateway = Gateway(cache_dir=tmp_path / "cache", ledger_path=path, max_calls=1,
                       tier="glm-flash", transport=make_transport())
@@ -227,10 +249,10 @@ def test_gateway_counts_one_call_row_and_cap_unit(wire, make_transport, tmp_path
     assert gateway.network_calls == gateway.totals()["network"] == 1
     totals = gateway.totals()["by_role"]["implementer"]
     assert (totals["calls"], totals["network"]) == (1, 1)
-    assert len(wire.requests) == (5 if exhausted else 3)
-    _event(wire, "error" if exhausted else "ok", 4 if exhausted else 2)
+    assert len(wire.requests) == (15 if exhausted else 3)
+    _event(wire, "error" if exhausted else "ok", 14 if exhausted else 2)
     second = gateway.call("implementer", "different prompt", tier="fast", seed=1)
     assert second.status == "blocked"
     assert gateway.network_calls == 1
-    assert len(wire.requests) == (5 if exhausted else 3)
+    assert len(wire.requests) == (15 if exhausted else 3)
     assert len(wire.ledger._events) == 1

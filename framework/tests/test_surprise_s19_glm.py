@@ -23,8 +23,8 @@ MODEL = "z-ai/glm-5.3-flash"
 PROFILE = {
     "model": MODEL,
     "base_url": "https://openrouter.ai/api/v1",
+    "providers": ["sail-research/fp4", "open-inference/fp4", "sail-research/us"],
     "body": {
-        "provider": {"only": ["open-inference/fp4"], "allow_fallbacks": False},
         "reasoning": {"effort": "low"},
     },
 }
@@ -82,6 +82,7 @@ def test_transport_routes_mixed_models_and_preserves_deepseek_bytes(wire):
                         "temperature": 0.2, "max_tokens": 100}
             if model == MODEL:
                 expected.update(PROFILE["body"])
+                expected["provider"] = {"only": [PROFILE["providers"][0]], "allow_fallbacks": False}
                 url = "https://openrouter.ai/api/v1/chat/completions"
             else:
                 url = "https://api.deepseek.com/v1/chat/completions"
@@ -147,7 +148,7 @@ def test_gateway_separates_cache_and_records_forced_tier(tmp_path, wire):
     assert old.manifest() == {"tiers": dict(TIERS), "max_calls": old.max_calls, "constants": as_dict()}
     assert Gateway(cache_dir=cache, tier="strong").manifest() == {**old.manifest(), "tier": "strong"}
     # A caller editing its manifest must not change a later request's endpoint.
-    glm.manifest()["endpoint"]["body"]["provider"]["only"].clear()
+    glm.manifest()["endpoint"]["providers"].clear()
     assert glm.manifest()["endpoint"] == PROFILE
 
 
@@ -212,12 +213,15 @@ def test_prices_are_dated_and_cost_glm_tokens():
     path = Path(__file__).resolve().parents[1] / "surprise/metrics/data/prices_openrouter.json"
     prices = json.loads(path.read_text(encoding="utf-8"))
     assert prices == {
-        "retrieved": "2026-10-20",
+        "retrieved": "2026-10-21",
         "source": "https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints",
         "unit": "USD per 1M tokens",
-        "models": {MODEL: {"provider": "open-inference/fp4", "input": 0.037476,
-                           "output": 0.16, "input_cache_read": 0.006}},
-        "grid": {MODEL: {"input": 0.037476, "output": 0.16}},
+        "models": {MODEL: {"providers": {
+            "sail-research/fp4": {"input": 0.09, "output": 0.15, "input_cache_read": 0.0261},
+            "open-inference/fp4": {"input": 0.041191, "output": 0.12, "input_cache_read": 0.00375},
+            "sail-research/us": {"input": 0.09, "output": 0.15, "input_cache_read": 0.0261},
+        }}},
+        "grid": {MODEL: {"input": 0.09, "output": 0.15}},
     }
     assert _usd([{"model": MODEL, "input_tokens": 1_000_000, "output_tokens": 2_000_000}],
-                prices["grid"]) == pytest.approx(0.357476)
+                prices["grid"]) == pytest.approx(0.39)

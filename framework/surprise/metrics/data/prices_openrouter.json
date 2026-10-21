@@ -1,16 +1,17 @@
 {
-  "retrieved": "2026-10-20",
+  "retrieved": "2026-10-21",
   "source": "https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints",
   "unit": "USD per 1M tokens",
   "models": {
     "z-ai/glm-5.3-flash": {
-      "provider": "open-inference/fp4",
-      "input": 0.037476,
-      "output": 0.16,
-      "input_cache_read": 0.006
+      "providers": {
+        "sail-research/fp4": {"input": 0.09, "output": 0.15, "input_cache_read": 0.0261},
+        "open-inference/fp4": {"input": 0.041191, "output": 0.12, "input_cache_read": 0.00375},
+        "sail-research/us": {"input": 0.09, "output": 0.15, "input_cache_read": 0.0261}
+      }
     }
   },
   "grid": {
-    "z-ai/glm-5.3-flash": {"input": 0.037476, "output": 0.16}
+    "z-ai/glm-5.3-flash": {"input": 0.09, "output": 0.15}
   }
 }
