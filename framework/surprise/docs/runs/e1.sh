@@ -6,8 +6,9 @@
 # Output: ~/CoevoDB/framework/results/e1/, results/e1.log, results/e1.notify.log
 set -u
 PY=~/CoevoDB/.venv/bin/python
+fw=~/CoevoDB/framework
 name=e1
-cd ~/CoevoDB/framework || exit 2
+cd "$fw" || exit 2
 if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
   echo "DEEPSEEK_API_KEY is not set" >&2
   exit 2
@@ -15,6 +16,14 @@ fi
 if [ -z "${PUSHPLUS_TOKEN:-}" ]; then
   echo "PUSHPLUS_TOKEN is not set: the watcher will not push" >&2
 fi
+# Cells run with results/$name.work as their working directory, never the code checkout: files that experiment
+# SQL writes there (COPY ... TO 'x.csv') stay out of git. Its results/ points back to framework/results, so every
+# relative path in the config and on the command line means the same as from framework/ (HANDOFF, S19 finding 7).
+work=results/$name.work
+mkdir -p "$work"
+ln -sfn .. "$work/results"
+export PYTHONPATH="$fw${PYTHONPATH:+:$PYTHONPATH}"
+cd "$work" || exit 2
 echo "deployed: $(git -C ~/CoevoDB describe --tags --exact-match 2>/dev/null || echo untagged)" | tee -a results/$name.log
 echo "== $name start $(date -u +%FT%TZ)" | tee -a results/$name.log
 # The watcher waits for the grid to write grid.json, then follows the grid process and stops with it.
@@ -33,7 +42,7 @@ echo "== $name start $(date -u +%FT%TZ)" | tee -a results/$name.log
   fi
   exec $PY -m surprise.notify.watch results/$name --pid "$pid" >> results/$name.notify.log 2>&1
 ) &
-$PY -m surprise.experiments.grid run surprise/docs/grids/e1.json --out results/$name 2>&1 | tee -a results/$name.log
+$PY -m surprise.experiments.grid run "$fw/surprise/docs/grids/e1.json" --out results/$name 2>&1 | tee -a results/$name.log
 $PY -m surprise.experiments.grid status results/$name 2>&1 | tee -a results/$name.log
 $PY -m surprise.metrics.report results/$name 2>&1 | tee -a results/$name.log
 wait

@@ -104,11 +104,11 @@ def test_profiles_and_retry_manifest_are_detached():
     for get_profile, arg in ((endpoint_for_tier, "glm-flash"), (endpoint_for_model, MODEL)):
         profile = get_profile(arg)
         assert profile["providers"] == PROVIDERS
-        assert profile["body"] == {"reasoning": {"effort": "medium"}}
+        assert profile["body"] == {"reasoning": {"effort": "max"}}
         profile["providers"].clear()
         profile["body"]["reasoning"]["effort"] = "high"
         assert get_profile(arg)["providers"] == PROVIDERS
-        assert get_profile(arg)["body"] == {"reasoning": {"effort": "medium"}}
+        assert get_profile(arg)["body"] == {"reasoning": {"effort": "max"}}
 
 
 def test_first_provider_503_then_success(wire, make_transport, capsys):
@@ -136,7 +136,7 @@ def test_second_provider_restarts_waits_and_next_call_starts_at_first(wire, make
     ]
     for request, provider in zip(wire.requests, _asked(wire)):
         expected = {"model": MODEL, "messages": [{"role": "user", "content": "prompt"}],
-                    "temperature": 0.2, "max_tokens": 100, "reasoning": {"effort": "medium"},
+                    "temperature": 0.2, "max_tokens": 100, "reasoning": {"effort": "max"},
                     "provider": {"only": [provider], "allow_fallbacks": False}}
         assert request.content == json.dumps(expected, separators=(",", ":")).encode()
     _event(wire, "ok", 6)

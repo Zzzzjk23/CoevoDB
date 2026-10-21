@@ -23,8 +23,10 @@ NEW_PROFILE = {
         # The endpoint refuses to disable reasoning (enabled false / effort none: HTTP 400); with the
         # default effort the implementer and conjecturer spent all of max_tokens on reasoning (that was
         # open-inference/fp4). Later the same day, after sail-research/fp4 reasoned 1-269 tokens at low,
-        # the user chose medium ("改成medium").
-        "reasoning": {"effort": "medium"},
+        # the user chose medium ("改成medium"). The model supports only low, high and max (OpenRouter
+        # /api/v1/models; default max, mandatory), so medium acted as low. 2026-10-22: max, the only
+        # level whose reasoning on sail-research/fp4 came near deepseek-flash's ("用max挡").
+        "reasoning": {"effort": "max"},
     },
 }
 NEW_URL = "https://openrouter.ai/api/v1/chat/completions"

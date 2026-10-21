@@ -141,6 +141,8 @@ $PY -m surprise.experiments.grid run <配置.json> --out results/<名字> 2>&1 |
 
 不带 LLM 的格，子进程里没有密钥（网格从子进程环境里去掉 `DEEPSEEK_API_KEY`）。
 
+实验里的 SQL 可能在工作目录里写文件（2026-10-22 见过 LLM 生成的 `COPY … TO 'c.csv'`）。所以正式运行不要在 `framework/` 下直接起网格，照 `docs/runs/e1.sh` 的做法：建 `results/<名字>.work/`，在里面 `ln -sfn .. results`，`export PYTHONPATH=~/CoevoDB/framework`，进这个目录再起网格（配置用绝对路径，`--out results/<名字>` 不变）。这样写出的文件留在 `results/` 下，代码检出保持干净。删这个目录用 `rm -rf`（不会顺着链接删到 `results`）。
+
 密钥与 token 存在服务器上（2026-10-21，用户指示）：`~/.config/coevodb/llm.env` 导出 `DEEPSEEK_API_KEY`（现在是 OpenRouter 的密钥，73 个字符），`~/.config/coevodb/pushplus.env` 导出 `PUSHPLUS_TOKEN`（32 个字符）；文件 600、目录 700，只有本账号能读。`~/.bashrc` 末尾两行加载它们，所以新开的交互 shell 与 tmux 会话里都有这两个变量，不用再 `read -s`；在这之前开的 tmux 会话里没有，要新开或 `. ~/.bashrc`。核对只看长度：`echo ${#DEEPSEEK_API_KEY} ${#PUSHPLUS_TOKEN}`。不要把值写进 `~/.bashrc`（它是 644，同机的人都能读）、命令行参数或日志；不要 `cat` 这两个文件。换密钥时由编排者从本机的用户级环境变量经 ssh 标准输入重写对应文件。服务器上的 shell 都带着密钥，所以测试照 CLAUDE.md 只跑 `pytest -q testing tests`（`framework/test_api.py` 在有密钥时会真的发请求）。
 
 提醒（`s19-notify`，2026-10-21；部署了含它的 tag 之后才有）：网格起来之后，在同一个 tmux 会话里开第二个窗口（`Ctrl-b c`）起看守。它只读 `results/<名字>`，每 60 秒查一次，有事就经 pushplus 推给用户；网格结束（每格都有 `cell.json`）或网格进程退出后自己停：

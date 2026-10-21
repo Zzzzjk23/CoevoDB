@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-4；s19-deploy-5（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`，14:03 UTC 跑完；10-22 用户定 max 后 15:45 UTC 起跑 `e1-pilot-glm3`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-5；s19-deploy-6（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
 | S16 | PostgreSQL 目标（解冻 harness 第一批） | **暂停**（本机代码全部合并；用户 2026-10-22 指示：S8 长跑跑完后停下，重钉与收尾等用户说；服务器部署与回放检查另等用户说） | — | S16 15 组在会话分支上分别通过；收尾复跑未做 |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
@@ -173,6 +173,33 @@ GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inf
 - 部署 `s19-deploy-5`（77de03b；与 `s19-deploy-4` 的代码只差 `providers.py` 一行）。服务器上去掉密钥跑 S19 的四个测试文件 135 passed、`gates.s19` 12/12（代码只差一行，没有重跑全部测试）。
 - 重跑 `e1-pilot-glm2`（tmux 会话 `e1-glm2`，12:01:11 UTC 起，约 2.2 小时；`bash …/e1_pilot_glm.sh e1-pilot-glm2`）。结果 `results/e1-pilot-glm2/`，日志 `results/e1-pilot-glm2.log`，看守日志 `results/e1-pilot-glm2.notify.log`。按用户的话不监控。
 - 起跑检查（约 5 分钟后，只看这一次）：两格与看守都在，看守已发"开始看守"。头两分钟两格都卡在第一次 prior 调用上（137 秒、141 秒，进程空闲、连着 OpenRouter）；之后正常推进。到 12:06 两格共 9 次调用：7 次 `ok`，全部 `sail-research/fp4` 回答；2 次 prior 失败，原因 `TransportError: TypeError`（回复正文为 null，不重试也不切换），各用了 137 秒与 79 秒；有一次 prior 输出 4833 个 token（medium 下偶尔推理很长）。没有 429/503。样本还小，失败率要等跑完再算。
+- **跑完**（用户说"已经跑完了"；编排者只读核对，脚本经 ssh 标准输入交给服务器解释器）：14:03:20 UTC 结束，两格 `done`、没有被强杀（墙钟 7281 秒、7230 秒），看守推了"开始"与"网格已结束"两条，中间没有报警。
+  - 吞吐：实验数 1766（s9101）、2047（s9102）；DeepSeek 的 `full` 在 c8 是 1477、1002，在 c4 是 1243、263。
+  - LLM 调用 479、489 次（DeepSeek c8 272、242）；全部由 `sail-research/fp4` 回答，没有 503、没有切换服务商；429 两格各 1 次，重试后成功。等 LLM 的时间仍占 85–95 分钟（DeepSeek 85–115）；成功调用的延迟中位数 4–5 秒、p90 15–16 秒（DeepSeek 15–17、30–33 秒），最长 517 秒。
+  - 失败：null 正文（`TypeError`）5 + 3 次、不是 JSON（`no_json`）2 次，共 10/968 ≈ 1%；DeepSeek 时不是 JSON 的有 11%–15%。起跑时看到的 2/9 是开头的偶然。
+  - 花费（按第一家价格，上界）：每格约 $0.06（输入 33–38 万、输出 19–20 万 token）；DeepSeek 每格 $1.3–1.8。按此估算 E1 正式 5 个 `full` 格 × 24 小时约 $4。输出 token 只有 DeepSeek 的约 1/5（推理少）。
+  - 报告（`results/e1-pilot-glm2/report/`，n=2，只能看个大概）：`full` 家族数中位 6、每小时 2.98、每千次 3.20、首个家族 34.8 分钟、重复率 0.25；DeepSeek 的 `full` 在 c8 是 4.5、2.25、3.69、23.7 分钟，c4 是 4、1.99、9.21、26.1 分钟；`nollm` 在两次都是 6。猜想存活率 0.44、预测准确率 0.70。
+  - 与 DeepSeek `full` 逐格比（用户"对比一下这次GLM跑的full的结果和之前deepseek跑的full的结果"；DeepSeek 5 格：c8、c4 各两格完整，c1 的 s9101 第 113.3 分钟起欠费，比到 113 分钟为止）：家族数 GLM 7、5，DeepSeek 5、4、4、4、5；113 分钟时的执行数 GLM 1734、2028，DeepSeek 1461、981、1226、251、891（c1 只有它一格在跑，负载最轻，仍只有 GLM 的一半；`nollm` 在三种并发下都是 5000 以上，所以差别来自 LLM 延迟而不是 CPU）；首个家族 GLM 39、30 分钟，DeepSeek 10–41 分钟。所有格找到的都是同一组 7 个已知家族里的若干个（`nollm` 也一样，而且都在约 1 小时内找到 5–7 个）。LLM 方面：调用 479、489 对 242–346，解析失败 0.6%–1.5% 对 11%–15%，输出 token 约 1/5–1/7，花费 $0.06 对 $1.3–1.8；但猜想存活率 33%、55% 对 67%–86%，预测准确率 62%、78% 对 70%–92%（GLM 推理少，猜想多而准头差一些）。按家族来源算，两种模型的 LLM 车道（bet、implement、translate 等）在 2 小时内几乎都没有直接带来家族（只有 GLM s9101 的 implement 1 个）。n=2 对 5、每格 2 小时，统计上分不出差别。
+  - 结论：GLM（sail-research/fp4，medium）可以用于 E1 正式；并发 6 时同时跑的 `full` 格与这次一样是 2 个，限流压力相同。`s19-deploy-5` 已含 `e1.json` 与 `e1.sh`，起跑不用再部署。E1 正式等用户说。
+
+### GLM 的推理强度档位与小测（2026-10-22）
+
+- OpenRouter 的 `/api/v1/models` 对 `z-ai/glm-5.3-flash` 给的是 `reasoning: {mandatory: true, default_enabled: true, supported_efforts: [max, high, low], default_effort: max}`，没有 `supports_max_tokens`。所以只有 low、high、max 三档，不能关，默认是 max（上午 Open Inference 默认强度吃光 max_tokens 就是 max）。不支持的档位按文档映射到最近的一档：现在配置里的 `medium` 实测与 low 一样（见上一节小测），`e1-pilot-glm2` 实际大概率是 low。
+- 小测（用户"做小测，测low、high和max"；同样三条 prompt，进程内改档案，仓库不动，全部 `sail-research/fp4` 回答、`stop`、JSON 字段与 DeepSeek 相同）：
+  | 档 | prior 输出/推理 token，秒 | implementer | conjecturer |
+  |---|---|---|---|
+  | low | 90/13，5 | 166/35，2 | 674/227，34 |
+  | high | 185/95，4 | 428/275，14 | 2026/1400，74 |
+  | max | 3613/3542，109 | 4311/4129，49 | 12770/12055，165 |
+- 对照 DeepSeek 预实验 `full` 每次调用的平均输出（几乎都是推理）：prior 约 3900–4000，implementer 约 3500–4700，conjecturer 约 5900–7300 token，成功调用延迟中位约 16 秒。按推理量，只有 max 接近 DeepSeek（conjecturer 还多一倍，已用到 max_tokens 16000 的 80%）；但 max 每次 49–165 秒，比 DeepSeek 慢 3–10 倍。上午 Open Inference 在默认（max）下 implementer 与 conjecturer 吃光了 max_tokens，所以 max 下一旦切换到 Open Inference 很可能失败。每档每个角色只测了一次，波动大。要用哪档由用户定。
+
+### 推理强度改为 max，工作包 `s19-max`（2026-10-22，已合并），预实验 `e1-pilot-glm3`
+
+用户看过上面的小测后说"用max挡，做一下两小时预实验"（PLAN §9 补充一条）。
+- 门槛 `NEW_PROFILE` 先改（d315831，同时加了配置 `grids/e1_pilot_glm3.json`）；codex 的 272c630 只把 6 处 medium 改成 max（`providers.py` 一处、S19 三个测试文件）。审查红旗：`ciao`（已知）与 2 处由 medium 改成 max 的断言，都无害；审查包在分支头上 pytest 1205 passed、3 skipped。合并 1bcc2fa 时 session/s19 没有新提交，代码与审查的分支头相同。归档 d42b077，worktree 已清理。
+- 部署 `s19-deploy-6`（e276440；与 `s19-deploy-5` 的代码只差 `providers.py` 一行）。部署前服务器检出里多了一个未跟踪的 `framework/c.csv`（15 字节，10-22 00:31 AEDT 生成），S19 的 `scope` 组因此不过。查明是 `e1-pilot-glm2` s9102 的 implementer 生成的建表语句 `COPY (…) TO 'c.csv'` 被 DuckDB 执行后写进了格进程的工作目录（见"S19 新发现"第 7 条）；不是用户的文件。把它挪进 `results/e1-pilot-glm2/stray-c.csv` 留证（没删），检出恢复干净，`scope` 通过；S19 的四个测试文件 135 passed，其余 11 组通过。
+- 起跑 `e1-pilot-glm3`（tmux 会话 `e1-glm3`，15:45:12 UTC 起，约 2.2 小时；`bash …/e1_pilot_glm.sh e1-pilot-glm3`）。结果 `results/e1-pilot-glm3/`，日志与看守日志同名。按用户的话不监控，只做一次起跑检查。
+- 起跑检查（约 5 分钟后，只看这一次）：网格、看守、两格都在，看守已发"开始看守"，检出干净。s9101 两次调用都 `ok`（prior 2214 个输出 token、31 秒；oracle_inventor 11300 个、162 秒），1 条实验；s9102 第一次 prior 失败（null 正文 `TypeError`，118 秒），还没有实验。慢在意料之中，失败率与截断要等跑完再算。
 
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
@@ -1824,6 +1851,7 @@ S13 处理与新发现（2026-10-19）：
   4. **`full` 的吞吐受 LLM 延迟限制**：每格 2 小时里有 85–115 分钟在等 LLM，执行数只有同种子 `nollm` 的 4%–26%。24 小时的正式格里，"每小时家族数"会把这个差别算进去，报告里要同时给"每千次执行"。
   5. **（已解决：`s19-retry`，传输层退避重试 429）OpenRouter 会回 429（限流），网关不重试**（2026-10-21 复测时遇到一次）：`glm-flash` 只用 Open Inference 一个提供商、不回退，网关把 429 当成一次失败的调用，角色随即放弃（`_STOP` 含 `error`）。E1 并发 8 时几格的 `full` 同时调用，可能频繁被限流，LLM 臂会悄悄变成少用 LLM 的运行；看守会对连续 5 次失败（cause `rate`）报警，但调用本身丢了。可选的修法：网关遇到 429 按退避重试几次（改 `roles/gateway.py` 或 `transport.py`），要用户定。
   6. **`grid status` 把在跑的格显示成 `failed`**（2026-10-21 起跑 `e1-pilot-glm` 时看到）：`_cell_state` 只认 `cell.json`，格还没写 `cell.json` 就算 `failed`，没有"在跑"这个状态。只是显示问题，网格本身照常跑；看是否真的失败要看格进程是否还在、格日志与 `cell.json`。要不要加"running"状态（改 `experiments/grid.py`，要重钉 S8 长跑），等用户定。
+  7. **实验里的 SQL 能在服务器的代码检出里写文件**（2026-10-22 部署时发现）：`e1-pilot-glm2` s9102 的 implementer（GLM）给的建表语句里有 `COPY (SELECT …) TO 'c.csv' (FORMAT CSV, HEADER)`，查询再用 `read_csv('c.csv')` 读回；DuckDB 照做，文件落在格进程的工作目录，也就是服务器检出的 `framework/`。后果：检出变脏（S19 `scope` 不过、SERVER.md 要求 `git status` 为空）；同时跑的格共用这个目录，同名文件会互相覆盖、读到别格写的内容，结果不再只由种子决定；相对路径可以写到检出里的任何地方（例如覆盖仓库文件）。`side_effecting_statement` 只拦了查询里的一部分写操作，没拦建表语句里的 `COPY … TO`。DeepSeek 时没见到，但机制相同。可选的修法：每格以自己的格目录为工作目录起子进程（改 `experiments/grid.py`，要重钉 S8 长跑）；或在 DuckDB 连接上关掉外部文件访问、或拦下 `COPY … TO` 与写文件的函数（改 harness，冻结，要用户同意）。E1 正式 6 格同时跑 3 天之前要用户定。**处理（2026-10-22）**：用户问"怎么又要重跑，能不能不重跑"，选了不改代码的做法 A：启动脚本 `e1.sh`、`e1_pilot_glm.sh` 让网格以 `results/<名字>.work/` 为工作目录（里面 `results` 链接回 `framework/results`，`PYTHONPATH` 指向 `framework/`），写出的文件不再进检出；不改 harness 与 `experiments/`，不重钉、不回放，标签不变。本机用 1 分钟的 `nollm` 小网格从这样的目录跑过：格 `done`、结果落在 `framework/results/`、七类 oracle 都有 `pass`（版本差分找得到旧版环境）、git 状态不变。还剩的风险（同一次运行的各格共用这个目录、SQL 用 `../` 写到别处）留着，跑完清点。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
