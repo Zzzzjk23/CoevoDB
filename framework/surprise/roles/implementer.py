@@ -111,6 +111,11 @@ _HINTS: dict[str, str] = {
 _DIALECT = {
     "duckdb": "DuckDB SQL. MERGE, QUALIFY, ASOF JOIN, and EXCEPT ALL are available.",
     "datafusion": "DataFusion SQL. EXCEPT ALL, INTERSECT ALL, UNION ALL, and RIGHT JOIN are available.",
+    "postgres": (
+        "PostgreSQL 16 SQL supports :: casts, generate_series, LATERAL, FILTER, DISTINCT ON, and EXCEPT ALL; "
+        "use only operations available to a non-superuser, with no transaction control (BEGIN/COMMIT/SAVEPOINT), "
+        "search_path changes, or role changes."
+    ),
 }
 
 
