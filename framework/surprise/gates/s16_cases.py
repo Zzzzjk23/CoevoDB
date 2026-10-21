@@ -230,6 +230,39 @@ GRID_SEEDS = (7, 8)
 KNOWN_CASES = "known_pg_cases.json"
 PGF_KEY = "fix|postgres|enable_memoize"
 
+# ---- SQLancer's PostgreSQL mode ---------------------------------------------------------------------------
+
+# gates/s16_data/sqlancer: one real log from a 10-minute local run against 16.15 (SQLancer's own
+# UnsupportedOperationException, the only kind that run produced), three written in the same format.
+# Every log carries SQLancer's psql meta-commands and database statements, which the converter drops.
+SQLANCER_FIXTURES = {
+    "pg_norec_mismatch.log": {"kind": "mismatch", "sqlancer_oracle": "NOREC", "oracle": "norec", "converted": True,
+                              "database_version": "16.15"},
+    "pg_tlp_mismatch.log": {"kind": "mismatch", "sqlancer_oracle": "WHERE", "oracle": "tlp", "converted": True,
+                            "database_version": "16.15"},
+    "pg_unexpected_error.log": {"kind": "unexpected_error", "converted": False},
+    "pg_tool_error_unsupported.log": {"kind": "tool_error", "converted": False},
+}
+SQLANCER_CASES = {
+    "pg_norec_mismatch.log": {
+        "engine": "postgres",
+        "setup": ["CREATE TABLE t0(c0 INT)", "INSERT INTO t0(c0) VALUES(1)", "INSERT INTO t0(c0) VALUES(2)",
+                  "INSERT INTO t0(c0) VALUES(3)"],
+        "query": "SELECT * FROM t0",
+        "predicate": "((t0.c0)>(1))",
+    },
+    "pg_tlp_mismatch.log": {
+        "engine": "postgres",
+        "setup": ["CREATE TABLE t0(c0 TEXT)", "INSERT INTO t0(c0) VALUES('a')", "INSERT INTO t0(c0) VALUES(NULL)",
+                  "INSERT INTO t0(c0) VALUES('b')"],
+        "query": "SELECT t0.c0 FROM t0",
+        "predicate": "(t0.c0) IS NOT NULL",
+    },
+}
+SQLANCER_LIVE_MINUTES = 5.0
+SQLANCER_MIN_EXECUTIONS = 10_000  # one thread did about 200 queries per second locally
+PG_JDBC = "postgresql-42.5.1.jar"
+
 # ---- roles ----------------------------------------------------------------------------------------------
 
 PG_SOURCE_DIR = "postgresql-16.15"

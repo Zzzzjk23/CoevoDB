@@ -21,11 +21,12 @@ Groups (SESSIONS S16):
   loop       the main loop on postgres starts, uses and removes its own instances, or reuses
              exported DSNs; the Hunter offers native index presence
   grid       two PostgreSQL cells on their own instances; the report scores recall against PG-F
+  sqlancer   SQLancer's PostgreSQL mode: fixture logs classified and converted into PostgreSQL cases,
+             then a live cell through the grid with the instance password hidden
   refreeze   the harness changed only in the allowed files and is frozen again
   scope      changes since the base tag stay in scope
 
-The SQLancer group is added before its work package is dispatched. PostgreSQL binaries:
-COEVO_PG_BIN / COEVO_PG_OLD_BIN or the
+PostgreSQL binaries: COEVO_PG_BIN / COEVO_PG_OLD_BIN or the
 common checkout's .orch/pg16 and .orch/pg15 (see HANDOFF S16). Output is ASCII only.
 """
 
@@ -601,8 +602,10 @@ def check_replay() -> str:
     require(evidence.is_file(), f"the full replay record {evidence.name} is missing")
     full = json.loads(evidence.read_text(encoding="utf-8"))
     require(full.get("harness") == harness_hash()["hash"], "the recorded replay ran on a different harness")
-    require(full.get("sampled") == C.REPLAY_FULL and full.get("different") == [] and full.get("source", {}).get("run_dir")
-            == C.REPLAY_RUN, f"full replay: sampled {full.get('sampled')}, {len(full.get('different') or [])} different")
+    require(full.get("sampled") == C.REPLAY_FULL and full.get("different") == []
+            and full.get("source", {}).get("ledger_sha256") == C.REPLAY_LEDGER_SHA256,
+            f"full replay: sampled {full.get('sampled')}, {len(full.get('different') or [])} different, "
+            f"source {full.get('source')}")
     from surprise.harness.manifest import file_digest
 
     run_dir = FRAMEWORK / C.REPLAY_RUN
@@ -747,6 +750,75 @@ def check_grid() -> str:
     return f"two PostgreSQL cells done on their own instances (ports {sorted(ports)}); report with recall against PG-F"
 
 
+# ---- sqlancer -----------------------------------------------------------------------------------
+
+def check_sqlancer() -> str:
+    from surprise.harness.ledger import Ledger
+
+    P = pg_instance()
+    tmp = tmpdir("sqlancer")
+    logs = tmp / "logs"
+    logs.mkdir()
+    for name in C.SQLANCER_FIXTURES:
+        text = (DATA / "sqlancer" / name).read_text(encoding="utf-8").replace("\r\n", "\n")
+        (logs / name).write_text(text, encoding="utf-8", newline="\n")
+    out = tmp / "replay"
+    env = clean_env()
+    env.pop(C.TARGET_DSN_ENV, None)
+    env.pop(C.OLD_DSN_ENV, None)
+    proc = py(["-m", "surprise.baselines.sqlancer_run", "--out", str(out), "--seed", "7", "--engine", "postgres",
+               "--replay-logs", str(logs)], timeout=1800, env=env)
+    require(proc.returncode == 0, f"replay of the PostgreSQL SQLancer fixtures: {_ascii((proc.stdout + proc.stderr)[-800:])}")
+    rows = {Path(row["log"]).name: row for row in
+            (json.loads(line) for line in (out / "sqlancer" / "reports.jsonl").read_text(encoding="utf-8").splitlines() if line.strip())}
+    for name, spec in C.SQLANCER_FIXTURES.items():
+        row = rows.get(name)
+        require(row is not None, f"reports.jsonl has no line for {name}")
+        for key, value in spec.items():
+            require(row.get(key) == value, f"{name}: {key} is {row.get(key)!r}, expected {value!r}")
+    with Ledger(out / "ledger.sqlite") as ledger:
+        run_id = ledger.run_ids()[0]
+        records = list(ledger.records(run_id=run_id))
+        manifest = ledger.run_manifest(run_id)
+    require(manifest.get("baseline") == "sqlancer"
+            and (manifest.get("environment", {}).get("engines") or {}).get("postgres") == C.TARGET_VERSION,
+            f"replay manifest: baseline {manifest.get('baseline')!r}, engines {manifest.get('environment', {}).get('engines')}")
+    by_id = {record.record_id: record for record in records}
+    for name, want in C.SQLANCER_CASES.items():
+        record = by_id.get(rows[name].get("record_id"))
+        require(record is not None, f"{name}: no ledger record")
+        require(record.case.to_dict() == want, f"{name}: converted case {record.case.to_dict()}")
+        require(record.label.y == "pass" and record.label.invalid_reason != "harness_error",
+                f"{name}: a PostgreSQL case without a defect must pass, got {record.label.y}/{record.label.invalid_reason}")
+    require(P.stop_all(out) == [] and not (out / "pg" / "target" / "data").exists(), "the replay left an instance behind")
+
+    live = tmp / "live"
+    raw = {"schema": 1, "name": "s16-sqlancer", "budget": {"minutes": C.SQLANCER_LIVE_MINUTES}, "seeds": [7],
+           "arms": [{"name": "sqlancer", "kind": "sqlancer", "engine": "postgres", "run": True}]}
+    cfg = tmp / "live.json"
+    cfg.write_text(json.dumps(raw), encoding="utf-8")
+    proc = py(["-m", "surprise.experiments.grid", "run", str(cfg), "--out", str(live)],
+              timeout=C.SQLANCER_LIVE_MINUTES * 60 + 1800, env=env)
+    require(proc.returncode == 0, f"live SQLancer grid on postgres exited {proc.returncode}: {_ascii(proc.stderr[-600:])}")
+    cell = live / "cells" / "sqlancer" / "s7-r0"
+    info = json.loads((cell / "cell.json").read_text(encoding="utf-8"))
+    require(info.get("status") == "done" and info.get("killed") is False, f"live cell: {info.get('status')} {info.get('killed')}")
+    report = json.loads((cell / "report.json").read_text(encoding="utf-8"))
+    stats = report.get("sqlancer") or {}
+    require(report.get("status") == "budget_minutes", f"live status {report.get('status')!r}")
+    require(isinstance(report.get("executions"), int) and report["executions"] >= C.SQLANCER_MIN_EXECUTIONS,
+            f"SQLancer executed {report.get('executions')} queries on postgres")
+    require(C.PG_JDBC in (stats.get("jdbc") or []), f"JDBC drivers {stats.get('jdbc')}")
+    command = stats.get("command") or []
+    require("--password" in command and command[command.index("--password") + 1] == "<hidden>",
+            "the stored SQLancer command must hide the password")
+    require(P.stop_all(live) == [], "a PostgreSQL server under the SQLancer grid is still running")
+    proc = py(["-m", "surprise.metrics.report", str(live)], timeout=1800)
+    require(proc.returncode == 0, f"report on the SQLancer PostgreSQL grid: {_ascii(proc.stderr[-600:])}")
+    return (f"{len(C.SQLANCER_FIXTURES)} PostgreSQL fixtures classified, two converted and judged pass; live: "
+            f"{report['executions']} queries, {stats.get('reports')} reports, password hidden")
+
+
 # ---- refreeze -----------------------------------------------------------------------------------
 
 def check_refreeze() -> str:
@@ -808,6 +880,7 @@ GROUPS: dict[str, Callable[[], str]] = {
     "phi": check_phi,
     "loop": check_loop,
     "grid": check_grid,
+    "sqlancer": check_sqlancer,
     "refreeze": check_refreeze,
     "scope": check_scope,
 }

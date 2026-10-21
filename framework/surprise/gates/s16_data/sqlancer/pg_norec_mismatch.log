@@ -1,0 +1,29 @@
+--java.lang.AssertionError: the counts mismatch (2 and 1)!
+---- SELECT COUNT(*) FROM t0 WHERE ((t0.c0)>(1));
+---- count: 2
+---- SELECT SUM(count) FROM (SELECT ((((t0.c0)>(1))) IS TRUE)::INT as count FROM t0) as res;
+---- count: 1
+--	at sqlancer.common.oracle.NoRECOracle.check(NoRECOracle.java:164)
+--	at sqlancer.ProviderAdapter.checkDatabase(ProviderAdapter.java:111)
+--	at sqlancer.ProviderAdapter.generateAndTestDatabase(ProviderAdapter.java:61)
+--	at sqlancer.Main$DBMSExecutor.run(Main.java:483)
+--	at sqlancer.Main$2.run(Main.java:747)
+--	at sqlancer.Main$2.runThread(Main.java:729)
+--	at sqlancer.Main$2.run(Main.java:720)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+--	at java.base/java.lang.Thread.run(Thread.java:1583)
+---- Time: 2026/10/22 00:30:00
+-- Database: database3
+-- Database version: 16.15
+-- seed value: 7
+\c test;
+DROP DATABASE FORCE IF EXISTS database3;
+DROP DATABASE IF EXISTS database3;
+CREATE DATABASE database3 WITH ENCODING 'utf8'  TEMPLATE template0;
+\c database3;
+CREATE TABLE t0(c0 INT);
+INSERT INTO t0(c0) VALUES(1);
+INSERT INTO t0(c0) VALUES(2);
+INSERT INTO t0(c0) VALUES(3);
+-- SELECT COUNT(*) FROM t0 WHERE ((t0.c0)>(1));\n-- count: 2\n-- SELECT SUM(count) FROM (SELECT ((((t0.c0)>(1))) IS TRUE)::INT as count FROM t0) as res;\n-- count: 1;
