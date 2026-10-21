@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2、s19-deploy-3；s19-deploy-4（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -122,7 +122,9 @@
 GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inference/fp4更换为为sail-research/fp4 3. 若退避重试仍然不行可以更换别的服务商，优先尝试open-inference/fp4和sail-research/us"；第 3 条问过之后选"每次调用自动切换"（PLAN §9 补充一条）。
 - 做法：`roles/providers.py` 的 `glm-flash` 档改成服务商列表 `[sail-research/fp4, open-inference/fp4, sail-research/us]`（三家都是 fp4），`body` 只剩 `reasoning`；传输层每家发一个 `provider.only` 只写这一家、不许 OpenRouter 回退的请求，429 与 503（`roles/constants.py` 新加的 `RETRY_STATUSES`）在这一家按 10/30/60/120 秒重试，用完就换下一家，三家都不行才抛 `TransportError`；每次调用都从第一家起。其他错误既不重试也不切换。stderr 每次等待一行、每次切换一行。回答的服务商记在 `Completion`、`Reply`、`calls.jsonl` 与缓存条目（只在有值时写，DeepSeek 的行与条目字段不变）。价格表 2026-10-21 重读，网格按第一家 $0.09/$0.15 每百万 token 计（另两家同价或更便宜，所以是上界）；`e1.json` 与 `e1_pilot_glm.json` 的价格跟着改了。
 - 门槛 `s19` 的 `transport`、`gateway`、`retry`、`prices` 组先改（派发前用临时实现验证过，S19 相关五组与 S09 全过，临时代码已还原），提交 58993e8。codex 的提交 31d2620（改 constants、providers、transport、gateway、价格表，改 S19 自己的两个测试文件里随行为改变的期望，新测试 `test_surprise_s19_providers.py`，共新增 25 项）。审查红旗三条都无害：S11 `ciao`（已知）；7 处改写的断言都随本包的行为改变（价格 0.39、三家 15 次尝试、503 改为重试后用 402 测不重试），没有放宽；执行者日志的"疑似密钥"是测试里的假凭据与 HANDOFF 里只写了前缀的一句。合并 0e5ffb3，归档 61c0abd，worktree 已清理；合并后本机 `pytest -q testing tests` 1205 passed、3 skipped，`gates.all` PASS 16/16。
-- 服务器上仍是 `s19-deploy-3`（只有 429 重试、只用 Open Inference）；再跑之前要部署新 tag。还没有用新服务商做真实调用。
+- 真实调用小测（用户"做真实调用小测，然后部署到服务器"）：本机经网关发 S10 M3 录制缓存里 prior、implementer、conjecturer 三条真实 prompt（各角色自己的 temperature 与 max_tokens；本进程的 `DEEPSEEK_API_KEY` 是旧的 35 位 DeepSeek 密钥，小测从用户级环境变量取 OpenRouter 的密钥，只传给子进程）。三次都 `ok`，都由 `sail-research/fp4` 回答，`finish_reason: stop`，JSON 字段与 DeepSeek 的回复相同；conjecturer 第一次 429，等 10 秒重试成功（stderr 一行，格式与门槛相同）。
+- **新发现：同样 `effort: low`，Sail Research 推理得少得多**：prior 91 个输出 token（推理 1），9 秒；implementer 148 个（推理 32），5 秒；conjecturer 766 个（推理 269），30 秒（含 10 秒等待）。上午 Open Inference 的复测是 1113（推理 1029）、2219（2074）、2295（1851）；以前 deepseek-flash 的 implementer 平均约 2500、conjecturer 约 6600 个输出 token。用户定 low 的理由是"与 deepseek-flash 对齐"，换服务商后对齐不再成立；要不要调推理强度（例如 medium）要用户定。三家混用时推理量也会随服务商变。
+- 部署 `s19-deploy-4`（d8736cb，照 SERVER.md §3；部署前服务器空闲、检出 `s19-deploy-3`、干净）。服务器上去掉密钥跑：pytest 1205 passed、3 skipped；S19 12/12；`gates.all` 13/16，没过的仍是服务器上 S8 长跑产物旧或缺的那几组（S08 `longrun`、`sawtooth`、`duplicates`，S11 `ciao`，S15 `stream`），与代码无关。服务器上什么都没跑。
 
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
