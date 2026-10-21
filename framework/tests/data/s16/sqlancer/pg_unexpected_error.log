@@ -1,0 +1,26 @@
+--java.lang.AssertionError: CREATE INDEX i0 ON t0(c0);
+--	at sqlancer.common.query.SQLQueryAdapter.checkException(SQLQueryAdapter.java:166)
+--	at sqlancer.common.query.SQLQueryAdapter.internalExecute(SQLQueryAdapter.java:147)
+--	at sqlancer.common.query.SQLQueryAdapter.execute(SQLQueryAdapter.java:122)
+--	at sqlancer.common.query.SQLQueryAdapter.execute(SQLQueryAdapter.java:102)
+--	at sqlancer.Main$QueryManager.execute(Main.java:381)
+--	at sqlancer.GlobalState.executeStatement(GlobalState.java:108)
+--	at sqlancer.StatementExecutor.executeStatements(StatementExecutor.java:70)
+--	at sqlancer.postgres.PostgresProvider.generateDatabase(PostgresProvider.java:230)
+--	at sqlancer.postgres.PostgresProvider.generateDatabase(PostgresProvider.java:1)
+--	at sqlancer.ProviderAdapter.generateAndTestDatabase(ProviderAdapter.java:52)
+--	at sqlancer.Main$DBMSExecutor.run(Main.java:483)
+--Caused by: org.postgresql.util.PSQLException: ERROR: could not create unique index "i0"
+--	at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2676)
+---- Time: 2026/10/22 00:32:00
+-- Database: database5
+-- Database version: 16.15
+-- seed value: 7
+\c test;
+DROP DATABASE FORCE IF EXISTS database5;
+DROP DATABASE IF EXISTS database5;
+CREATE DATABASE database5 WITH ENCODING 'utf8'  TEMPLATE template0;
+\c database5;
+CREATE TABLE t0(c0 INT);
+INSERT INTO t0(c0) VALUES(1);
+CREATE INDEX i0 ON t0(c0);

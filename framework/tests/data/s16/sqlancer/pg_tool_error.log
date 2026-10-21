@@ -1,0 +1,14 @@
+--java.lang.UnsupportedOperationException
+-- at sqlancer.Main$StateLogger.getCurrentFileWriter(Main.java:182)
+-- Database: database0
+-- Database version: 16.15
+-- seed value: 7
+\c test;
+DROP DATABASE FORCE IF EXISTS database0;
+DROP DATABASE IF EXISTS database0;
+CREATE DATABASE database0 WITH ENCODING 'utf8' TEMPLATE template0;
+\c database0;
+CREATE TABLE t0(c0 INT);
+DISCARD PLANS;
+RESET ALL;
+COMMIT;
