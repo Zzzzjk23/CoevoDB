@@ -57,7 +57,7 @@ _NAME = re.compile(r"[a-z0-9_-]+")
 _TIERS = ("fast", "strong", "glm-flash")
 _UNLIMITED = "unlimited"
 # Engines a running SQLancer arm may name. S16–S18 extend this.
-_SQLANCER_RUN_ENGINES = ("duckdb",)
+_SQLANCER_RUN_ENGINES = ("duckdb", "postgres")
 _SQLANCER_ORACLES = ("NOREC", "WHERE")
 # DuckDB 1.5.5 on Linux reads this as its default thread count
 # (.src/duckdb-v1.5.5/src/main/config.cpp, DBConfig::GetSystemMaxThreads).
@@ -953,6 +953,12 @@ def _finish(cell: _CellProc) -> str:
             log.close()
     if sys.platform != "win32":
         _kill_group(cell.proc.pid)
+    from surprise.experiments.pg_instance import stop_all
+
+    stopped = stop_all(cell.directory)
+    if stopped:
+        with _cell_log(cell.directory).open("ab") as log:
+            log.write(f"Stopped {len(stopped)} residual PostgreSQL servers\n".encode("ascii"))
     if cell.interrupted:
         status = "done"
         word = "done (killed)"

@@ -1,6 +1,7 @@
 """Plan-layer features: operator names as the engine prints them.
 
 DuckDB goes through ``diagnosis.bisect.plan_op_names`` (``EXPLAIN (FORMAT JSON)``).
+PostgreSQL also uses JSON plans, with operator spaces replaced by underscores.
 DataFusion, and any other engine, uses the text of ``EXPLAIN``. The statement
 itself is not executed. No operator, or an unreadable plan, is ``unavailable``.
 """
@@ -37,6 +38,11 @@ def _operator_names(runner, query: str, engine: str) -> set[str] | None:
         if not counts:
             return None
         return {str(name) for name in counts}
+    if kind == "postgres":
+        counts = plan_op_names(runner, query, "postgres")
+        if not counts:
+            return None
+        return {re.sub(r"[^A-Za-z0-9_]", "_", str(name)) for name in counts}
     return _explain_text_names(runner, query)
 
 

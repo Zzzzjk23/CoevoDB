@@ -60,7 +60,10 @@ def extract_data(runner, query: str, engine: str) -> tuple[set[str], str]:
         if rows is None:
             return set(), "unavailable"
         _table_flags(rows, features)
-        described = _describe(runner, ref)
+        if engine == "postgres":
+            described = _describe_postgres(runner, ref)
+        else:
+            described = _describe(runner, ref)
         if described is None:
             return set(), "unavailable"
         features.update(described)
@@ -173,6 +176,45 @@ def _describe(runner, ref: str) -> set[str] | None:
             continue
         found.add(_type_feature(str(row[1])))
     return found
+
+
+def _describe_postgres(runner, ref: str) -> set[str] | None:
+    # ref already retains identifier quotes; escape it as a SQL string literal.
+    literal = ref.replace("'", "''")
+    result = _run(runner, (
+        "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a "
+        f"WHERE a.attrelid = to_regclass('{literal}') "
+        "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum"
+    ))
+    if not _succeeded(result) or not result.rows:
+        # A missing relation produces no attributes, rather than a DESCRIBE error.
+        return None
+    found: set[str] = set()
+    for row in result.rows:
+        if not row or row[0] is None:
+            return None
+        found.add(_type_feature(_postgres_type_name(str(row[0]))))
+    return found
+
+
+def _postgres_type_name(type_name: str) -> str:
+    """Translate PG catalog scalar types into the existing type vocabulary."""
+    name = re.sub(r"\s+", " ", type_name.strip()).lower()
+    if name in {"smallint", "integer", "bigint"}:
+        return "INTEGER"
+    if name in {"real", "double precision"}:
+        return "DOUBLE"
+    if re.fullmatch(r"numeric(?:\([^)]*\))?", name):
+        return "DECIMAL"
+    if name == "boolean":
+        return "BOOLEAN"
+    if name in {"text", "name"} or re.fullmatch(r"character(?: varying)?(?:\(\d+\))?", name):
+        return "VARCHAR"
+    if name == "date":
+        return "DATE"
+    if re.fullmatch(r"timestamp(?:\(\d+\))? (?:with|without) time zone", name):
+        return "TIMESTAMP"
+    return "OTHER"
 
 
 def _setop_input(runner, node, side, which: str, dialect: str | None, features: set[str]) -> bool:

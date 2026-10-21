@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import importlib.metadata as importlib_metadata
 import json
+import os
+import tempfile
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -20,10 +22,20 @@ from .dups import identity_key, new_families, run_registry
 
 def _engine_versions() -> dict[str, str]:
     # importlib, not ``import duckdb``: a directory of that name at the repo root masks the package.
-    return {
+    versions = {
         "duckdb": importlib_metadata.version("duckdb"),
         "datafusion": importlib_metadata.version("datafusion"),
     }
+
+    if os.environ.get("COEVO_TARGET_PG_DSN"):
+        from surprise.harness.oracles.pg_target import PostgresTargetRunner
+
+        runner = PostgresTargetRunner()
+        try:
+            versions["postgres"] = runner.engine_version
+        finally:
+            runner.close()
+    return versions
 
 
 def _fix_set(label: Any) -> list[str] | None:
@@ -35,6 +47,16 @@ def _fix_set(label: Any) -> list[str] | None:
 
 def known_bugs(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Certify each item in this interpreter. ``key`` is set only for a profiled failure."""
+    if any(item["case"]["engine"] == "postgres" for item in items):
+        from surprise.experiments.pg_instance import ensure
+
+        with tempfile.TemporaryDirectory(prefix="coevo-known-pg-") as directory:
+            with ensure(directory, old=True):
+                return _certify_known(items)
+    return _certify_known(items)
+
+
+def _certify_known(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     certified: list[dict[str, Any]] = []
     for item in items:
         case = SqlCase.from_dict(item["case"])

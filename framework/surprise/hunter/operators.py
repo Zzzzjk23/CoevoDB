@@ -104,7 +104,7 @@ def oracle_options(
                 options.append((oracle, rule))
             continue
         if oracle == "index_presence":
-            if case.engine == "duckdb":
+            if case.engine in ("duckdb", "postgres"):
                 options.append((oracle, None))
             continue
         options.append((oracle, None))

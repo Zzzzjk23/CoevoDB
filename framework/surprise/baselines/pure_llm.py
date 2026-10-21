@@ -16,6 +16,7 @@ import signal
 import sys
 import time
 import traceback
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,14 @@ def _engine_version(engine: str) -> str:
     Do not import the engine. A checkout directory of the same name can shadow
     the package and report a version the harness is not running.
     """
+    if engine == "postgres":
+        from surprise.harness.oracles.pg_target import PostgresTargetRunner
+
+        runner = PostgresTargetRunner()
+        try:
+            return runner.engine_version
+        finally:
+            runner.close()
     try:
         found = importlib.metadata.version(engine)
     except importlib.metadata.PackageNotFoundError:
@@ -249,50 +258,57 @@ def run(
     )
     directory = Path(out)
     _ensure_out(directory)
-    cache_dir = checked["cache"] if checked["cache"] is not None else directory / "llm" / "cache"
-    state = _Run(
-        directory=directory,
-        seed=checked["seed"],
-        engine=checked["engine"],
-        oracles=checked["oracles"],
-        max_experiments=checked["max_experiments"],
-        max_minutes=checked["max_minutes"],
-        max_calls=checked["max_calls"],
-        tier=checked["tier"],
-        offline=checked["offline"],
-        cache_dir=cache_dir,
-        run_id=checked["run_id"],
-        started_at=datetime.now(timezone.utc),
-        started_mono=_monotonic(),
-    )
-    pending: BaseException | None = None
-    try:
+    if engine == "postgres":
+        from surprise.experiments.pg_instance import ensure
+
+        instances = ensure(directory / "pg", old=True)
+    else:
+        instances = nullcontext()
+    with instances:
+        cache_dir = checked["cache"] if checked["cache"] is not None else directory / "llm" / "cache"
+        state = _Run(
+            directory=directory,
+            seed=checked["seed"],
+            engine=checked["engine"],
+            oracles=checked["oracles"],
+            max_experiments=checked["max_experiments"],
+            max_minutes=checked["max_minutes"],
+            max_calls=checked["max_calls"],
+            tier=checked["tier"],
+            offline=checked["offline"],
+            cache_dir=cache_dir,
+            run_id=checked["run_id"],
+            started_at=datetime.now(timezone.utc),
+            started_mono=_monotonic(),
+        )
+        pending: BaseException | None = None
         try:
-            _prepare(state, transport)
-            _drive(state)
-        except KeyboardInterrupt as exc:
-            state.status = "interrupted"
-            pending = exc
-        except Exception as exc:
-            state.status = "error"
-            state.exc = exc
-            state.error_text = traceback.format_exc()
-            pending = exc
-        try:
-            state.report = _write_report(state)
-        except Exception as exc:
-            _write_error(state, extra=traceback.format_exc())
-            if pending is None:
+            try:
+                _prepare(state, transport)
+                _drive(state)
+            except KeyboardInterrupt as exc:
+                state.status = "interrupted"
                 pending = exc
-        else:
-            if state.error_text:
-                _write_error(state, extra=None)
-    finally:
-        _close(state)
-    if pending is not None:
-        raise pending
-    assert state.report is not None
-    return state.report
+            except Exception as exc:
+                state.status = "error"
+                state.exc = exc
+                state.error_text = traceback.format_exc()
+                pending = exc
+            try:
+                state.report = _write_report(state)
+            except Exception as exc:
+                _write_error(state, extra=traceback.format_exc())
+                if pending is None:
+                    pending = exc
+            else:
+                if state.error_text:
+                    _write_error(state, extra=None)
+        finally:
+            _close(state)
+        if pending is not None:
+            raise pending
+        assert state.report is not None
+        return state.report
 
 
 def _check_args(
