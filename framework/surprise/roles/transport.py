@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
+from collections.abc import Callable, Iterable
 from typing import Any
+
+import httpx
 
 from agents.base_agent import BaseAgent
 from llm.ledger import ledger
 
-from .constants import REQUEST_DEADLINE_S, TIERS
+from .constants import RATE_LIMIT_WAITS_S, REQUEST_DEADLINE_S, TIERS
 from .gateway import Completion, TransportError
 from .providers import endpoint_for_model
 
@@ -18,7 +22,14 @@ from .providers import endpoint_for_model
 class DeepSeekTransport(BaseAgent):
     """POST /chat/completions through BaseAgent's HTTP client."""
 
-    def __init__(self, *, base_url: str | None = None, deadline_s: float | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        deadline_s: float | None = None,
+        rate_limit_waits_s: Iterable[float] | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ) -> None:
         super().__init__(
             {
                 "api_key": "${DEEPSEEK_API_KEY}",
@@ -27,6 +38,10 @@ class DeepSeekTransport(BaseAgent):
             }
         )
         self.deadline_s = REQUEST_DEADLINE_S if deadline_s is None else deadline_s
+        self.rate_limit_waits_s = tuple(
+            float(wait) for wait in (RATE_LIMIT_WAITS_S if rate_limit_waits_s is None else rate_limit_waits_s)
+        )
+        self._sleep = time.sleep if sleep is None else sleep
 
     def execute(self, context: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
@@ -46,6 +61,7 @@ class DeepSeekTransport(BaseAgent):
         if not self.api_key:
             raise TransportError("DEEPSEEK_API_KEY is not set")
         agent = "surprise.roles." + role
+        retries = 0
         try:
             client = self.setup_api_client()
             payload = {
@@ -59,7 +75,21 @@ class DeepSeekTransport(BaseAgent):
             if endpoint is not None:
                 payload.update(endpoint["body"])
                 url = endpoint["base_url"] + "/chat/completions"
-            body = _read_with_deadline(client, payload, self.deadline_s, self.close_client, url=url)
+            while True:
+                try:
+                    body = _read_with_deadline(client, payload, self.deadline_s, self.close_client, url=url)
+                    break
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code != 429 or retries >= len(self.rate_limit_waits_s):
+                        raise
+                    wait = self.rate_limit_waits_s[retries]
+                    print(
+                        f"surprise.roles.transport: HTTP 429 for role {role}, model {model}; "
+                        f"retry {retries + 1}/{len(self.rate_limit_waits_s)} in {wait:g} s",
+                        file=sys.stderr,
+                    )
+                    self._sleep(wait)
+                    retries += 1
             content = body["choices"][0]["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError("content")
@@ -73,6 +103,7 @@ class DeepSeekTransport(BaseAgent):
                 model=model,
                 prompt=prompt,
                 status="error",
+                retries=retries,
             )
             raise
         except Exception as exc:
@@ -82,6 +113,7 @@ class DeepSeekTransport(BaseAgent):
                 model=model,
                 prompt=prompt,
                 status="error",
+                retries=retries,
             )
             raise _to_transport_error(exc) from None
         ledger.record(
@@ -93,6 +125,7 @@ class DeepSeekTransport(BaseAgent):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             status="ok",
+            retries=retries,
         )
         return Completion(text=content, input_tokens=input_tokens, output_tokens=output_tokens)
 

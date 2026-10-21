@@ -97,7 +97,7 @@ def test_transport_routes_mixed_models_and_preserves_deepseek_bytes(wire):
 @pytest.mark.parametrize("status", [402, 429, 500])
 def test_transport_keeps_http_status_and_hides_response(wire, status):
     wire.status = status
-    transport = DeepSeekTransport()
+    transport = DeepSeekTransport(rate_limit_waits_s=())
     try:
         with pytest.raises(TransportError, match=f"^HTTPStatusError {status}$"):
             _complete(transport)
