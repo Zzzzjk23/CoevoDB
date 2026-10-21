@@ -303,6 +303,7 @@ S0–S12 是迁移到惊讶驱动框架的改造（已完成）。S13 起是正�
 - 2026-10-21 用户加进本会话的范围：额度不足与报错的提醒，经 pushplus 一对一消息（PLAN §9 补充一条），工作包 `s19-notify`：新包 `surprise/notify/`（发送器与看守进程），`roles/gateway.py` 失败调用的 `reason` 记下传输层的消息（HTTP 状态码）。门槛 `gates/s19.py` 加五组：`pushplus`、`reason`、`watch`、`balance`、`cli`。不改 `experiments/`，不用重钉长跑。"不做：改代码"同样不适用于这个包。
 - 2026-10-21 用户定下 GLM 的推理强度为 low（PLAN §9 补充一条），工作包 `s19-effort` 只改 `roles/providers.py` 的一处配置；门槛 `s19_cases.NEW_PROFILE` 跟着改。
 - 2026-10-21 用户定下 429 退避重试（PLAN §9 补充一条），工作包 `s19-retry`：`roles/transport.py` 遇 429 按 `roles/constants.py` 新加的 `RATE_LIMIT_WAITS_S` 等待后重试，别的失败不重试。门槛 `gates/s19.py` 加一组 `retry`；`roles/constants.py` 从冻结路径移出，改由 `retry` 组核对只多了这一个常数、其余与 s15-done-r3 相同。不改 `experiments/`，不用重钉长跑。"不做：改代码"不适用于这个包。
+- 2026-10-21 用户定下 503 也重试、服务商换成 sail-research/fp4 并按 open-inference/fp4、sail-research/us 的次序自动切换（PLAN §9 补充一条），工作包 `s19-providers`：`roles/providers.py` 的档案改成服务商列表，`roles/transport.py` 按列表逐家重试与切换，`roles/gateway.py` 记下回答的服务商（只在 GLM 的调用记录与缓存条目里多一个字段，DeepSeek 的不变），`roles/constants.py` 加 `RETRY_STATUSES`，OpenRouter 价格表更新。门槛改 `transport`、`retry` 与 `prices` 三组的期望。不改 `experiments/`。
 
 门槛 `gates/s19.py`：拷回的结果里所有格 `done`；配置与 `EXPERIMENT.md` 一致；harness 哈希与部署时相同；报告的每个 RQ 节都有内容。
 

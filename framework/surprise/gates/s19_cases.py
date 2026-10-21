@@ -10,11 +10,15 @@ DONE_TAG = "s19-done"
 NEW_TIER = "glm-flash"
 NEW_MODEL = "z-ai/glm-5.3-flash"
 # The profile the gateway and the run manifest record when the tier is used, verbatim.
+# 2026-10-21 (user): providers tried in this order, one per request ("provider": {"only": [p],
+# "allow_fallbacks": false}); the next one only after the retries on the current one are used up.
+# All three serve fp4. Replaces open-inference/fp4 alone, which answered HTTP 503 in bursts.
+NEW_PROVIDERS = ["sail-research/fp4", "open-inference/fp4", "sail-research/us"]
 NEW_PROFILE = {
     "model": NEW_MODEL,
     "base_url": "https://openrouter.ai/api/v1",
+    "providers": NEW_PROVIDERS,
     "body": {
-        "provider": {"only": ["open-inference/fp4"], "allow_fallbacks": False},
         # 2026-10-21 (user): reasoning effort low, aligned with deepseek-flash, which reasons by default.
         # The endpoint refuses to disable reasoning (enabled false / effort none: HTTP 400); with the
         # default effort the implementer and conjecturer spent all of max_tokens on reasoning.
@@ -31,19 +35,28 @@ KEY_ENV = "DEEPSEEK_API_KEY"
 DECOY_ENV = "OPENROUTER_API_KEY"
 CAP_ENV = "SURPRISE_LLM_MAX_CALLS"
 
-# ---- prices: OpenRouter endpoint list for z-ai/glm-5.3-flash, read 2026-10-20 --------------------
-# https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints, provider tag open-inference/fp4:
-# prompt 0.000000037476, completion 0.00000016, input_cache_read 0.000000006 USD per token.
+# ---- prices: OpenRouter endpoint list for z-ai/glm-5.3-flash, read 2026-10-21 --------------------
+# https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints, USD per token:
+#   sail-research/fp4  prompt 0.00000009     completion 0.00000015  input_cache_read 0.0000000261
+#   open-inference/fp4 prompt 0.000000041191 completion 0.00000012  input_cache_read 0.00000000375
+#   sail-research/us   prompt 0.00000009     completion 0.00000015  input_cache_read 0.0000000261
+# The grid prices every call at the first provider's rate; the others cost the same or less.
 
 PRICES_FILE = "framework/surprise/metrics/data/prices_openrouter.json"
 PRICES = {
-    "retrieved": "2026-10-20",
+    "retrieved": "2026-10-21",
     "source": "https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints",
     "unit": "USD per 1M tokens",
     "models": {
-        NEW_MODEL: {"provider": "open-inference/fp4", "input": 0.037476, "output": 0.16, "input_cache_read": 0.006},
+        NEW_MODEL: {
+            "providers": {
+                "sail-research/fp4": {"input": 0.09, "output": 0.15, "input_cache_read": 0.0261},
+                "open-inference/fp4": {"input": 0.041191, "output": 0.12, "input_cache_read": 0.00375},
+                "sail-research/us": {"input": 0.09, "output": 0.15, "input_cache_read": 0.0261},
+            },
+        },
     },
-    "grid": {NEW_MODEL: {"input": 0.037476, "output": 0.16}},
+    "grid": {NEW_MODEL: {"input": 0.09, "output": 0.15}},
 }
 OLD_PRICES_FILE = "framework/surprise/metrics/data/prices_deepseek.json"
 
@@ -110,16 +123,29 @@ CAUSES = {
 }
 KINDS = ("start", "llm_errors", "llm_blocked", "cell_failed", "stall", "balance", "finished", "exited")
 
-# ---- 429 retried with backoff (user's decision, 2026-10-21: "同意，改成429退避重试") ------------------
-# The transport waits and retries when the answer is HTTP 429, and only then; every other failure is
-# still one attempt. The retries happen inside one gateway call: the cap, calls.jsonl and the
-# gateway's totals see one call. Each attempt keeps its own request deadline.
+# ---- 429 and 503 retried with backoff, then the next provider (user's decisions, 2026-10-21:
+# "同意，改成429退避重试"; "1. 添加退避重试 2. 服务商由open-inference/fp4更换为为sail-research/fp4
+# 3. 若退避重试仍然不行可以更换别的服务商，优先尝试open-inference/fp4和sail-research/us", then
+# "每次调用自动切换") ----------------------------------------------------------------------------------
+# The transport waits and retries when the answer is HTTP 429 or 503, and only then; every other
+# failure is still one attempt and never switches provider. When a provider's waits are used up, the
+# next provider of the profile is tried at once with the same waits; every call starts with the first.
+# It all happens inside one gateway call: the cap, calls.jsonl and the gateway's totals see one call.
+# Each attempt keeps its own request deadline.
 
 CONSTANTS_FILE = "framework/surprise/roles/constants.py"
 RETRY_CONSTANT = "RATE_LIMIT_WAITS_S"
-# Seconds to wait before retry 1, 2, ...; four retries, five attempts, 220 s of waiting at most.
+# Seconds to wait before retry 1, 2, ... on one provider; four retries, five attempts, 220 s at most.
 RETRY_WAITS_S = [10.0, 30.0, 60.0, 120.0]
-# Written to stderr (the cell log) before each wait; ASCII, never the key or the response body.
-RETRY_LINE = "surprise.roles.transport: HTTP 429 for role {role}, model {model}; retry {attempt}/{retries} in {wait:g} s"
-# Answers that are not retried.
-NO_RETRY_STATUSES = (400, 401, 402, 403, 404, 500, 502, 503)
+RETRY_STATUSES_CONSTANT = "RETRY_STATUSES"
+RETRY_STATUSES = [429, 503]
+# Written to stderr (the cell log); ASCII, never the key or the response body. RETRY_LINE before each
+# wait on an endpoint without providers (DeepSeek), RETRY_LINE_VIA on a provider, SWITCH_LINE when a
+# provider's waits are used up and the next one is tried.
+RETRY_LINE = "surprise.roles.transport: HTTP {status} for role {role}, model {model}; retry {attempt}/{retries} in {wait:g} s"
+RETRY_LINE_VIA = ("surprise.roles.transport: HTTP {status} for role {role}, model {model} via {provider}; "
+                  "retry {attempt}/{retries} in {wait:g} s")
+SWITCH_LINE = ("surprise.roles.transport: HTTP {status} for role {role}, model {model} via {provider}; "
+               "retries used up, switching to {next}")
+# Answers that are neither retried nor switched.
+NO_RETRY_STATUSES = (400, 401, 402, 403, 404, 500, 502)

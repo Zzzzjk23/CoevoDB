@@ -28,12 +28,16 @@ writes to it; experiments/ and the S8 pin stay as they are. These groups check i
   balance    OpenRouter's key endpoint on glm-flash grids: low and empty credit once each, 401 too
   cli        python -m surprise.notify.pushplus and python -m surprise.notify.watch (--pid)
 
-On 2026-10-21 the user asked to retry HTTP 429 (rate limited) with backoff instead of losing the call:
+On 2026-10-21 the user asked to retry HTTP 429 (rate limited) with backoff instead of losing the call,
+then to retry 503 too, to move from open-inference/fp4 to sail-research/fp4, and to fall back to
+open-inference/fp4, then sail-research/us, once the retries on a provider are used up:
 
-  retry      RATE_LIMIT_WAITS_S added to roles/constants.py, every other constant as at the base tag;
-             429 is retried after 10/30/60/120 s with one stderr line each, then raises as before;
-             other statuses, connection errors and bad answers are not retried; one gateway call,
-             one cap unit and one calls.jsonl row however many attempts; the old ledger's retries
+  retry      RATE_LIMIT_WAITS_S and RETRY_STATUSES added to roles/constants.py, every other constant as
+             at the base tag; 429 and 503 retried after 10/30/60/120 s on each provider in profile
+             order, one stderr line per wait and per switch, then raises as before; other statuses,
+             connection errors and bad answers neither retried nor switched; the provider that
+             answered is on the Completion, the reply, calls.jsonl and the cache entry (GLM only:
+             DeepSeek rows and entries keep their S9 keys); one gateway call, cap unit and row per call
 
 The E1 result groups (SESSIONS S19) are added when the formal results are copied back.
 """
@@ -110,6 +114,10 @@ class _Wire:
         self.content: Any = _ANSWER
         # Statuses for the next requests, in order, before ``status`` applies again; 0 = connection error.
         self.queue: list[int] = []
+        # Per OpenRouter provider (the request's provider.only[0]): statuses for its next requests, then a
+        # status it keeps answering; both come before ``queue``.
+        self.by_provider: dict[str, list[int]] = {}
+        self.down: dict[str, int] = {}
 
     @contextlib.contextmanager
     def on(self) -> Iterator["_Wire"]:
@@ -126,7 +134,14 @@ class _Wire:
                 "auth": request.headers.get("authorization"),
                 "body": json.loads(body) if body else None,
             })
-            status = wire.queue.pop(0) if wire.queue else wire.status
+            sent = wire.requests[-1]["body"] or {}
+            provider = ((sent.get("provider") or {}).get("only") or [None])[0]
+            if wire.by_provider.get(provider):
+                status = wire.by_provider[provider].pop(0)
+            elif provider in wire.down:
+                status = wire.down[provider]
+            else:
+                status = wire.queue.pop(0) if wire.queue else wire.status
             if status == 0:
                 raise httpx.ConnectError("gate", request=request)
             if status != 200:
@@ -145,6 +160,11 @@ def _old_body(model: str) -> dict[str, Any]:
     return {"model": model, "messages": [{"role": "user", "content": _PROMPT}], "temperature": 0.2, "max_tokens": 100}
 
 
+def _glm_body(provider: str) -> dict[str, Any]:
+    """The request for the new model sent to one provider of the profile."""
+    return {**_old_body(C.NEW_MODEL), **C.NEW_PROFILE["body"], "provider": {"only": [provider], "allow_fallbacks": False}}
+
+
 # ---- transport ----------------------------------------------------------------------------------
 
 def check_transport() -> str:
@@ -161,10 +181,11 @@ def check_transport() -> str:
         sent = wire.requests[-1]
         require(sent["method"] == "POST" and sent["url"] == C.NEW_URL, f"new model went to {sent['method']} {sent['url']}")
         require(sent["auth"] == f"Bearer {key}", f"the new model must use the key in {C.KEY_ENV}")
-        want = {**_old_body(C.NEW_MODEL), **C.NEW_PROFILE["body"]}
+        want = _glm_body(C.NEW_PROVIDERS[0])
         require(sent["body"] == want, f"request body {sent['body']} != {want}")
         require((done.text, done.input_tokens, done.output_tokens) == (_ANSWER, 11, 22),
                 f"answer read as {(done.text, done.input_tokens, done.output_tokens)}")
+        require(done.provider == C.NEW_PROVIDERS[0], f"the answer names provider {done.provider!r}")
 
         for model in C.OLD_TIERS.values():
             transport.complete(model=model, prompt=_PROMPT, temperature=0.2, max_tokens=100, role="implementer")
@@ -180,7 +201,8 @@ def check_transport() -> str:
         for status in (402, 429):
             wire.status = status
             try:
-                once.complete(model=C.NEW_MODEL, prompt=_PROMPT, temperature=0.2, max_tokens=100, role="implementer")
+                with contextlib.redirect_stderr(io.StringIO()):
+                    once.complete(model=C.NEW_MODEL, prompt=_PROMPT, temperature=0.2, max_tokens=100, role="implementer")
             except TransportError as exc:
                 require(str(status) in str(exc), f"HTTP {status} lost its status: {exc}")
             else:
@@ -758,146 +780,201 @@ def _attempt(transport: Any, model: str = C.NEW_MODEL, role: str = "implementer"
     return result, err.getvalue()
 
 
-def _lines(role: str, model: str, waits: list[float]) -> list[str]:
-    return [C.RETRY_LINE.format(role=role, model=model, attempt=i, retries=len(waits), wait=w)
-            for i, w in enumerate(waits, 1)]
+def _line(status: int, role: str, model: str, attempt: int, wait: float, provider: str | None = None) -> str:
+    template = C.RETRY_LINE if provider is None else C.RETRY_LINE_VIA
+    return template.format(status=status, role=role, model=model, provider=provider, attempt=attempt,
+                           retries=len(C.RETRY_WAITS_S), wait=wait)
+
+
+def _switch(status: int, role: str, model: str, provider: str, nxt: str) -> str:
+    return C.SWITCH_LINE.format(status=status, role=role, model=model, provider=provider, next=nxt)
+
+
+def _providers(sent: list[dict[str, Any]]) -> list[str | None]:
+    return [((s["body"] or {}).get("provider") or {}).get("only", [None])[0] for s in sent]
 
 
 def check_retry() -> str:
     from llm.ledger import ledger
-    from surprise.notify.watch import classify
     from surprise.roles import constants as RC
     from surprise.roles.gateway import Gateway, TransportError
+
+    from .s09_cases import CACHE_ENTRY_KEYS, LEDGER_KEYS
 
     have, base = RC.as_dict(), _base_constants()
     got = have.get(C.RETRY_CONSTANT)
     require(got == C.RETRY_WAITS_S and type(got) is list and all(type(w) is float for w in got),
             f"{C.RETRY_CONSTANT} must be {C.RETRY_WAITS_S!r}, got {got!r}")
+    got = have.get(C.RETRY_STATUSES_CONSTANT)
+    require(got == C.RETRY_STATUSES and type(got) is list and all(type(s) is int for s in got),
+            f"{C.RETRY_STATUSES_CONSTANT} must be {C.RETRY_STATUSES!r}, got {got!r}")
     changed = sorted(name for name in base if name not in have or have[name] != base[name])
     added = sorted(set(have) - set(base))
-    require(not changed and added == [C.RETRY_CONSTANT],
+    require(not changed and added == sorted([C.RETRY_CONSTANT, C.RETRY_STATUSES_CONSTANT]),
             f"roles constants: changed since {C.BASE_TAG} {changed}, added {added}")
-    waits_all = [float(w) for w in C.RETRY_WAITS_S]
+    waits = [float(w) for w in C.RETRY_WAITS_S]
+    first, second, third = C.NEW_PROVIDERS
+    model = C.NEW_MODEL
 
     tmp = tmpdir("retry")
     wire = _Wire()
+    slept: list[float] = []
     with env_var(C.KEY_ENV, _KEY), env_var(C.CAP_ENV, None), wire.on():
         from surprise.roles.transport import DeepSeekTransport
 
         default = DeepSeekTransport()
-        require(tuple(default.rate_limit_waits_s) == tuple(waits_all) and type(default.rate_limit_waits_s) is tuple,
+        require(tuple(default.rate_limit_waits_s) == tuple(waits) and type(default.rate_limit_waits_s) is tuple,
                 f"the default waits are {default.rate_limit_waits_s!r}")
         default.close_client()
-
-        slept: list[float] = []
         transport = DeepSeekTransport(sleep=slept.append)
-        require(tuple(transport.rate_limit_waits_s) == tuple(waits_all), "sleep= must not change the waits")
 
-        # 429, 429, then an answer: the call succeeds after two waits, same request each time.
-        wire.queue = [429, 429]
-        before = len(wire.requests)
-        result, err = _attempt(transport)
-        require(not isinstance(result, Exception) and result.text == _ANSWER, f"429 x2 then 200: {result!r}")
-        sent = wire.requests[before:]
-        require(len(sent) == 3 and all(s == sent[0] for s in sent), f"{len(sent)} requests, or they differ")
-        require(sent[0]["url"] == C.NEW_URL and sent[0]["auth"] == f"Bearer {_KEY}", "the retried request changed")
-        require(slept == waits_all[:2], f"waited {slept}")
-        require(err.splitlines() == _lines("implementer", C.NEW_MODEL, waits_all)[:2], f"stderr {err!r}")
-        event = ledger._events[-1]
-        require((event["status"], event["retries"], event["event"]) == ("ok", 2, "implementer"),
-                f"old ledger: {event['status']}/{event['retries']}/{event['event']}")
+        def run(model: str = model, role: str = "implementer", through: Any = None) -> tuple[Any, list[str], list[dict]]:
+            slept.clear()
+            before = len(wire.requests)
+            result, err = _attempt(through or transport, model=model, role=role)
+            return result, err.splitlines(), wire.requests[before:]
 
-        # 429 every time: five attempts, four waits, then the same TransportError as before.
-        slept.clear()
-        wire.status = 429
-        before = len(wire.requests)
-        result, err = _attempt(transport, role="conjecturer")
+        def last(status: str, retries: int) -> None:
+            event = ledger._events[-1]
+            require((event["status"], event["retries"]) == (status, retries),
+                    f"old ledger: {event['status']}/{event['retries']}, want {status}/{retries}")
+
+        # DeepSeek (no providers): 429, then 503, then the answer; the same request every time.
+        wire.queue = [429, 503]
+        result, err, sent = run(model="deepseek-flash")
+        require(not isinstance(result, Exception) and result.text == _ANSWER and result.provider is None,
+                f"deepseek-flash 429, 503, 200: {result!r}")
+        require(len(sent) == 3 and all(s["url"] == C.OLD_URL and s["body"] == _old_body("deepseek-flash") for s in sent),
+                f"{len(sent)} DeepSeek requests, or they changed")
+        require(slept == waits[:2], f"waited {slept}")
+        require(err == [_line(429, "implementer", "deepseek-flash", 1, waits[0]),
+                        _line(503, "implementer", "deepseek-flash", 2, waits[1])], f"stderr {err}")
+        last("ok", 2)
+
+        # GLM: one 503 from the first provider, then its answer.
+        wire.by_provider = {first: [503]}
+        result, err, sent = run()
+        require(not isinstance(result, Exception) and result.provider == first, f"503 then 200 on {first}: {result!r}")
+        require([s["body"] for s in sent] == [_glm_body(first)] * 2 and all(s["url"] == C.NEW_URL for s in sent),
+                f"requests: {_providers(sent)}")
+        require(slept == waits[:1] and err == [_line(503, "implementer", model, 1, waits[0], first)],
+                f"waited {slept}, stderr {err}")
+        last("ok", 1)
+
+        # The first provider stays down: its waits are used up, then the second answers after one 429.
+        wire.down, wire.by_provider = {first: 503}, {second: [429]}
+        result, err, sent = run(role="conjecturer")
+        wire.down = {}
+        require(not isinstance(result, Exception) and result.provider == second, f"{first} down: {result!r}")
+        require(_providers(sent) == [first] * 5 + [second] * 2
+                and all(s["body"] == _glm_body(p) for s, p in zip(sent, _providers(sent))),
+                f"providers asked: {_providers(sent)}")
+        require(slept == waits + waits[:1], f"waited {slept}")
+        want = [_line(503, "conjecturer", model, i, w, first) for i, w in enumerate(waits, 1)]
+        want += [_switch(503, "conjecturer", model, first, second), _line(429, "conjecturer", model, 1, waits[0], second)]
+        require(err == want, f"stderr {err}")
+        last("ok", 6)
+
+        # All three down: every provider's waits in order, then the same TransportError as before.
+        wire.status = 503
+        result, err, sent = run()
         wire.status = 200
-        require(isinstance(result, TransportError) and str(result) == "HTTPStatusError 429", f"429 always: {result!r}")
-        require(len(wire.requests) - before == 1 + len(waits_all), f"{len(wire.requests) - before} attempts")
-        require(slept == waits_all, f"waited {slept}")
-        require(err.splitlines() == _lines("conjecturer", C.NEW_MODEL, waits_all), f"stderr {err!r}")
-        require(_KEY not in err and "gate" not in err, "stderr carries the key or the response body")
-        event = ledger._events[-1]
-        require((event["status"], event["retries"]) == ("error", len(waits_all)), f"old ledger: {event}")
+        require(isinstance(result, TransportError) and str(result) == "HTTPStatusError 503", f"all down: {result!r}")
+        require(_providers(sent) == [first] * 5 + [second] * 5 + [third] * 5 and slept == waits * 3,
+                f"providers asked {_providers(sent)}, waited {slept}")
+        want = []
+        for provider, nxt in zip(C.NEW_PROVIDERS, [*C.NEW_PROVIDERS[1:], None]):
+            want += [_line(503, "implementer", model, i, w, provider) for i, w in enumerate(waits, 1)]
+            if nxt is not None:
+                want.append(_switch(503, "implementer", model, provider, nxt))
+        require(err == want, f"stderr {err}")
+        require(_KEY not in "\n".join(err) and "gate" not in "\n".join(err), "stderr carries the key or the response body")
+        last("error", 14)
 
-        # DeepSeek models are retried the same way, with their own unchanged request.
-        slept.clear()
-        wire.queue = [429]
-        before = len(wire.requests)
-        result, err = _attempt(transport, model="deepseek-flash")
-        sent = wire.requests[before:]
-        require(not isinstance(result, Exception) and len(sent) == 2 and slept == waits_all[:1]
-                and all(s["url"] == C.OLD_URL and s["body"] == _old_body("deepseek-flash") for s in sent),
-                f"deepseek-flash 429 then 200: {result!r}, {len(sent)} requests, waited {slept}")
-
-        # Not retried: other statuses, a connection error, an answer with null content.
+        # Neither retried nor switched: other statuses, a connection error, null content, a 402 after a retry.
         for status in (*C.NO_RETRY_STATUSES, 0):
-            slept.clear()
             wire.queue = [status]
-            before = len(wire.requests)
-            result, err = _attempt(transport)
-            want = "ConnectError" if status == 0 else f"HTTPStatusError {status}"
-            require(isinstance(result, TransportError) and str(result) == want, f"{status}: {result!r}")
-            require(len(wire.requests) - before == 1 and not slept and not err, f"{status} was retried")
+            result, err, sent = run()
+            want_text = "ConnectError" if status == 0 else f"HTTPStatusError {status}"
+            require(isinstance(result, TransportError) and str(result) == want_text, f"{status}: {result!r}")
+            require(len(sent) == 1 and not slept and not err, f"{status} was retried or switched")
         wire.queue, wire.content = [], None
-        slept.clear()
-        result, err = _attempt(transport)
+        result, err, sent = run()
         wire.content = _ANSWER
-        require(isinstance(result, TransportError) and not slept and not err, f"null content: {result!r}, waited {slept}")
-        event = ledger._events[-1]
-        require((event["status"], event["retries"]) == ("error", 0), f"old ledger after no retry: {event}")
+        require(isinstance(result, TransportError) and len(sent) == 1 and not slept and not err,
+                f"null content: {result!r}, {len(sent)} requests")
+        last("error", 0)
+        wire.by_provider = {first: [503, 402]}
+        result, err, sent = run()
+        require(isinstance(result, TransportError) and str(result) == "HTTPStatusError 402"
+                and _providers(sent) == [first, first] and slept == waits[:1],
+                f"503 then 402: {result!r}, providers {_providers(sent)}, waited {slept}")
+        last("error", 1)
 
-        # The waits are a constructor argument: () turns retries off, (0.5,) is one retry.
-        for waits in ((), (0.5,)):
-            slept.clear()
-            custom = DeepSeekTransport(rate_limit_waits_s=waits, sleep=slept.append)
-            wire.status = 429
-            before = len(wire.requests)
-            result, err = _attempt(custom)
-            wire.status = 200
-            require(isinstance(result, TransportError) and str(result) == "HTTPStatusError 429"
-                    and len(wire.requests) - before == 1 + len(waits) and slept == list(waits)
-                    and err.splitlines() == _lines("implementer", C.NEW_MODEL, list(waits)),
-                    f"waits {waits}: {result!r}, {len(wire.requests) - before} attempts, waited {slept}, stderr {err!r}")
-            custom.close_client()
+        # The waits are a constructor argument: () switches at once, and DeepSeek then fails at once.
+        custom = DeepSeekTransport(rate_limit_waits_s=(), sleep=slept.append)
+        wire.by_provider = {first: [503]}
+        result, err, sent = run(through=custom)
+        require(not isinstance(result, Exception) and result.provider == second and _providers(sent) == [first, second]
+                and not slept and err == [_switch(503, "implementer", model, first, second)],
+                f"no waits: {result!r}, providers {_providers(sent)}, stderr {err}")
+        wire.queue = [429]
+        result, err, sent = run(model="deepseek-flash", through=custom)
+        require(isinstance(result, TransportError) and str(result) == "HTTPStatusError 429" and len(sent) == 1
+                and not slept and not err, f"DeepSeek without waits: {result!r}, {len(sent)} requests")
+        custom.close_client()
 
-        # Through the gateway: one call, one cap unit, one calls.jsonl row, however many attempts.
-        slept.clear()
+        # Through the gateway: one call, one cap unit and one row; the provider is recorded and replayed.
         gateway = Gateway(cache_dir=tmp / "cache", ledger_path=tmp / "calls.jsonl", max_calls=1,
                           transport=transport, tier=C.NEW_TIER)
-        wire.queue = [429, 429, 429]
-        before = len(wire.requests)
+        wire.down = {first: 503}
         with contextlib.redirect_stderr(io.StringIO()):
-            first = gateway.call("implementer", _PROMPT, tier="fast", seed=0)
-            second = gateway.call("implementer", _PROMPT + " again", tier="fast", seed=0)
-        require(first.status == "ok" and first.source == "network", f"first call {first.status}/{first.reason}")
-        require(second.status == "blocked" and gateway.network_calls == 1,
-                f"cap 1: second call {second.status}, network {gateway.network_calls}")
-        require(len(wire.requests) - before == 4 and slept == waits_all[:3], f"{len(wire.requests) - before} attempts")
+            got_first = gateway.call("implementer", _PROMPT, tier="fast", seed=0)
+            got_second = gateway.call("implementer", _PROMPT + " again", tier="fast", seed=0)
+        wire.down = {}
+        require(got_first.status == "ok" and got_first.source == "network" and got_first.provider == second,
+                f"first call {got_first.status}/{got_first.provider}")
+        require(got_second.status == "blocked" and gateway.network_calls == 1,
+                f"cap 1: second call {got_second.status}, network {gateway.network_calls}")
         rows = lines_of(tmp / "calls.jsonl")
-        require([(r["status"], r["source"]) for r in rows] == [("ok", "network"), ("blocked", None)], f"calls.jsonl {rows}")
-        totals = gateway.totals()["by_role"]["implementer"]
-        require((totals["calls"], totals["network"], totals["ok"]) == (2, 1, 1), f"totals {totals}")
+        require(len(rows) == 2 and rows[0].get("provider") == second and set(rows[0]) == {*LEDGER_KEYS, "provider"}
+                and set(rows[1]) == set(LEDGER_KEYS), f"calls.jsonl rows {rows}")
+        entries = [json.loads(p.read_text(encoding="utf-8")) for p in (tmp / "cache").rglob("*.json")]
+        entry = [e for e in entries if e.get("key") == got_first.key]
+        require(len(entry) == 1 and entry[0].get("provider") == second
+                and set(entry[0]) == {*CACHE_ENTRY_KEYS, "provider"}, f"cache entry {entry}")
+        offline = Gateway(cache_dir=tmp / "cache", ledger_path=tmp / "calls-replay.jsonl", tier=C.NEW_TIER)
+        replay = offline.call("implementer", _PROMPT, tier="fast", seed=0)
+        replayed = lines_of(tmp / "calls-replay.jsonl")
+        require(replay.source == "cache" and replay.provider == second and replayed[0].get("provider") == second,
+                f"cache hit: {replay.source}/{replay.provider}, row {replayed}")
 
-        slept.clear()
+        plain = Gateway(cache_dir=tmp / "cache-ds", ledger_path=tmp / "calls-ds.jsonl", transport=transport)
+        deep = plain.call("implementer", _PROMPT, tier="fast", seed=0)
+        rows = lines_of(tmp / "calls-ds.jsonl")
+        entries = [json.loads(p.read_text(encoding="utf-8")) for p in (tmp / "cache-ds").rglob("*.json")]
+        require(deep.status == "ok" and deep.provider is None and set(rows[0]) == set(LEDGER_KEYS)
+                and len(entries) == 1 and set(entries[0]) == set(CACHE_ENTRY_KEYS),
+                f"DeepSeek row {sorted(rows[0])}, entry {[sorted(e) for e in entries]}")
+
         exhausted = Gateway(cache_dir=tmp / "cache2", ledger_path=tmp / "calls2.jsonl", transport=transport,
                             tier=C.NEW_TIER)
-        wire.status = 429
+        wire.status = 503
         with contextlib.redirect_stderr(io.StringIO()):
             lost = exhausted.call("conjecturer", _PROMPT, tier="fast", seed=0)
         wire.status = 200
-        want = "TransportError: HTTPStatusError 429"
-        require((lost.status, lost.reason) == ("error", want) and classify(lost.reason) == "rate"
-                and exhausted.network_calls == 1 and len(lines_of(tmp / "calls2.jsonl")) == 1,
-                f"exhausted retries: {lost.status}/{lost.reason!r}, network {exhausted.network_calls}")
+        rows = lines_of(tmp / "calls2.jsonl")
+        require((lost.status, lost.reason, lost.provider) == ("error", "TransportError: HTTPStatusError 503", None)
+                and exhausted.network_calls == 1 and len(rows) == 1 and set(rows[0]) == set(LEDGER_KEYS),
+                f"all providers down: {lost.status}/{lost.reason!r}/{lost.provider}, network {exhausted.network_calls}")
         transport.close_client()
     for path in tmp.rglob("*"):
         if path.is_file():
             require(_KEY not in path.read_text(encoding="utf-8", errors="replace"), f"the key is in {path.name}")
-    return (f"{C.RETRY_CONSTANT} = {C.RETRY_WAITS_S} added, other constants as at {C.BASE_TAG}; 429 retried with "
-            f"those waits and one stderr line each, then TransportError 429; {len(C.NO_RETRY_STATUSES)} statuses, "
-            f"connection errors and null content not retried; one gateway call, cap unit and row per call")
+    return (f"{C.RETRY_CONSTANT} = {C.RETRY_WAITS_S}, {C.RETRY_STATUSES_CONSTANT} = {C.RETRY_STATUSES} added, other "
+            f"constants as at {C.BASE_TAG}; 429/503 retried per provider, then {' -> '.join(C.NEW_PROVIDERS)}; "
+            f"{len(C.NO_RETRY_STATUSES)} statuses, connection errors and null content neither retried nor switched; "
+            f"provider recorded and replayed (GLM only); one gateway call, cap unit and row per call")
 
 
 # ---- main ---------------------------------------------------------------------------------------

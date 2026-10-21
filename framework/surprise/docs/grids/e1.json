@@ -16,8 +16,8 @@
   "window": 10,
   "prices": {
     "z-ai/glm-5.3-flash": {
-      "input": 0.037476,
-      "output": 0.16
+      "input": 0.09,
+      "output": 0.15
     }
   },
   "concurrency": 6,
