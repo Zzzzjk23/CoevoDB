@@ -1,0 +1,103 @@
+{
+  "attribution_not_replayed": 12,
+  "different": [],
+  "elapsed_s": 485.9709737999947,
+  "harness": "80b92846bce195dad4696ba94b3defae559bd5f0a93c7cacf2b193c9c2c0ccea",
+  "invalid_kept": 2,
+  "same": 2000,
+  "sample": 2000,
+  "sampled": 2000,
+  "schema": 1,
+  "seed": 16,
+  "source": {
+    "ledger_sha256": "6c9c868eee1514b54998a6fb146e9e73d9a3aa543b050fccf76f510f1a1b5ed4",
+    "records": 9400,
+    "run_dir": "D:\\CoevoDB\\framework\\results\\s08\\longrun"
+  },
+  "strata": {
+    "cross_dbms|fail": {
+      "records": 7,
+      "sampled": 1
+    },
+    "cross_dbms|invalid": {
+      "records": 755,
+      "sampled": 161
+    },
+    "cross_dbms|pass": {
+      "records": 361,
+      "sampled": 77
+    },
+    "equivalent_query|fail": {
+      "records": 10,
+      "sampled": 2
+    },
+    "equivalent_query|invalid": {
+      "records": 1928,
+      "sampled": 410
+    },
+    "equivalent_query|pass": {
+      "records": 272,
+      "sampled": 58
+    },
+    "index_presence|fail": {
+      "records": 1,
+      "sampled": 1
+    },
+    "index_presence|invalid": {
+      "records": 557,
+      "sampled": 118
+    },
+    "index_presence|pass": {
+      "records": 843,
+      "sampled": 179
+    },
+    "norec|fail": {
+      "records": 7,
+      "sampled": 1
+    },
+    "norec|invalid": {
+      "records": 330,
+      "sampled": 70
+    },
+    "norec|pass": {
+      "records": 568,
+      "sampled": 121
+    },
+    "plan_variant|fail": {
+      "records": 52,
+      "sampled": 11
+    },
+    "plan_variant|invalid": {
+      "records": 508,
+      "sampled": 108
+    },
+    "plan_variant|pass": {
+      "records": 904,
+      "sampled": 192
+    },
+    "tlp|fail": {
+      "records": 3,
+      "sampled": 1
+    },
+    "tlp|invalid": {
+      "records": 319,
+      "sampled": 68
+    },
+    "tlp|pass": {
+      "records": 530,
+      "sampled": 113
+    },
+    "version_differential|fail": {
+      "records": 14,
+      "sampled": 3
+    },
+    "version_differential|invalid": {
+      "records": 507,
+      "sampled": 108
+    },
+    "version_differential|pass": {
+      "records": 924,
+      "sampled": 197
+    }
+  }
+}
