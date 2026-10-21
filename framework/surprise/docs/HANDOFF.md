@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -106,6 +106,14 @@
 - 服务器上去掉两把密钥跑：`pytest -q testing tests` 1180 passed、3 skipped（与本机相同）。`gates.all` 第一次 12/16：S15、S19 的范围检查要比较 `s15-done*` 三个 tag，服务器以前只取过部署 tag；推送并取了这三个 tag（只是 tag，代码不变）之后，S19 12/12、S15 10/11。
 - 还剩四组不过，都因服务器上 S8 长跑产物（不入库）是旧的或没有，与代码无关，也不影响跑实验：S08 `sawtooth`、`duplicates` 与 S11 `ciao` 要 `results/s08/longrun` 是 4d0c74b 重钉的那份（服务器上那份是 S14 时拷去的，哈希与之后两次重钉都不同），S15 `stream` 要 `results/s08/longrun-s10code`（服务器上没有）。两个目录本机各约 0.7 GB，拷过去服务器门槛就能全过；没拷，要用户定。
 - tmux 里的旧会话 `e1-pilot`、`s14-smoke` 还在，没有清理。
+
+### GLM 小预实验 `e1-pilot-glm`（2026-10-21 起跑，部署 `s19-deploy-3`）
+
+用户看过编排者的建议（先在 OpenRouter 给 key 设额度上限，再跑一次 GLM 小预实验，然后 E1 正式）后说："1不用做了，调用失败再报警即可。2现在开始跑，你只需要挂到服务器上跑，不用监控"。
+- 不给 key 设额度上限：看守查不到余额，欠费只靠调用失败（402）报警，用户接受。
+- 配置 `docs/grids/e1_pilot_glm.json`：只有 `full` 臂、`glm-flash` 档，种子 9101、9102，每格 2 小时，两格同时跑；脚本 `docs/runs/e1_pilot_glm.sh` 同时起看守；运行单 `docs/runs/E1.md` §1b。`s19-deploy-3` 与 `s19-deploy-2` 只差文档与这两个文件。
+- tmux 会话 `e1-glm`；结果 `~/CoevoDB/framework/results/e1-pilot-glm/`，日志 `results/e1-pilot-glm.log`，看守日志 `results/e1-pilot-glm.notify.log`。按用户的话起跑后不监控（只在起跑后看了一次是否正常起来）。
+- 跑完之后要比的东西见 E1.md §1b；据此定 E1 正式的并发度、写 `e1.json`（`full`、`nollm`、`sqlancer` × 种子 1001–1005，`pure_llm` 不跑），E1 正式等用户说。
 
 
 下一步（等用户说）：
