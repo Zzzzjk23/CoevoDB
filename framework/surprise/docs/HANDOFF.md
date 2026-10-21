@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -116,6 +116,13 @@
 - 跑完之后要比的东西见 E1.md §1b；据此确认 E1 正式的并发度，E1 正式等用户说。
 - **中止**（用户："中止现在服务器上的实验，我需要调试调用的模型"）：08:03 UTC 在 tmux 窗口按 Ctrl-C，网格结束两格的进程树，看守也跟着停了；之后服务器上没有本项目的进程。只跑了约 18 分钟，两格都没有 `cell.json`（未完成），结果目录 `results/e1-pilot-glm/` 留着没删。
 - 中止前的调用（两格共 171 次）：s9101 87 次、s9102 84 次；失败 11 次，其中 8 次是 HTTP 503（Open Inference 不可用；只重试 429，503 不重试，算失败）、1 次 null 正文（`TypeError`），另有 2 次 implementer 回复不是 JSON（`no_json`）；格日志里 2 行 429 重试，重试后都成功。prior 每次 9–18 秒。
+
+### 503 重试与服务商自动切换，工作包 `s19-providers`（2026-10-21，已合并，未部署）
+
+GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inference/fp4更换为为sail-research/fp4 3. 若退避重试仍然不行可以更换别的服务商，优先尝试open-inference/fp4和sail-research/us"；第 3 条问过之后选"每次调用自动切换"（PLAN §9 补充一条）。
+- 做法：`roles/providers.py` 的 `glm-flash` 档改成服务商列表 `[sail-research/fp4, open-inference/fp4, sail-research/us]`（三家都是 fp4），`body` 只剩 `reasoning`；传输层每家发一个 `provider.only` 只写这一家、不许 OpenRouter 回退的请求，429 与 503（`roles/constants.py` 新加的 `RETRY_STATUSES`）在这一家按 10/30/60/120 秒重试，用完就换下一家，三家都不行才抛 `TransportError`；每次调用都从第一家起。其他错误既不重试也不切换。stderr 每次等待一行、每次切换一行。回答的服务商记在 `Completion`、`Reply`、`calls.jsonl` 与缓存条目（只在有值时写，DeepSeek 的行与条目字段不变）。价格表 2026-10-21 重读，网格按第一家 $0.09/$0.15 每百万 token 计（另两家同价或更便宜，所以是上界）；`e1.json` 与 `e1_pilot_glm.json` 的价格跟着改了。
+- 门槛 `s19` 的 `transport`、`gateway`、`retry`、`prices` 组先改（派发前用临时实现验证过，S19 相关五组与 S09 全过，临时代码已还原），提交 58993e8。codex 的提交 31d2620（改 constants、providers、transport、gateway、价格表，改 S19 自己的两个测试文件里随行为改变的期望，新测试 `test_surprise_s19_providers.py`，共新增 25 项）。审查红旗三条都无害：S11 `ciao`（已知）；7 处改写的断言都随本包的行为改变（价格 0.39、三家 15 次尝试、503 改为重试后用 402 测不重试），没有放宽；执行者日志的"疑似密钥"是测试里的假凭据与 HANDOFF 里只写了前缀的一句。合并 0e5ffb3，归档 61c0abd，worktree 已清理；合并后本机 `pytest -q testing tests` 1205 passed、3 skipped，`gates.all` PASS 16/16。
+- 服务器上仍是 `s19-deploy-3`（只有 429 重试、只用 Open Inference）；再跑之前要部署新 tag。还没有用新服务商做真实调用。
 
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
