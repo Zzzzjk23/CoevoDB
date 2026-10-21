@@ -25,7 +25,7 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 交接分支 `handoff`（2026-10-22，给队友，进行中）
+## 交接分支 `handoff`（2026-10-22，给队友，已打 tag `handoff-2026-10-22`）
 
 用户 2026-10-22 要把项目交接给队友，问给哪个版本、README 是否要更新，听过建议后说"那就按你的建议开始吧"。S16、S19 两个会话都没收尾，所以交接版本不在任何一条会话分支上做，另建分支 `handoff`（worktree `.claude/worktrees/handoff`），不动 `session/s16`、`session/s19`。
 
@@ -34,7 +34,11 @@
 - 门槛的已知问题（打交接 tag 前要解决）：
   1. S16 `scope` 在本分支不过：`providers.py` 与三个 S19 测试是 `s19-deploy-5` 之后 S19 改的，不在 S16 范围里。S16 打了 `s16-done` 之后此组改按 `s19-deploy-5..s16-done` 核对，自然消失。
   2. S19 `scope` 因 `README.md`、`framework/README.md` 不在 S19 范围里而不过。用户选"门槛放行两个 README"：本分支的 `gates/s19_cases.py` 在 `ALLOWED_CHANGES` 末尾加了这两个文件（只这两个文档，代码范围不变），此组已通过。`session/s19` 上没有这处改动，合并时带过去。
-- 用户选"不等，现在的状态就交"：不等 `s16-done`。S8 长跑（S16 会话起的，约 04:55 结束）跑完之后，在本分支上跑全量 pytest 与 `surprise.gates.all`（之前不跑，免得抢 CPU、扰乱长跑的逐行比对），结果与不过的组写进本节，打 `handoff-2026-10-22`，用 `git bundle`（分支 `handoff`、`session/s16`、`session/s19` 与全部 tag）交给队友。S16 的比对、重钉与收尾仍由 S16 会话在用户说"开始"后做，队友之后再拉 `s16-done`。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
+- 用户选"不等，现在的状态就交"：不等 `s16-done`。S8 长跑（S16 会话起的，约 04:55 结束）跑完之后，在本分支上跑全量 pytest 与 `surprise.gates.all`（之前不跑，免得抢 CPU、扰乱长跑的逐行比对），结果与不过的组写进本节，打 `handoff-2026-10-22`，用 `git bundle`（分支 `handoff`、`session/s16`、`session/s19` 与全部 tag）交给队友。S16 的比对、重钉与收尾仍由 S16 会话在用户说"开始"后做，队友之后再拉 `s16-done`。
+- 用户后来说"你不要等S8长跑结束了，快收尾"：03:20–03:35 在本分支上跑了验证（去掉密钥；与 S8 长跑同时跑，长跑的吞吐可能因此略低，逐行比对由 S16 会话收尾时看）。
+  - 全量 pytest：1377 passed、3 skipped、1 failed，12 分 41 秒。失败的 `test_surprise_s16_replay.py::test_source_run_dir_relative_to_framework` 是本 worktree 的 `framework/results` 目录联接（指向主检出区，给门槛读 S8 产物用）造成的：`resolve()` 顺着联接走出 worktree 的 `framework/`，`_run_dir` 只好返回绝对路径。去掉联接后这个文件 25 passed。正常检出（`results` 是真目录或不存在）不受影响，所以按 1378 passed、3 skipped 计，与 `s16-testfix` 相同。
+  - 门槛：S19 12/12 通过；S12 `docs` 通过；S16 `scope` 不过（`README.md`、`framework/README.md` 与 S19 的四个文件不在 S16 范围；打 `s16-done` 后自然通过）。`surprise.gates.all` 没跑（全部约一小时，用户要快收尾）。
+  - 未决：S16 的 worktree（`.claude/worktrees/s16`）也用同样的 `framework/results` 联接，S16 收尾复跑全量 pytest 时会碰到同一处失败；那是环境，不是代码问题。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
 
 ## 进行中：S16（PostgreSQL 目标，2026-10-21 开始）
 
