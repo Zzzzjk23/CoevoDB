@@ -113,7 +113,14 @@
 - 不给 key 设额度上限：看守查不到余额，欠费只靠调用失败（402）报警，用户接受。
 - 配置 `docs/grids/e1_pilot_glm.json`：只有 `full` 臂、`glm-flash` 档，种子 9101、9102，每格 2 小时，两格同时跑；脚本 `docs/runs/e1_pilot_glm.sh` 同时起看守；运行单 `docs/runs/E1.md` §1b。`s19-deploy-3` 与 `s19-deploy-2` 只差文档与这两个文件。
 - tmux 会话 `e1-glm`；结果 `~/CoevoDB/framework/results/e1-pilot-glm/`，日志 `results/e1-pilot-glm.log`，看守日志 `results/e1-pilot-glm.notify.log`。按用户的话起跑后不监控（只在起跑后看了一次是否正常起来）。起跑检查（07:45:46 UTC 起，约 2 分钟后）：两格的 loop 进程与看守都在，看守已发出"开始看守"；17 次 LLM 调用（prior 与 oracle_inventor）全部 ok，每次 9–18 秒，还没有 429。`grid status` 此时把两格显示成 `failed`，是显示问题（见"S19 新发现"第 6 条）。
-- 跑完之后要比的东西见 E1.md §1b；据此定 E1 正式的并发度、写 `e1.json`（`full`、`nollm`、`sqlancer` × 种子 1001–1005，`pure_llm` 不跑），E1 正式等用户说。
+- 跑完之后要比的东西见 E1.md §1b；据此确认 E1 正式的并发度，E1 正式等用户说。
+
+### E1 正式的配置（2026-10-21 写好，没部署）
+
+用户在 GLM 预实验跑着时问本机能做什么，选了"做第1件，第2件等E1正式起来再说"（第 1 件：写 E1 正式配置；第 2 件：S16 的本机代码部分，等 E1 正式起跑后再开）。
+- `docs/grids/e1.json`：`full`（`glm-flash`）、`nollm`、`sqlancer` × 种子 1001–1005，15 格 × 24 小时；脚本 `docs/runs/e1.sh`（同时起看守）；运行单 `docs/runs/E1.md` §2。
+- 并发暂定 6，不是 `EXPERIMENT.md` §5 的目标 8：去掉 `pure_llm` 后每个种子只有 3 个臂，网格按种子分块起格，并发 8 会把种子 1003 的块拆开（`sqlancer` 晚一天）；6 正好两块同时跑，约 73 小时（8 约 49 小时）。GLM 预实验核对后与用户确认。
+- 服务器上的 GLM 预实验在跑，按规矩没有部署；起跑 E1 时新打 `s19-deploy-4`。S19 门槛将来的"配置与 EXPERIMENT.md 一致"要把 `pure_llm` 不跑算进去（15 格）。
 
 
 下一步（等用户说）：
