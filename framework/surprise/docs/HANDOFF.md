@@ -25,6 +25,17 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
+## 交接分支 `handoff`（2026-10-22，给队友，进行中）
+
+用户 2026-10-22 要把项目交接给队友，问给哪个版本、README 是否要更新，听过建议后说"那就按你的建议开始吧"。S16、S19 两个会话都没收尾，所以交接版本不在任何一条会话分支上做，另建分支 `handoff`（worktree `.claude/worktrees/handoff`），不动 `session/s16`、`session/s19`。
+
+- 合并：在 `session/s16`（7096d35）上合入 `session/s19`（8c73e93）。`session/s16` 已含 S19 到 4ae7884 的全部内容，S19 之后的提交里代码只有 `s19-max` 的一行 `providers.py` 与三个 S19 测试；代码无冲突。本文件与 DECISIONS 两边各加了行，都保留：状态表的 S19 行取 `session/s19` 较新的一行，DECISIONS 按日期稳定排序（同一天 S16 在前）。
+- README：根 `README.md` 改成项目入口（现状与 HANDOFF 的链接、文档阅读顺序、规则、仓库外的环境清单、测试与门槛命令），原来的 31 个缺陷家族表与复现说明保留在后面；`framework/README.md` 补上 `--engine postgres`（每个运行自起实例）、`--llm-tier glm-flash`（密钥仍读 `DEEPSEEK_API_KEY`）、看守与归档命令、`results/<名字>.work` 起跑，以及 S15–S16 新加的环境变量。都用英文，与原文一致。S12 `docs` 组通过（259 个路径都存在、必需的字样都在）。
+- 门槛的已知问题（打交接 tag 前要解决）：
+  1. S16 `scope` 在本分支不过：`providers.py` 与三个 S19 测试是 `s19-deploy-5` 之后 S19 改的，不在 S16 范围里。S16 打了 `s16-done` 之后此组改按 `s19-deploy-5..s16-done` 核对，自然消失。
+  2. S19 `scope` 会因 `README.md`、`framework/README.md` 不在 S19 范围里而不过，直到 `s19-done`（E1 正式跑完之后）。要用户定：在 `gates/s19_cases.py` 的 `ALLOWED_CHANGES` 加这两个文档文件，或者接受交接 tag 上这一组不过并写明原因。
+- 剩下的步骤：S8 长跑结束后 S16 会话收尾、打 `s16-done`（等用户说）；把 `s16-done` 与 S19 的新提交合进本分支；全量 pytest 与 `surprise.gates.all`；打 `handoff-2026-10-22`，用 `git bundle`（分支 `handoff`、`session/s16`、`session/s19` 与全部 tag）交给队友。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
+
 ## 进行中：S16（PostgreSQL 目标，2026-10-21 开始）
 
 用户的指示："开始 S16（PostgreSQL 接入）的本机代码部分"。服务器仍按 2026-10-20 的决定不部署；S16 的部署（装 PG 15.19、每格独立实例）与 §8 回放检查等用户说。

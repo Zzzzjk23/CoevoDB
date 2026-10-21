@@ -22,8 +22,23 @@ co-evolution) is kept as a baseline arm. Architecture:
 
 ## Running the surprise framework
 
-Commands below are run from `framework/`. LLM roles are off by default;
+Commands below are run from `framework/` with the interpreter of the
+repository's main environment, `.venv` at the repository root (`python` below
+stands for it; the root README lists the environment). LLM roles are off by default;
 `--llm ROLE` turns one role on (repeatable) and requires `DEEPSEEK_API_KEY`.
+
+Target engines are `duckdb`, `datafusion` and `postgres`. With
+`--engine postgres` the run starts its own PostgreSQL 16.15 target and 15.19
+old-version instances (`surprise/experiments/pg_instance.py`) and removes
+them at the end; it reuses existing ones only when both
+`COEVO_TARGET_PG_DSN` and `COEVO_OLD_PG_DSN` are set.
+
+`--llm-tier` picks the endpoint for every role call: `fast` and `strong` are
+DeepSeek; `glm-flash` is GLM 5.3 Flash through OpenRouter (provider order and
+reasoning effort in `surprise/roles/providers.py`), the tier the S19 runs use.
+Every tier reads its key from `DEEPSEEK_API_KEY`, so on a machine that runs
+`glm-flash` that variable holds an OpenRouter key (this is how the server is
+set up, `surprise/docs/SERVER.md` §5.2).
 
 ```bash
 # API key is read from the environment; never put it in YAML.
@@ -31,6 +46,10 @@ export DEEPSEEK_API_KEY=...
 
 # Hunter loop (roles off)
 python -m surprise.experiments.loop --out DIR --seed 0 --engine duckdb --max-minutes 10
+
+# Same on PostgreSQL, with every role on the GLM tier
+python -m surprise.experiments.loop --out DIR --seed 0 --engine postgres --max-minutes 10 \
+    --llm prior --llm implementer --llm conjecturer --llm-tier glm-flash
 
 # Experiment grid, then a status dump
 python -m surprise.experiments.grid run CONFIG --out DIR
@@ -50,6 +69,26 @@ oracles, freeze, Hunter policy, theory snapshots, LLM cache and cap).
 `python -m surprise.baselines.old_no_llm --help` lists `--mode` (default
 `no_llm`).
 
+Alerts and archives for grid runs:
+
+```bash
+# Push alerts (credit exhausted, failing calls, stalls, grid finished) through pushplus;
+# reads results only, needs PUSHPLUS_TOKEN, stops when the grid ends
+python -m surprise.notify.watch results/NAME --pid GRID_PID
+
+# Pack a finished grid, verify the archive, then prune the raw directory
+python -m surprise.experiments.archive pack results/NAME --dest NAME.tar.gz
+python -m surprise.experiments.archive verify NAME.tar.gz
+python -m surprise.experiments.archive prune results/NAME --archive NAME.tar.gz
+```
+
+On the experiment server, grids are started by the scripts in
+`surprise/docs/runs/`, following the runbooks next to them. The current ones
+(`surprise/docs/runs/e1.sh`, `surprise/docs/runs/e1_pilot_glm.sh`) run each
+grid from `results/NAME.work`, so SQL that an experiment generates cannot
+write files into the code checkout. `surprise/docs/SERVER.md` §5 is
+the full runbook.
+
 ## Tests and gates
 
 ```bash
@@ -61,8 +100,10 @@ python -m pytest -q testing tests
 python -m surprise.gates.all
 ```
 
-Gates depend on machine-local resources (engine venvs, a PostgreSQL
-reference, source checkouts, long-run artifacts). See
+Gates depend on machine-local resources (engine venvs, the PostgreSQL
+reference and binaries, source checkouts, the pinned S8 artifacts) listed in
+the root [README](../README.md#setting-up-a-machine), and several compare
+against session tags. Current gate results and known failures are in
 [surprise/docs/HANDOFF.md](surprise/docs/HANDOFF.md).
 
 ## The old CoevoDB (baseline arm)
@@ -142,3 +183,17 @@ editing source.
 | `COEVO_KEYS_YML` | `{key, completion_url}` file for repair_bench drivers |
 
 Script docstrings use `$COEVO_PGBLD/<build>` as the canonical prefix form.
+
+The surprise framework finds its resources under the repository root (through
+the git common directory, so every worktree shares one copy) and works on a
+fresh clone once they are in place. These variables override the defaults:
+
+| env var | resource |
+|---|---|
+| `PUSHPLUS_TOKEN` | pushplus token for the `surprise.notify` alerts |
+| `COEVO_VENVS` | directory of the versioned interpreters (default `.venvs`) |
+| `SURPRISE_SOURCE_ROOT` | parent of the engine source checkouts the LLM roles read (default `.src`) |
+| `COEVO_REFERENCE_PG_DSN` | PostgreSQL reference for Cross-DBMS (default host 127.0.0.1, port 55432, user `coevo`) |
+| `COEVO_TARGET_PG_DSN`, `COEVO_OLD_PG_DSN` | PostgreSQL target (16.15) and old-version (15.19) instances; set by each run for its own instances, or set both to reuse running ones |
+| `COEVO_PG_BIN`, `COEVO_PG_OLD_BIN` | `bin` directories of 16.15 and 15.19 for the per-run instances (default under `.orch/pg16` and `.orch/pg15`) |
+| `COEVO_JAVA`, `COEVO_SQLANCER_HOME` | Java and the SQLancer build for the SQLancer arm (default `.orch/jdk` and `.orch/sqlancer`) |

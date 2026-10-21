@@ -1,13 +1,125 @@
-# co-logic-bugs
+# CoevoDB
 
-Confirmed logic bugs found by an LLM-driven co-evolutionary DBMS testing
-framework (multi-oracle differential + plan-variant + metamorphic testing).
+Research code for finding logic bugs in database engines, plus curated
+reproducers of the bugs it has confirmed.
 
-Each directory contains self-contained reproducers: a commented `.sql`
-file per bug family (version, expected vs actual, upstream references),
-plus standalone verifier scripts where applicable.
+- `framework/` is the code. The current system is the surprise-driven
+  framework in `framework/surprise/`: a falsifiable theory predicts a failure
+  probability for every experiment, Hunter picks the next experiment by
+  information value, and labels come only from seven oracles plus the CVE
+  (Contract-Verified Evidence) pipeline. The LLM is never the bug oracle.
+  The original CoevoDB (LLM Hunter/Fixer co-evolution) is kept as a baseline
+  arm at `framework/surprise/baselines/coevodb_v1/`. Architecture:
+  [framework/surprise/ARCHITECTURE.md](framework/surprise/ARCHITECTURE.md).
+- `duckdb/`, `datafusion/`, `sqlite/`, `tidb/`, `postgres/`, `mariadb/`,
+  `mysql/` hold the bug reproducers and `docs/` their evidence trail (see
+  [Confirmed bug reproducers](#confirmed-bug-reproducers-31-families) below).
 
-## Confirmed families (31)
+## Where the project stands
+
+Work is cut into numbered sessions, each with one deliverable and one gate
+(`framework/surprise/docs/SESSIONS.md`). S0–S12 migrated the old system to
+the surprise-driven framework; S13 onward is the formal experiment campaign
+(E1–E7 in `framework/surprise/docs/EXPERIMENT.md`), run on a dedicated
+experiment server.
+
+As of 2026-10-22: S0–S15 are done. S16 (PostgreSQL 16.15 as a target) has all
+of its local code merged and is paused before its close-out. S19 (E1, the
+DuckDB main comparison) is in its pilot stage on the server; the formal grid
+waits for the project owner. **The live state, open issues and next steps are in
+[framework/surprise/docs/HANDOFF.md](framework/surprise/docs/HANDOFF.md)**,
+which is always newer than this README.
+
+Git conventions: each session works on a branch session/sNN and ends with a
+tag `sNN-done` (`sNN-done-r2` after acceptance fixes); work packages run on
+branches grok/&lt;package&gt;; tags `sNN-deploy-N` mark what was deployed to the
+server. `main` lags behind the session branches (last merge: S15).
+
+## Reading order
+
+The project documents under `framework/surprise/docs/` are written in Chinese.
+
+1. `CLAUDE.md` — the rules every session follows, human or agent.
+2. [framework/surprise/ARCHITECTURE.md](framework/surprise/ARCHITECTURE.md) — the parts of the framework.
+3. [PLAN.md](framework/surprise/docs/PLAN.md) — the overall plan. Read-only; it
+   changes only on the project owner's decisions (§9 lists them).
+4. [SESSIONS.md](framework/surprise/docs/SESSIONS.md) — scope, deliverables and gate of every session.
+5. [EXPERIMENT.md](framework/surprise/docs/EXPERIMENT.md) — the formal experiment protocol.
+6. [HANDOFF.md](framework/surprise/docs/HANDOFF.md) — current state and open issues.
+7. [DECISIONS.md](framework/surprise/docs/DECISIONS.md) — decision log, append-only.
+8. [SERVER.md](framework/surprise/docs/SERVER.md) — the experiment server: environment, deployment, runbook.
+9. [ORCHESTRATION.md](framework/surprise/docs/ORCHESTRATION.md) — how a session is run: the
+   orchestrator writes the gate first, executors implement each work package
+   in their own worktree (`tools/orch/grok_worker.py`), the orchestrator
+   reviews and merges.
+10. [framework/README.md](framework/README.md) and [framework/AGENTS.md](framework/AGENTS.md) — commands,
+    environment variables, PostgreSQL notes.
+
+## Ground rules
+
+The full list is in `CLAUDE.md`; these are the ones that bite first.
+
+- Secrets come only from environment variables (`DEEPSEEK_API_KEY`,
+  `PUSHPLUS_TOKEN`). Never print them or put them in code, configs, logs,
+  commits or chat. Everyone uses their own keys.
+- The LLM never labels a case. Labels come only from the seven oracles plus CVE.
+- `framework/surprise/harness/` and the manifest constants are frozen (the
+  gates check the hash). S16 unfroze and re-froze them for PostgreSQL;
+  any further change needs the project owner.
+- Do only the current session's scope. Anything else goes into the open
+  issues of HANDOFF.md. Each gate (`framework/surprise/gates/`) is written
+  before the work it checks, and every earlier gate stays green.
+- One orchestrator per session branch at a time.
+- Only one person deploys to and launches runs on the experiment server. Never
+  touch a running grid. The server checkout only ever checks out tags.
+
+## Setting up a machine
+
+Everything below is outside git (gitignored) and lives under the repository
+root, with the same layout on Windows and on the server. Exact versions are in
+SERVER.md §2 and the machine-readable list in SERVER.md §7.
+
+| path | contents |
+|---|---|
+| `.venv` | main environment, Python 3.13.9: DuckDB 1.5.5, DataFusion 54.0.0, psycopg2-binary 2.9.13, sqlglot 30.21.0, pytest, matplotlib, scipy |
+| `.venvs/duckdb-1.1.3` | DuckDB 1.1.3 plus psycopg2-binary (Version differential subprocess) |
+| `.venvs/duckdb-1.1.3-full` | the whole framework on DuckDB 1.1.3 (S8 recall, E4) |
+| `.venvs/datafusion-50.0.0` | DataFusion 50.0.0 and pyarrow (Version differential subprocess) |
+| `.src/duckdb-v1.5.5`, `.src/datafusion-54.0.0`, `.src/postgresql-16.15` | engine sources the LLM roles read, at pinned commits (`framework/surprise/roles/constants.py`, `framework/surprise/roles/sources_map.py`) |
+| `.orch/pg16` | PostgreSQL 16.15: the reference server on 127.0.0.1:55432, user `coevo`, and the binaries for per-run target instances |
+| `.orch/pg15` | PostgreSQL 15.19 binaries (Version differential on PostgreSQL) |
+| `.orch/jdk`, `.orch/sqlancer` | JDK 21 and the patched SQLancer build (SERVER.md §8) |
+| `framework/results/s08/` | the four pinned S8 artifact directories (`pre`, `longrun`, `old_no_llm`, `recall113`); the gates check their bytes, so copy them, do not regenerate them |
+
+The repository root also has `duckdb/` and `datafusion/` reproducer
+directories, so `import duckdb` from the root "succeeds" without the package;
+check `__version__` when verifying an environment. Machine-local paths can be
+overridden by environment variables (table in
+[framework/README.md](framework/README.md#machine-local-paths)).
+
+## Tests and gates
+
+Run from `framework/` with the main environment's interpreter
+(`.venv/bin/python` on Linux). Do not run bare `pytest`: `framework/test_api.py`
+calls the DeepSeek API when the key is set.
+
+```bash
+cd framework
+../.venv/Scripts/python.exe -m pytest -q testing tests   # about 10 minutes
+../.venv/Scripts/python.exe -m surprise.gates.all        # about an hour; exit code 0 = every gate passes
+```
+
+Several gates compare against session tags, so a clone needs the tags too.
+More commands (Hunter loop, grids, reports, baselines, alerts, archives) are
+in [framework/README.md](framework/README.md).
+
+## Confirmed bug reproducers (31 families)
+
+Confirmed logic bugs found during the earlier campaigns (multi-oracle
+differential + plan-variant + metamorphic testing). Each directory contains
+self-contained reproducers: a commented `.sql` file per bug family (version,
+expected vs actual, upstream references), plus standalone verifier scripts
+where applicable.
 
 | engine | version | family | manifestation | status |
 |---|---|---|---|---|
@@ -43,35 +155,11 @@ plus standalone verifier scripts where applicable.
 | MariaDB | 11.8.9 | [MDB-B](mariadb/MDB-B_mergeview_window_quantified.sql) | merged source x window/agg x quantified -> empty set; derived/CTE hit | extends MDEV-40557/40780 (12 new shapes) |
 | MySQL | 8.4.2 | [MYSQL-A](mysql/MYSQL-A_quantified_doubleneg.sql) | `NOT(NOT(quantified))` wrong result on 8.4 LTS | upstream #121079 (fixed only in 9.7) |
 
-## Framework (`framework/`)
+Run artifacts (`results/`, `framework/archive/repair_bench/runs/`) are
+gitignored — the published bugs above are the curated outcome of ~200k
+executions.
 
-The code that found these bugs is the original CoevoDB LLM Hunter/Fixer
-co-evolution testing framework. It is kept as a baseline arm at
-`framework/surprise/baselines/coevodb_v1/`. The research codebase has
-moved to the surprise-driven framework in `framework/surprise/`: a
-falsifiable theory predicts a failure probability for every experiment,
-Hunter selects experiments by information value, and labels come only
-from seven oracles plus CVE (the LLM never labels). See
-[framework/surprise/ARCHITECTURE.md](framework/surprise/ARCHITECTURE.md).
-The patch/localization benchmark `repair_bench` is archived under
-`framework/archive/`.
-
-Run artifacts (`results/`, `framework/archive/repair_bench/runs/`) are gitignored — the
-published bugs above are the curated outcome of ~200k executions.
-Machine-local paths (PG build prefixes, old venvs, the LLM key file)
-resolve through environment variables via `framework/util/paths.py` —
-see the table in [framework/README.md](framework/README.md#machine-local-paths).
-Secrets stay in the environment (`DEEPSEEK_API_KEY`), never in source.
-
-```bash
-cd framework && pip install -r requirements.txt
-export DEEPSEEK_API_KEY=...
-python -m surprise.experiments.loop --out DIR --seed 0 --engine duckdb --max-minutes 10
-python main.py --engine duckdb --mode full --iterations 8
-python -m pytest -q testing tests
-```
-
-## Running the reproducers
+### Running the reproducers
 
 Each `.sql` file is self-contained: header comments give version,
 expected vs actual output, and upstream references.
@@ -90,9 +178,7 @@ expected vs actual output, and upstream references.
 - **MariaDB / MySQL**: feed each file to the `mariadb`/`mysql` client;
   the oracle is `NOT(NOT P) ≡ P` evaluated by the engine itself.
 
-## Documentation
-
-`docs/` carries the full evidence trail:
+### Evidence (`docs/`)
 
 - [UPSTREAM_ISSUES.md](docs/UPSTREAM_ISSUES.md) — report-ready write-up
   per family, ranked by reportability (including excluded tiers and why)
@@ -108,7 +194,7 @@ expected vs actual output, and upstream references.
   records; [recall_repros.json](docs/recall_repros.json) — canonical
   setup/query/fix_set per family
 
-## Scope note
+### Scope note
 
 Only confirmed-tier families are included. Cases adjudicated as
 unspecified-semantics / debug-setting / user-setting / spec-observation
