@@ -381,7 +381,10 @@ def check_registry() -> str:
 
     require(R.TARGET_ENGINES == ("duckdb", "datafusion", "postgres"), f"TARGET_ENGINES {R.TARGET_ENGINES}")
     require(R.REFERENCE_ENGINES == ("duckdb", "datafusion", "sqlite", "postgres"), f"REFERENCE_ENGINES {R.REFERENCE_ENGINES}")
-    require(R.runner_factory_for("postgres") is PostgresTargetRunner, "runner_factory_for('postgres')")
+    with env_set(C.TARGET_DSN_ENV, None):
+        error = expect_raises(ValueError, lambda: R.runner_factory_for("postgres"),
+                              "runner_factory_for('postgres') without a target instance")
+        require(C.TARGET_DSN_ENV in str(error), f"the error must name {C.TARGET_DSN_ENV}: {error}")
     R.validate_request(case("plain"), "tlp", R.make_options())
     expect_raises(ValueError, lambda: R.validate_options(
         R.make_options(reference_factories={"postgres": PostgresReferenceRunner}), target_engine="postgres"),
@@ -389,6 +392,7 @@ def check_registry() -> str:
     refs = sorted(default_reference_factories("postgres"))
     require(refs == ["datafusion", "duckdb", "sqlite"], f"references of postgres: {refs}")
     with instances("registry", old=False):
+        require(R.runner_factory_for("postgres") is PostgresTargetRunner, "runner_factory_for('postgres') with an instance")
         tlp = judge(case("plain_pred"), "tlp")
         expect(tlp, "pass", None, "tlp on postgres")
         variant = judge(case("plain"), "plan_variant")
