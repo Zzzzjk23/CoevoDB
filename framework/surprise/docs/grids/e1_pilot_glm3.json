@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "name": "e1-pilot-glm3",
+  "budget": {
+    "minutes": 120.0
+  },
+  "seeds": [
+    9101,
+    9102
+  ],
+  "repeats": 1,
+  "window": 10,
+  "prices": {
+    "z-ai/glm-5.3-flash": {
+      "input": 0.09,
+      "output": 0.15
+    }
+  },
+  "concurrency": 2,
+  "cpus_per_cell": 2,
+  "engine_threads": 2,
+  "kill_grace_minutes": 10,
+  "arms": [
+    {
+      "name": "full",
+      "kind": "surprise",
+      "engines": [
+        "duckdb"
+      ],
+      "tier": "glm-flash",
+      "llm": {
+        "roles": [
+          "implementer",
+          "conjecturer",
+          "prior",
+          "translator",
+          "vocab_inventor",
+          "oracle_inventor"
+        ],
+        "cache": "results/e1-pilot-glm3/llm-cache/full",
+        "max_calls": "unlimited"
+      }
+    }
+  ]
+}

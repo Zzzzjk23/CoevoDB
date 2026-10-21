@@ -399,3 +399,4 @@
 | 2026-10-21 | S19 | 部署 `s19-deploy-5`，重跑 GLM 预实验为 `e1-pilot-glm2`（用户"重新跑之前停下的实验"）；新名字、新缓存，原 `e1-pilot-glm` 目录不动。服务器只核对了 S19 的测试与门槛（与已全量核对过的 `s19-deploy-4` 只差一行配置）。起跑检查看到 null 正文（`TypeError`）2/9，记进 HANDOFF，报给用户，不监控 | 编排者 |
 | 2026-10-21 | S19 | `e1-pilot-glm2` 跑完的核对（只读）：两格 done；吞吐高于 DeepSeek 的 `full`（1766/2047 对 c8 的 1477/1002）；失败约 1%（DeepSeek 不是 JSON 11%–15%）；只用到第一家，429 各 1 次重试成功，无 503；每格约 $0.06。编排者判断 GLM 配置可用于 E1 正式，并发 6 不变；起跑等用户说 | 编排者 |
 | 2026-10-22 | S19 | 查明 GLM 5.3 Flash 只支持 low/high/max（默认 max、不能关），配置里的 `medium` 被映射、实测等同 low；按用户要求小测 low/high/max（9 次调用，全部成功）：推理量只有 max 接近 DeepSeek，但慢 3–10 倍；结果记进 HANDOFF，档位等用户定 | 用户指示（本会话） |
+| 2026-10-22 | S19 | 用户新决定："用max挡，做一下两小时预实验"。`glm-flash` 的 `reasoning` 改为 `{"effort": "max"}`（PLAN §9、SESSIONS；门槛 `NEW_PROFILE` 已改；代码派给 codex `s19-max`）；预实验 `e1-pilot-glm3`（只差名字与缓存目录）。各角色 max_tokens 不变（用户没提；conjecturer 小测用到 80%，截断与切到 Open Inference 时的失败留给预实验看） | 用户指示（本会话） |
