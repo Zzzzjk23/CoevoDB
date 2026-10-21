@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -114,6 +114,8 @@
 - 配置 `docs/grids/e1_pilot_glm.json`：只有 `full` 臂、`glm-flash` 档，种子 9101、9102，每格 2 小时，两格同时跑；脚本 `docs/runs/e1_pilot_glm.sh` 同时起看守；运行单 `docs/runs/E1.md` §1b。`s19-deploy-3` 与 `s19-deploy-2` 只差文档与这两个文件。
 - tmux 会话 `e1-glm`；结果 `~/CoevoDB/framework/results/e1-pilot-glm/`，日志 `results/e1-pilot-glm.log`，看守日志 `results/e1-pilot-glm.notify.log`。按用户的话起跑后不监控（只在起跑后看了一次是否正常起来）。起跑检查（07:45:46 UTC 起，约 2 分钟后）：两格的 loop 进程与看守都在，看守已发出"开始看守"；17 次 LLM 调用（prior 与 oracle_inventor）全部 ok，每次 9–18 秒，还没有 429。`grid status` 此时把两格显示成 `failed`，是显示问题（见"S19 新发现"第 6 条）。
 - 跑完之后要比的东西见 E1.md §1b；据此确认 E1 正式的并发度，E1 正式等用户说。
+- **中止**（用户："中止现在服务器上的实验，我需要调试调用的模型"）：08:03 UTC 在 tmux 窗口按 Ctrl-C，网格结束两格的进程树，看守也跟着停了；之后服务器上没有本项目的进程。只跑了约 18 分钟，两格都没有 `cell.json`（未完成），结果目录 `results/e1-pilot-glm/` 留着没删。
+- 中止前的调用（两格共 171 次）：s9101 87 次、s9102 84 次；失败 11 次，其中 8 次是 HTTP 503（Open Inference 不可用；只重试 429，503 不重试，算失败）、1 次 null 正文（`TypeError`），另有 2 次 implementer 回复不是 JSON（`no_json`）；格日志里 2 行 429 重试，重试后都成功。prior 每次 9–18 秒。
 
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
