@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；换模型已合并） | s19-deploy-1（预实验部署） | S19 6/6（换模型的门槛）；pytest 1086 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；换模型、提醒、推理强度、429 重试已合并，未部署） | s19-deploy-1（预实验部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -91,6 +91,14 @@
 - 用户先说"直接关闭推理"，又问"之前的deepseek flash开推理了吗？把当前的GLM和之前的方法对齐"，看过上面的数后定为 `effort: low`（开推理、各角色 max_tokens 不变）。门槛 `s19_cases.NEW_PROFILE` 已改；代码那一行派给 codex（`s19-effort`，ccf3ddc，只改 `providers.py` 一处与测试里写死的配置），合并 daed8a6，归档 00c0066，worktree 已清理；合并后本机 `pytest -q testing tests` 1157 passed、3 skipped，`gates.all` PASS 16/16。
 - 复测（用户同意；同样三条 prompt，新缓存）：prior 1113 个输出 token（推理 1029）、29 秒；implementer 2219 个（推理 2074）、32 秒；conjecturer 2295 个（推理 1851）、36 秒。三个都 `finish_reason: stop`、JSON 字段与 DeepSeek 的回复相同。conjecturer 第一次请求回了 HTTP 429（限流），一分钟后重试成功（见未决问题"S19 新发现"第 5 条）。
 - 冒烟一共 10 次请求，花费不到 1 美分；脚本与结果在编排者的 scratchpad，不入库。
+
+### 429 退避重试（2026-10-21），工作包 `s19-retry`（已合并）
+
+用户看过复测里的那次 429 后说"同意，改成429退避重试"（PLAN §9 补充一条）。
+- 做法：`DeepSeekTransport.complete()` 遇 HTTP 429 按 `roles/constants.py` 新加的 `RATE_LIMIT_WAITS_S = [10.0, 30.0, 60.0, 120.0]` 等待后重发同一个请求（五次尝试、最多等 220 秒），每次重发有自己完整的请求时限；用完仍 429 就照旧抛 `TransportError("HTTPStatusError 429")`，看守照样按 cause `rate` 报警。别的失败（其他状态码、连接错误、超时、坏回复）不重试。每次重试前往 stderr（格的日志）写一行 `surprise.roles.transport: HTTP 429 for role …, model …; retry i/4 in w s`，不带密钥与回复正文；旧全局账本仍是一次调用一条，多记 `retries`。网关没改：调用上限、`calls.jsonl`、`totals()` 都按一次算。
+- `roles/constants.py` 从 S19 的冻结路径移出，门槛 `retry` 组核对只多了这一个常数、其余与 s15-done-r3 逐个相同；新常数会进每次运行 manifest 的 llm 节。不改 `experiments/`，不用重钉 S8 长跑。
+- 门槛 `gates/s19.py` 加 `retry` 组（派发前用一份临时实现验证过，临时代码已还原），提交 d00f432。codex 的提交 f38ee0a：改 `constants.py`、`transport.py`，`test_surprise_s19_glm.py` 里 429 那个参数化测试改用 `rate_limit_waits_s=()`（断言不变），新测试 `test_surprise_s19_retry.py` 23 项。审查红旗两条都无害：S11 `ciao`（worktree 里没有 S8 长跑目录，已知）与新测试里的假凭据 `s19-offline-credential`。合并 d1096b9，归档 9870811，worktree 已清理；合并后本机 `pytest -q testing tests` 1180 passed、3 skipped，`gates.all` PASS 16/16。
+- 服务器上的 `s19-deploy-1` 没有提醒、推理强度与重试的代码；下次起跑前要部署新 tag（等用户说）。
 
 
 下一步（等用户说）：
@@ -1733,7 +1741,7 @@ S13 处理与新发现（2026-10-19）：
   2. **`calls.jsonl` 只记异常类名**（`TransportError`；`s19-notify` 改为记下传输层的消息）：`transport.py` 把 HTTP 状态写进了异常消息，网关记 `reason` 时只取了 `type(exc).__name__`，所以欠费、限流、网络中断分不出来。
   3. **同种子的 `nollm` 在不同并发下标签会分叉**（预实验 progress 逐条比 `case_digest`、oracle、`y`、`kind`）：s9101 的 c1 对 c4 在第 302 条分叉（cross_dbms：`fail/crash` 对 `invalid/unattributed_crash`），c1 对 c8 在第 1316 条（version_differential：`pass` 对 `invalid/direction_unknown`）；s9102 的 c4 对 c8 在第 957 条（plan_variant：`pass` 对 `invalid/unstable_rerun`）。分叉之后路径完全不同。分叉早晚与并发高低不单调（c1 与 c8 一致得比 c1 与 c4 久），像是个别用例本身不稳定，不像负载造成；要分清，得在同一并发下重复跑同一种子。影响：`EXPERIMENT.md` §4 的"同种子重跑结果一致"在实机条件下不成立（统计靠 5 个种子，不受影响，报告要改写这句）；§8 回放检查要求逐条相同，这几类标签可能过不了。超时（4–7 条）与重跑不稳定（1–2 条）的数量在三种并发下差不多。
   4. **`full` 的吞吐受 LLM 延迟限制**：每格 2 小时里有 85–115 分钟在等 LLM，执行数只有同种子 `nollm` 的 4%–26%。24 小时的正式格里，"每小时家族数"会把这个差别算进去，报告里要同时给"每千次执行"。
-  5. **OpenRouter 会回 429（限流），网关不重试**（2026-10-21 复测时遇到一次）：`glm-flash` 只用 Open Inference 一个提供商、不回退，网关把 429 当成一次失败的调用，角色随即放弃（`_STOP` 含 `error`）。E1 并发 8 时几格的 `full` 同时调用，可能频繁被限流，LLM 臂会悄悄变成少用 LLM 的运行；看守会对连续 5 次失败（cause `rate`）报警，但调用本身丢了。可选的修法：网关遇到 429 按退避重试几次（改 `roles/gateway.py` 或 `transport.py`），要用户定。
+  5. **（已解决：`s19-retry`，传输层退避重试 429）OpenRouter 会回 429（限流），网关不重试**（2026-10-21 复测时遇到一次）：`glm-flash` 只用 Open Inference 一个提供商、不回退，网关把 429 当成一次失败的调用，角色随即放弃（`_STOP` 含 `error`）。E1 并发 8 时几格的 `full` 同时调用，可能频繁被限流，LLM 臂会悄悄变成少用 LLM 的运行；看守会对连续 5 次失败（cause `rate`）报警，但调用本身丢了。可选的修法：网关遇到 429 按退避重试几次（改 `roles/gateway.py` 或 `transport.py`），要用户定。
 
 S12 发现、留之后的工作：
 - **之前标着"留给 S12"的几件小修没有做**（不在 SESSIONS 的 S12 范围里）：`oracles/db_runner.py` 少一个空行、`targets/datafusion_runner.py` 的 `_norm` 遇 NaN / Inf 抛错、`oracles/differential.py` 写死 `<venv>/bin/python`——三处都在 `HASHED_PATHS` 里，改了就是解冻 harness，先问用户；`surprise/baselines/coevodb_v1/main.py`（原 `main.py` 第 142 行）同样写死 `bin/python`、`framework/config.yml` 的 `database.version` 写着 1.5.2——改的是原 CoevoDB 对照组的行为；`duckdb/F5_parallel_cte_offset.sql` 的"Expected: 8 rows"（应为 12）、`duckdb/F6_null_exists_notin.sql` 复现不出、`datafusion/DF-B` 注释漏了 NULL——复现文件被门槛读取，改前先核对 S02–S05 的门槛；`campaigns/pg_upgrade_mxact.py` 模块顶层 TypeError、`campaigns/pg_repack_mvcc.py` 导入即执行。
