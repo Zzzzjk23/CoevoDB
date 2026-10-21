@@ -24,6 +24,16 @@ TARGET_DSN_ENV = "COEVO_TARGET_PG_DSN"
 OLD_DSN_ENV = "COEVO_OLD_PG_DSN"
 _TRANSACTIONS = {"BEGIN", "START", "COMMIT", "END", "ROLLBACK", "ABORT",
                  "SAVEPOINT", "RELEASE"}
+_CONNECT_RETRY_S = 30.0
+_CONNECT_RETRY_DELAY_S = 0.5
+
+
+def _authentication_failed(exc: psycopg2.OperationalError) -> bool:
+    # libpq startup failures often have no SQLSTATE; also inspect its message.
+    return bool((exc.pgcode or "").startswith("28") or any(marker in str(exc).lower() for marker in (
+        "authentication failed", "no password supplied", "no pg_hba.conf entry",
+        "pg_hba.conf rejects connection",
+    )))
 
 
 def _tokens(statement: str) -> list[str]:
@@ -102,15 +112,40 @@ class PostgresTargetRunner:
 
     def _connect(self):
         if self._conn is None or self._conn.closed or self._lost:
-            if self._conn is not None:
-                self._conn.close()
-            self._conn = psycopg2.connect(self._dsn, **({"options": self._options} if self._options else {}))
-            self._conn.autocommit = True
-            self._lost = False
-            if self._schema:
-                with self._conn.cursor() as cursor:
-                    cursor.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(self._schema)))
+            self._disconnect()
+            deadline = time.monotonic() + _CONNECT_RETRY_S
+            while True:
+                try:
+                    self._conn = psycopg2.connect(
+                        self._dsn,
+                        connect_timeout=max(1, min(10, int(deadline - time.monotonic()))),
+                        **({"options": self._options} if self._options else {}),
+                    )
+                    self._conn.autocommit = True
+                    if self._schema:
+                        with self._conn.cursor() as cursor:
+                            cursor.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(self._schema)))
+                    self._lost = False
+                    break
+                except psycopg2.OperationalError as exc:
+                    self._disconnect()
+                    self._lost = True
+                    remaining = deadline - time.monotonic()
+                    if _authentication_failed(exc) or remaining <= 0:
+                        raise
+                    time.sleep(min(_CONNECT_RETRY_DELAY_S, remaining))
+                    if time.monotonic() >= deadline:
+                        raise
         return self._conn
+
+    def _disconnect(self) -> None:
+        connection, self._conn = self._conn, None
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                # Cleanup must not replace an oracle's completed label.
+                pass
 
     def _ensure_schema(self) -> None:
         connection = self._connect()
@@ -136,19 +171,23 @@ class PostgresTargetRunner:
     def close(self) -> None:
         try:
             if self._schema:
-                with self._connect().cursor() as cursor:
-                    cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(self._schema)))
-                self._schema = None
-        except psycopg2.Error:
-            # A killed backend is often only detected by the first SQL round trip.
-            self._lost = True
-            with self._connect().cursor() as cursor:
-                cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(self._schema)))
-            self._schema = None
+                connection = self._connect()
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(self._schema)))
+                except psycopg2.Error:
+                    # Detect a killed backend on its first round trip, then reconnect.
+                    self._lost = True
+                    with self._connect().cursor() as cursor:
+                        cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(self._schema)))
+        except Exception:
+            # A crash can prevent cleanup; the cell's disposable instance owns
+            # any remaining schema. Never turn a completed crash label into an error.
+            pass
         finally:
-            if self._conn is not None:
-                self._conn.close()
-                self._conn = None
+            self._schema = None
+            self._disconnect()
+            self._lost = False
 
     def setup(self, statements: Iterable[str]) -> list[tuple[str, str | None]]:
         self.close()

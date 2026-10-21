@@ -1,10 +1,14 @@
 """The PG target runner contract against real 16.15 and 15.19 servers."""
 
 import time
+from types import SimpleNamespace
 
+import psycopg2
+from psycopg2 import sql
 import pytest
 
 from surprise.experiments import pg_instance
+from surprise.harness.oracles import pg_target
 from surprise.harness.oracles.pg_target import OLD_DSN_ENV, TARGET_DSN_ENV, PostgresTargetRunner
 from surprise.harness.oracles.registry import REFERENCE_ENGINES, TARGET_ENGINES, runner_factory_for
 
@@ -187,3 +191,182 @@ def test_errors_stable_and_redacted(runner, dsns):
         assert not runner.run("SELECT 1/0").is_internal_error
     finally:
         other.close()
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_default_factory_requires_configured_target(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv(TARGET_DSN_ENV, raising=False)
+    else:
+        monkeypatch.setenv(TARGET_DSN_ENV, value)
+    with pytest.raises(ValueError, match=TARGET_DSN_ENV) as caught:
+        runner_factory_for("postgres")
+    assert "surprise.experiments.pg_instance" in str(caught.value)
+    assert "passfile=" not in str(caught.value)
+    assert TARGET_ENGINES == ("duckdb", "datafusion", "postgres")
+
+
+def test_default_factory_with_dsn_returns_class_without_exposing_it(monkeypatch):
+    marker = "configured-target-dsn-marker"
+    monkeypatch.setenv(TARGET_DSN_ENV, marker)
+    factory = runner_factory_for("postgres")
+    assert factory is PostgresTargetRunner
+    assert marker not in repr(factory())
+
+
+@pytest.fixture
+def retry_clock(monkeypatch):
+    clock = SimpleNamespace(elapsed=0.0, pauses=[])
+
+    def sleep(seconds):
+        clock.pauses.append(seconds)
+        clock.elapsed += seconds
+
+    monkeypatch.setattr(pg_target, "time", SimpleNamespace(
+        monotonic=lambda: clock.elapsed, sleep=sleep,
+    ))
+    return clock
+
+
+def test_reconnect_retries_recovery_and_restores_session(runner, monkeypatch, retry_clock):
+    assert all(error is None for _, error in runner.setup([
+        "CREATE TABLE retry_t(a int)", "INSERT INTO retry_t VALUES (7)",
+        "SET enable_hashjoin = off",
+    ]))
+    # _connect runs outside the query worker, so fake only its clock, not SQL.
+    schema = runner._schema
+    runner._conn.close()
+    real_connect = psycopg2.connect
+    calls = []
+    failures = ["the database system is in recovery mode",
+                "the database system is starting up", "Connection refused"]
+
+    def recovering_connect(dsn, **kwargs):
+        calls.append(kwargs)
+        if len(calls) <= len(failures):
+            raise psycopg2.OperationalError(failures[len(calls) - 1])
+        return real_connect(dsn, **kwargs)
+
+    monkeypatch.setattr(psycopg2, "connect", recovering_connect)
+    connection = runner._connect()
+    assert connection.autocommit
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_schema(), current_setting('enable_hashjoin'), a FROM retry_t")
+        assert cursor.fetchall() == [(schema, "off", 7)]
+    assert len(calls) == 4 and retry_clock.pauses == [0.5, 0.5, 0.5]
+    assert all(1 <= call["connect_timeout"] <= 10 for call in calls)
+    assert all("enable_hashjoin=off" in call["options"] for call in calls)
+    assert not runner._lost
+
+
+@pytest.mark.parametrize("message", [
+    "the database system is in recovery mode", "the database system is starting up",
+    "Connection refused",
+])
+def test_connection_retries_stop_at_thirty_seconds(monkeypatch, retry_clock, message):
+    candidate = PostgresTargetRunner("host=127.0.0.1 dbname=postgres")
+    calls = []
+
+    def unavailable(*args, **kwargs):
+        calls.append(kwargs)
+        raise psycopg2.OperationalError(message)
+
+    monkeypatch.setattr(psycopg2, "connect", unavailable)
+    with pytest.raises(psycopg2.OperationalError, match=message):
+        candidate._connect()
+    assert retry_clock.elapsed == 30.0
+    assert len(calls) == 60 and retry_clock.pauses == [0.5] * 60
+    assert candidate._conn is None and candidate._lost
+    candidate.close()
+
+
+def test_connect_timeout_respects_remaining_retry_budget(monkeypatch, retry_clock):
+    candidate = PostgresTargetRunner("host=127.0.0.1 dbname=postgres")
+    timeouts = []
+
+    def unavailable(*args, **kwargs):
+        timeouts.append(kwargs["connect_timeout"])
+        retry_clock.elapsed += kwargs["connect_timeout"]
+        raise psycopg2.OperationalError("Connection refused")
+
+    monkeypatch.setattr(psycopg2, "connect", unavailable)
+    with pytest.raises(psycopg2.OperationalError, match="Connection refused"):
+        candidate._connect()
+    assert timeouts == [10, 10, 9]
+    assert retry_clock.elapsed == 30.0
+    candidate.close()
+
+
+@pytest.mark.parametrize("message", [
+    "password authentication failed for user coevo_target", "no password supplied",
+    "no pg_hba.conf entry for host", "pg_hba.conf rejects connection for host",
+])
+def test_authentication_failure_does_not_retry(monkeypatch, retry_clock, message):
+    candidate = PostgresTargetRunner("host=127.0.0.1 dbname=postgres")
+    calls = []
+
+    def rejected(*args, **kwargs):
+        calls.append(kwargs)
+        raise psycopg2.OperationalError(message)
+
+    monkeypatch.setattr(psycopg2, "connect", rejected)
+    with pytest.raises(psycopg2.OperationalError, match=message):
+        candidate._connect()
+    assert len(calls) == 1 and retry_clock.pauses == []
+    assert candidate._conn is None
+    candidate.close()
+
+
+@pytest.mark.parametrize("detected", [False, True])
+def test_close_during_recovery_never_raises(runner, dsns, monkeypatch, retry_clock, detected):
+    # Keep real SQL and a real killed backend; inject only the recovery interval.
+    runner._ensure_schema()
+    schema = runner._schema
+    original_connection = runner._conn
+    real_connect = psycopg2.connect
+    killer = real_connect(dsns["target"])
+    killer.autocommit = True
+    try:
+        with killer.cursor() as cursor:
+            cursor.execute("SELECT pg_terminate_backend(%s)", (runner.backend_pid,))
+            assert cursor.fetchone() == (True,)
+        if detected:
+            try:
+                with original_connection.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+            except psycopg2.OperationalError:
+                runner._lost = True
+            assert runner._lost
+        attempts = []
+
+        def recovering(*args, **kwargs):
+            attempts.append(kwargs)
+            raise psycopg2.OperationalError("the database system is in recovery mode")
+
+        with monkeypatch.context() as fault:
+            fault.setattr(psycopg2, "connect", recovering)
+            runner.close()
+            runner.close()
+        assert len(attempts) == 60 and retry_clock.elapsed == 30.0
+        assert original_connection.closed and runner._conn is None
+        assert runner._schema is None and runner.backend_pid is None
+        with killer.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM pg_namespace WHERE nspname = %s", (schema,))
+            assert cursor.fetchone() == (1,)  # Residue is allowed when recovery prevents cleanup.
+            cursor.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+    finally:
+        killer.close()
+
+
+def test_close_suppresses_connection_close_failure():
+    candidate = PostgresTargetRunner("host=127.0.0.1 dbname=postgres")
+    attempts = []
+
+    def broken_close():
+        attempts.append(True)
+        raise RuntimeError("connection close failed")
+
+    candidate._conn = SimpleNamespace(close=broken_close)
+    candidate.close()
+    candidate.close()
+    assert attempts == [True] and candidate._conn is None

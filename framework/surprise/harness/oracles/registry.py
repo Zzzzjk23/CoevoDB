@@ -89,7 +89,15 @@ def runner_factory_for(engine: str):
 
         return DataFusionRunner
     if engine == "postgres":
-        from surprise.harness.oracles.pg_target import PostgresTargetRunner
+        import os
+
+        from surprise.harness.oracles.pg_target import PostgresTargetRunner, TARGET_DSN_ENV
+
+        if not os.environ.get(TARGET_DSN_ENV):
+            raise ValueError(
+                f"postgres: set {TARGET_DSN_ENV} using surprise.experiments.pg_instance "
+                "before requesting a default runner"
+            )
 
         return PostgresTargetRunner
     raise ValueError(
