@@ -28,7 +28,7 @@ from .session import judgement_signature, run_judge
 from .tier3 import diagnose_case
 
 _ATTRIBUTING = ("cross_dbms", "version_differential")
-_SINGLE_THREAD = {"duckdb": ["threads"], "datafusion": ["target_par1"]}
+_SINGLE_THREAD = {"duckdb": ["threads"], "datafusion": ["target_par1"], "postgres": ["parallel"]}
 _NOT_REQUESTED = {"status": "skipped", "reason": "not_requested"}
 # Default-factory intervention names, filled from the child. A custom factory is not cached.
 _DEFAULT_INTERVENTION_NAMES: dict[str, list[str]] = {}
