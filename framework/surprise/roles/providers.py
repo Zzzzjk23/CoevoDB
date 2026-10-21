@@ -9,8 +9,8 @@ EXTRA_TIERS = {
     "glm-flash": {
         "model": "z-ai/glm-5.3-flash",
         "base_url": "https://openrouter.ai/api/v1",
+        "providers": ["sail-research/fp4", "open-inference/fp4", "sail-research/us"],
         "body": {
-            "provider": {"only": ["open-inference/fp4"], "allow_fallbacks": False},
             "reasoning": {"effort": "low"},
         },
     },

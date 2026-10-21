@@ -176,8 +176,11 @@ ORACLE_SCAN_MAX = 200
 # Total time from sending the request to finishing the reply, covering keep-alive while queued.
 REQUEST_DEADLINE_S = 600.0
 
-# Seconds to wait before each retry of an HTTP 429 (rate limited) answer; one retry per entry.
+# Seconds to wait before each HTTP 429/503 retry per provider; one retry per entry.
 RATE_LIMIT_WAITS_S = [10.0, 30.0, 60.0, 120.0]
+
+# HTTP statuses retried after RATE_LIMIT_WAITS_S on one provider, then sent to the endpoint's next provider.
+RETRY_STATUSES = [429, 503]
 
 
 def as_dict() -> dict[str, Any]:

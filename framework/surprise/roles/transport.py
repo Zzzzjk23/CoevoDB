@@ -14,7 +14,7 @@ import httpx
 from agents.base_agent import BaseAgent
 from llm.ledger import ledger
 
-from .constants import RATE_LIMIT_WAITS_S, REQUEST_DEADLINE_S, TIERS
+from .constants import RATE_LIMIT_WAITS_S, REQUEST_DEADLINE_S, RETRY_STATUSES, TIERS
 from .gateway import Completion, TransportError
 from .providers import endpoint_for_model
 
@@ -75,20 +75,39 @@ class DeepSeekTransport(BaseAgent):
             if endpoint is not None:
                 payload.update(endpoint["body"])
                 url = endpoint["base_url"] + "/chat/completions"
+            providers = endpoint["providers"] if endpoint is not None and "providers" in endpoint else [None]
+            provider_index = 0
+            provider_retries = 0
             while True:
+                provider = providers[provider_index]
+                if provider is not None:
+                    payload["provider"] = {"only": [provider], "allow_fallbacks": False}
                 try:
                     body = _read_with_deadline(client, payload, self.deadline_s, self.close_client, url=url)
                     break
                 except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code != 429 or retries >= len(self.rate_limit_waits_s):
+                    status = exc.response.status_code
+                    if status not in RETRY_STATUSES:
                         raise
-                    wait = self.rate_limit_waits_s[retries]
-                    print(
-                        f"surprise.roles.transport: HTTP 429 for role {role}, model {model}; "
-                        f"retry {retries + 1}/{len(self.rate_limit_waits_s)} in {wait:g} s",
-                        file=sys.stderr,
-                    )
-                    self._sleep(wait)
+                    via = "" if provider is None else f" via {provider}"
+                    diagnostic = f"surprise.roles.transport: HTTP {status} for role {role}, model {model}{via}; "
+                    if provider_retries < len(self.rate_limit_waits_s):
+                        wait = self.rate_limit_waits_s[provider_retries]
+                        print(
+                            diagnostic + f"retry {provider_retries + 1}/{len(self.rate_limit_waits_s)} in {wait:g} s",
+                            file=sys.stderr,
+                        )
+                        self._sleep(wait)
+                        provider_retries += 1
+                    elif provider_index + 1 < len(providers):
+                        print(
+                            diagnostic + f"retries used up, switching to {providers[provider_index + 1]}",
+                            file=sys.stderr,
+                        )
+                        provider_index += 1
+                        provider_retries = 0
+                    else:
+                        raise
                     retries += 1
             content = body["choices"][0]["message"]["content"]
             if not isinstance(content, str):
@@ -127,7 +146,7 @@ class DeepSeekTransport(BaseAgent):
             status="ok",
             retries=retries,
         )
-        return Completion(text=content, input_tokens=input_tokens, output_tokens=output_tokens)
+        return Completion(text=content, input_tokens=input_tokens, output_tokens=output_tokens, provider=provider)
 
 
 def _read_with_deadline(

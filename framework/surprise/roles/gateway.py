@@ -40,6 +40,7 @@ class Completion:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
+    provider: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class Reply:
     reason: str | None
     input_tokens: int
     output_tokens: int
+    provider: str | None = None
 
 
 class TransportError(RuntimeError):
@@ -226,6 +228,8 @@ class Gateway:
         if entry is not None:
             text = entry.get("text")
             text = text if isinstance(text, str) else ""
+            provider = entry.get("provider")
+            provider = provider if isinstance(provider, str) else None
             data, reason = parse_reply(text)
             return Reply(
                 role=role,
@@ -240,6 +244,7 @@ class Gateway:
                 reason=reason,
                 input_tokens=int(entry.get("input_tokens") or 0),
                 output_tokens=int(entry.get("output_tokens") or 0),
+                provider=provider,
             )
         if self._transport is None:
             return Reply(
@@ -283,6 +288,7 @@ class Gateway:
             text = completion.text
             input_tokens = int(completion.input_tokens)
             output_tokens = int(completion.output_tokens)
+            provider = getattr(completion, "provider", None)
         except Exception as exc:
             return Reply(
                 role=role,
@@ -298,23 +304,24 @@ class Gateway:
                 input_tokens=0,
                 output_tokens=0,
             )
-        self._cache.put(
-            {
-                "key": key,
-                "prompt_sha256": _sha256_text(prompt),
-                "model": model,
-                "seed": seed,
-                "role": role,
-                "tier": tier,
-                "prompt": prompt,
-                "text": text,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "created_at": _now_iso(),
-            }
-        )
+        entry = {
+            "key": key,
+            "prompt_sha256": _sha256_text(prompt),
+            "model": model,
+            "seed": seed,
+            "role": role,
+            "tier": tier,
+            "prompt": prompt,
+            "text": text,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "created_at": _now_iso(),
+        }
+        if provider is not None:
+            entry["provider"] = provider
+        self._cache.put(entry)
         data, reason = parse_reply(text)
         return Reply(
             role=role,
@@ -329,6 +336,7 @@ class Gateway:
             reason=reason,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            provider=provider,
         )
 
     def _account(self, reply: Reply, prompt: str, latency_s: float) -> None:
@@ -359,6 +367,8 @@ class Gateway:
             "output_tokens": reply.output_tokens,
             "latency_s": latency_s,
         }
+        if reply.provider is not None:
+            row["provider"] = reply.provider
         with self._ledger_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
 
