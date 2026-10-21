@@ -25,7 +25,7 @@ PROFILE = {
     "base_url": "https://openrouter.ai/api/v1",
     "providers": ["sail-research/fp4", "open-inference/fp4", "sail-research/us"],
     "body": {
-        "reasoning": {"effort": "low"},
+        "reasoning": {"effort": "medium"},
     },
 }
 
