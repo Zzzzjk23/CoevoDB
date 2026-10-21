@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；换模型、提醒、推理强度、429 重试已合并，未部署） | s19-deploy-1（预实验部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2（当前部署） | S19 12/12（换模型、提醒、推理强度、429 重试的门槛）；pytest 1180 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -98,7 +98,14 @@
 - 做法：`DeepSeekTransport.complete()` 遇 HTTP 429 按 `roles/constants.py` 新加的 `RATE_LIMIT_WAITS_S = [10.0, 30.0, 60.0, 120.0]` 等待后重发同一个请求（五次尝试、最多等 220 秒），每次重发有自己完整的请求时限；用完仍 429 就照旧抛 `TransportError("HTTPStatusError 429")`，看守照样按 cause `rate` 报警。别的失败（其他状态码、连接错误、超时、坏回复）不重试。每次重试前往 stderr（格的日志）写一行 `surprise.roles.transport: HTTP 429 for role …, model …; retry i/4 in w s`，不带密钥与回复正文；旧全局账本仍是一次调用一条，多记 `retries`。网关没改：调用上限、`calls.jsonl`、`totals()` 都按一次算。
 - `roles/constants.py` 从 S19 的冻结路径移出，门槛 `retry` 组核对只多了这一个常数、其余与 s15-done-r3 逐个相同；新常数会进每次运行 manifest 的 llm 节。不改 `experiments/`，不用重钉 S8 长跑。
 - 门槛 `gates/s19.py` 加 `retry` 组（派发前用一份临时实现验证过，临时代码已还原），提交 d00f432。codex 的提交 f38ee0a：改 `constants.py`、`transport.py`，`test_surprise_s19_glm.py` 里 429 那个参数化测试改用 `rate_limit_waits_s=()`（断言不变），新测试 `test_surprise_s19_retry.py` 23 项。审查红旗两条都无害：S11 `ciao`（worktree 里没有 S8 长跑目录，已知）与新测试里的假凭据 `s19-offline-credential`。合并 d1096b9，归档 9870811，worktree 已清理；合并后本机 `pytest -q testing tests` 1180 passed、3 skipped，`gates.all` PASS 16/16。
-- 服务器上的 `s19-deploy-1` 没有提醒、推理强度与重试的代码；下次起跑前要部署新 tag（等用户说）。
+
+### 部署 `s19-deploy-2`（2026-10-21，用户"在服务器上部署新版本"）
+
+- 部署前只读看过：服务器空闲（没有网格进程；tmux 里只有跑完的 `e1-pilot` 与 `s14-smoke` 两个旧会话，没动），检出 `s19-deploy-1`、工作目录干净。
+- tag `s19-deploy-2` 打在 3541200（session/s19，含换模型、提醒、推理强度 low、429 重试），照 SERVER.md §3 推送、检出，`git status --short` 为空。服务器交互 shell 里两把密钥都在（只核对长度：73 与 32）。
+- 服务器上去掉两把密钥跑：`pytest -q testing tests` 1180 passed、3 skipped（与本机相同）。`gates.all` 第一次 12/16：S15、S19 的范围检查要比较 `s15-done*` 三个 tag，服务器以前只取过部署 tag；推送并取了这三个 tag（只是 tag，代码不变）之后，S19 12/12、S15 10/11。
+- 还剩四组不过，都因服务器上 S8 长跑产物（不入库）是旧的或没有，与代码无关，也不影响跑实验：S08 `sawtooth`、`duplicates` 与 S11 `ciao` 要 `results/s08/longrun` 是 4d0c74b 重钉的那份（服务器上那份是 S14 时拷去的，哈希与之后两次重钉都不同），S15 `stream` 要 `results/s08/longrun-s10code`（服务器上没有）。两个目录本机各约 0.7 GB，拷过去服务器门槛就能全过；没拷，要用户定。
+- tmux 里的旧会话 `e1-pilot`、`s14-smoke` 还在，没有清理。
 
 
 下一步（等用户说）：
