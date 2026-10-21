@@ -222,8 +222,11 @@ REPLAY_EVIDENCE = "replay_longrun.json"
 PG_SOURCE_DIR = "postgresql-16.15"
 PG_SOURCE_COMMIT = "7d3e000c5961a544302072058a1184e9a588837b"  # tag REL_16_15
 PG_RELEASE_NOTES = "doc/src/sgml/release-16.sgml"
-# Role constants S16 changes (values checked by the roles group).
-ROLE_CONSTANTS = ("SOURCE_DIRS", "SOURCE_COMMITS")
+# The PostgreSQL checkout is optional and lives outside roles/constants.py: the existing tests and the S9
+# gate pin open_sources() and SOURCE_DIRS to DuckDB and DataFusion, and a missing optional checkout must
+# not take the DuckDB and DataFusion readers down with it (open_sources() fails as a whole).
+EXTRA_SOURCE_DIRS = {"postgres": PG_SOURCE_DIR}
+EXTRA_SOURCE_COMMITS = {"postgres": PG_SOURCE_COMMIT}
 # A memoize hypothesis must reach these PostgreSQL files.
 PG_MEMOIZE_FILES = ("src/backend/executor/nodeMemoize.c",)
 
@@ -257,7 +260,8 @@ ALLOWED_CHANGES = HARNESS_CHANGED + (
     "framework/surprise/features/data.py",
     "framework/surprise/hunter/operators.py",
     "framework/surprise/metrics/",
-    "framework/surprise/roles/constants.py",
+    "framework/surprise/roles/source.py",
+    "framework/surprise/roles/runtime.py",
     "framework/surprise/roles/prior.py",
     "framework/surprise/roles/conjecturer.py",
     "framework/surprise/roles/sources_map.py",

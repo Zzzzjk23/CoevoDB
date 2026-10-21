@@ -406,19 +406,28 @@ def check_roles() -> str:
 
     from surprise.roles import constants as RC
     from surprise.roles import open_sources
+    from surprise.roles import source as S
+    from surprise.roles import sources_map as M
     from surprise.roles.conjecturer import select_sources
     from surprise.roles.implementer import _DIALECT
     from surprise.roles.prior import prior_evidence
 
     have, base = RC.as_dict(), _base_role_constants()
-    changed = sorted(name for name in base if have.get(name) != base[name])
-    added = sorted(set(have) - set(base))
-    require(changed == sorted(C.ROLE_CONSTANTS) and not added, f"roles constants changed {changed}, added {added}")
-    require(RC.SOURCE_DIRS == {**base["SOURCE_DIRS"], "postgres": C.PG_SOURCE_DIR}, f"SOURCE_DIRS {RC.SOURCE_DIRS}")
-    require(RC.SOURCE_COMMITS == {**base["SOURCE_COMMITS"], "postgres": C.PG_SOURCE_COMMIT}, f"SOURCE_COMMITS {RC.SOURCE_COMMITS}")
-    readers = open_sources()
-    require(sorted(readers) == ["datafusion", "duckdb", "postgres"], f"open_sources: {sorted(readers)}")
-    require(readers["postgres"].commit == C.PG_SOURCE_COMMIT, f"postgres checkout at {readers['postgres'].commit}")
+    changed = sorted(name for name in set(base) | set(have) if have.get(name) != base.get(name))
+    require(not changed, f"roles/constants.py must not change in S16: {changed}")
+    require(M.EXTRA_SOURCE_DIRS == C.EXTRA_SOURCE_DIRS and M.EXTRA_SOURCE_COMMITS == C.EXTRA_SOURCE_COMMITS,
+            f"extra source checkouts: {M.EXTRA_SOURCE_DIRS} {M.EXTRA_SOURCE_COMMITS}")
+    require(sorted(open_sources()) == ["datafusion", "duckdb"], "open_sources() keeps DuckDB and DataFusion only")
+    extra = S.open_extra_sources(("postgres",))
+    require(sorted(extra) == ["postgres"] and extra["postgres"].commit == C.PG_SOURCE_COMMIT,
+            f"open_extra_sources(('postgres',)): {sorted(extra)}")
+    require(S.open_extra_sources(("duckdb",)) == {} and S.open_extra_sources(("duckdb", "datafusion")) == {},
+            "no extra checkout for engines that do not need one")
+    readers = S.readers_for(("postgres",))
+    require(sorted(readers) == ["datafusion", "duckdb", "postgres"], f"readers_for(('postgres',)): {sorted(readers)}")
+    require(sorted(S.readers_for(("duckdb",))) == ["datafusion", "duckdb"], "a DuckDB run reads what it read before")
+    with env_set(RC.SOURCE_ROOT_ENV, str(tmpdir("roles-empty-root"))):
+        require(S.open_extra_sources(("postgres",)) == {}, "a missing PostgreSQL checkout is left out, not an error")
 
     lines = prior_evidence(["postgres|plan_variant|join|unknown|unknown", "postgres|tlp|aggregate|unknown|unknown"], readers)
     require(lines, "prior evidence for PostgreSQL units is empty")
@@ -434,8 +443,10 @@ def check_roles() -> str:
     require(joined and all(snippet.path.startswith("src/") for snippet in joined),
             f"feature rules must reach PostgreSQL sources: {[s.path for s in joined][:5]}")
     require("PostgreSQL" in _DIALECT.get("postgres", ""), f"implementer dialect for postgres: {_DIALECT.get('postgres')!r}")
-    return (f"postgres checkout {C.PG_SOURCE_COMMIT[:12]}; {len(lines)} release-note evidence lines; "
-            f"memoize -> {paths}; dialect hint present")
+    runtime = (FRAMEWORK / "surprise" / "roles" / "runtime.py").read_text(encoding="utf-8")
+    require("readers_for(" in runtime, "roles/runtime.py must build its readers with readers_for(engines)")
+    return (f"optional postgres checkout {C.PG_SOURCE_COMMIT[:12]} (roles constants unchanged); {len(lines)} "
+            f"release-note evidence lines; memoize -> {paths}; dialect hint present")
 
 
 # ---- oracles ------------------------------------------------------------------------------------
