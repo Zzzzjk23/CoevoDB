@@ -31,6 +31,7 @@
 
 - 会话分支 `session/s16` 从 `session/s19` 的 4ae7884 建立（S19 的 GLM、提醒、重试代码 E2 也要用；S19 剩下的只是结果分析，不改代码）。本会话是后台任务，在 `.claude/worktrees/s16` 里隔离：派发脚本用 `ORCH_ROOT` 指向这个 worktree（`.orch/`、`.worktrees/`、归档都在它下面），`framework/results` 是指向主检出区同名目录的目录联接（S8 钉住的产物只读）。
 - 环境（编排者做，不入库）：PG 15.19 的 EDB 免安装包解压到公共的 `.orch/pg15/binaries/pgsql`；PG 源码 `REL_16_15` 浅克隆到公共的 `.src/postgresql-16.15`（commit 7d3e000c5961a544302072058a1184e9a588837b，给 LLM 角色读）。
+- 起点复跑（在 worktree 里，去掉密钥）：pytest 1205 passed, 3 skipped（与 S19 收尾相同）。全部门槛是在编排者写 `gates/s16*.py` 的同时跑的，14/16：S12 `imports`（`s16.py` 引用了还不存在的 `pg_target`，s16-core 合并后消失）与 S19 `scope`（S16 的新文件不在 S19 范围里，见未决问题）是新门槛文件牵连的；S19 `cli` 报 `TypeError`，单独重跑通过，是重负载下看守进程那段的偶发失败。
 - 开工前在 16.15 上实测了 `postgres/` 七条复现（临时实例，不是项目代码）：只有 PG-F 能判 fail，而且要在 setup 里加 `ANALYZE` 计划才选上 Memoize（memoize 开时 1–5 都是 100，关掉是 200/0）；手工按第 3 档的流程测得 fix set 只有 `enable_memoize`，计划差异含 `MEMOIZE`。PG-C 只有 DuckDB 一个参照能投票（DataFusion 溢出、SQLite 没有 time），不够法定数；PG-B 是值依赖报错；PG-A、PG-G 结果比较类 oracle 判不出；PG-D、PG-E 是两个会话的 SSI 时序，单会话用例表达不了。`seeds/pg_recall.py` 的 30 条（16.x 里修掉的缺陷）在 16.15 上都不复现。PG 种子 308 条里 102 条 setup 能过（多数失败是引用了别的回归测试文件里建的表），Hunter 会跳过失败的种子。
 
 拆包清单（按文件归属不重叠，三波；每波的门槛组在派发前写好）：
