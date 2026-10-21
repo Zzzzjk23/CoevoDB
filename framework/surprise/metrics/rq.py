@@ -532,7 +532,7 @@ def _roles(config: dict[str, Any]) -> list[Any]:
 
 def _engines(config: dict[str, Any], kind: str) -> list[Any]:
     if kind == "pure_llm" or kind == "sqlancer":
-        return [config["engine"]]
+        return [config["engine"]] if config.get("engine") else []
     raw = config.get("engines")
     if isinstance(raw, (list, tuple)):
         return list(raw)
@@ -789,7 +789,7 @@ def run_metrics(
             "run_id": data.run_id,
             "kind": data.kind,
             "seed": config.get("seed"),
-            "engines": _engines(config, data.kind),
+            "engines": _engines(config, data.kind) or list(data.manifest.get("environment", {}).get("engines", {})),
             "oracles": _oracles(config),
             "status": None if report is None else report.get("status"),
             "experiments": executions,
@@ -875,7 +875,7 @@ def old_metrics(old_dir: str | Path) -> dict[str, Any]:
     if not run_dir.is_dir():
         raise FileNotFoundError(run_dir)
     bugs = run_dir / "bugs.jsonl"
-    reports = old_reports(bugs) if bugs.is_file() else []
+    reports = old_reports(bugs, engine=meta.get("engine", "duckdb")) if bugs.is_file() else []
     seen: set[str] = set()
     families: list[dict[str, Any]] = []
     keys: list[str] = []

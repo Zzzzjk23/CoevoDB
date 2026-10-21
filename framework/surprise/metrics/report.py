@@ -214,8 +214,20 @@ def _assemble(
         "rq5": _rq5(config, arm_cells, cells, ciao, blocks, samples),
         "rq6": blocks["rq6"],
         "stats": _stats(names, samples, blocks),
-        "external": {"sqlancer": sqlancer.metrics(sqlancer.load(), engine="duckdb")},
+        "external": {"sqlancer": sqlancer.metrics(sqlancer.load(), engine=_reference_engine(config, cells))},
     }
+
+
+def _reference_engine(config: dict[str, Any], cells: dict[str, Any]) -> str:
+    """Select the reference arm's engine from its run, or from the grid options."""
+    reference = config["reference"]
+    for cell in cells.values():
+        if cell["arm"] == reference and cell["metrics"] is not None:
+            engines = cell["metrics"]["run"].get("engines")
+            if engines:
+                return engines[0]
+    arm = next(arm for arm in config["arms"] if arm["name"] == reference)
+    return arm.get("engine") or (arm.get("engines") or ["duckdb"])[0]
 
 
 def _rq5(

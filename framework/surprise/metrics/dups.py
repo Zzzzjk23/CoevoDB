@@ -100,12 +100,12 @@ def _strings(value: object, where: str) -> list[str]:
     return list(value)
 
 
-def _one_report(payload: object, line_no: int) -> dict[str, Any]:
+def _one_report(payload: object, line_no: int, default_engine: str = "duckdb") -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"bugs.jsonl line {line_no}: expected an object, got {type(payload).__name__}")
     signature = payload.get("signature")
     if signature is None:
-        engine = "duckdb"
+        engine = default_engine
         fix_kind = None
         fix_set: list[str] = []
     elif isinstance(signature, dict):
@@ -140,7 +140,7 @@ def _one_report(payload: object, line_no: int) -> dict[str, Any]:
     }
 
 
-def old_reports(bugs_jsonl: str | Path) -> list[dict[str, Any]]:
+def old_reports(bugs_jsonl: str | Path, *, engine: str = "duckdb") -> list[dict[str, Any]]:
     """Reports in an old ``bugs.jsonl``. A truncated last line is ignored; a broken earlier line is not."""
     lines = Path(bugs_jsonl).read_text(encoding="utf-8").splitlines()
     reports: list[dict[str, Any]] = []
@@ -154,7 +154,7 @@ def old_reports(bugs_jsonl: str | Path) -> list[dict[str, Any]]:
             if index == last:
                 continue
             raise ValueError(f"bugs.jsonl line {index + 1}: invalid JSON") from None
-        reports.append(_one_report(payload, index + 1))
+        reports.append(_one_report(payload, index + 1, engine))
     return reports
 
 
@@ -175,7 +175,7 @@ def compare(run_dir: str | Path, old_dir: str | Path) -> dict[str, Any]:
     old_root = Path(old_dir)
     meta = json.loads((old_root / "old_run.json").read_text(encoding="utf-8"))
     families = new_families(Path(run_dir) / "theory", registry=run_registry(run_dir))
-    reports = old_reports(old_root / meta["run_dir"] / "bugs.jsonl")
+    reports = old_reports(old_root / meta["run_dir"] / "bugs.jsonl", engine=meta.get("engine", "duckdb"))
     return {
         "new": {"families": families, "rate": duplicate_rate([row["key"] for row in families])},
         "old": {"reports": reports, "rate": duplicate_rate([row["key"] for row in reports])},

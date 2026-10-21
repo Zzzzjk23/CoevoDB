@@ -31,6 +31,7 @@ import sys
 import time
 import traceback
 from collections.abc import Sequence
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -195,63 +196,70 @@ def run(
 
     directory = Path(out)
     _ensure_out(directory)
-    started_at = datetime.now(timezone.utc)
-    state = _State(
-        directory=directory,
-        seed=seed,
-        engines=engines,
-        oracles=oracles,
-        max_experiments=max_experiments,
-        max_minutes=max_minutes,
-        beta=used_beta,
-        bootstrap=items,
-        run_id=run_id,
-        started_at=started_at,
-        echo=echo,
-        llm=llm_config,
-        vocabulary=vocabulary_path,
-        freeze=freeze_mode,
-        hunter_mode=hunter_mode,
-        arm=arm,
-        source_theory=None if source is None else source[2],
-        select_theory=None if selected is None else selected[2],
-        select_run=None if selected is None else selected[0],
-    )
-    pending: BaseException | None = None
-    try:
+    if "postgres" in engines:
+        from surprise.experiments.pg_instance import ensure
+
+        instances = ensure(directory / "pg", old=True)
+    else:
+        instances = nullcontext()
+    with instances:
+        started_at = datetime.now(timezone.utc)
+        state = _State(
+            directory=directory,
+            seed=seed,
+            engines=engines,
+            oracles=oracles,
+            max_experiments=max_experiments,
+            max_minutes=max_minutes,
+            beta=used_beta,
+            bootstrap=items,
+            run_id=run_id,
+            started_at=started_at,
+            echo=echo,
+            llm=llm_config,
+            vocabulary=vocabulary_path,
+            freeze=freeze_mode,
+            hunter_mode=hunter_mode,
+            arm=arm,
+            source_theory=None if source is None else source[2],
+            select_theory=None if selected is None else selected[2],
+            select_run=None if selected is None else selected[0],
+        )
+        pending: BaseException | None = None
         try:
-            _prepare(state)
-            _drive(state)
-        except KeyboardInterrupt as exc:
-            state.status = "interrupted"
-            pending = exc
-        except Exception as exc:
-            state.status = "error"
-            state.exc = exc
-            pending = exc
-        if pending is not None:
-            _write_error_file(state.directory, pending)
-        try:
-            state.report = _write_report(state)
-        except BaseException as report_exc:
-            if pending is None:
-                _write_error_file(state.directory, report_exc)
-                raise
-            _write_error_file(
-                state.directory,
-                report_exc,
-                append=True,
-                note="--- while writing the report ---\n",
-            )
-            raise pending from None
-    finally:
-        try:
-            _close(state)
+            try:
+                _prepare(state)
+                _drive(state)
+            except KeyboardInterrupt as exc:
+                state.status = "interrupted"
+                pending = exc
+            except Exception as exc:
+                state.status = "error"
+                state.exc = exc
+                pending = exc
+            if pending is not None:
+                _write_error_file(state.directory, pending)
+            try:
+                state.report = _write_report(state)
+            except BaseException as report_exc:
+                if pending is None:
+                    _write_error_file(state.directory, report_exc)
+                    raise
+                _write_error_file(
+                    state.directory,
+                    report_exc,
+                    append=True,
+                    note="--- while writing the report ---\n",
+                )
+                raise pending from None
         finally:
-            _restore_library(state)
-    if pending is not None:
-        raise pending
-    return state.report
+            try:
+                _close(state)
+            finally:
+                _restore_library(state)
+        if pending is not None:
+            raise pending
+        return state.report
 
 
 def _install_interrupt() -> None:
