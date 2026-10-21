@@ -402,3 +402,4 @@
 | 2026-10-22 | S19 | 用户新决定："用max挡，做一下两小时预实验"。`glm-flash` 的 `reasoning` 改为 `{"effort": "max"}`（PLAN §9、SESSIONS；门槛 `NEW_PROFILE` 已改；代码派给 codex `s19-max`）；预实验 `e1-pilot-glm3`（只差名字与缓存目录）。各角色 max_tokens 不变（用户没提；conjecturer 小测用到 80%，截断与切到 Open Inference 时的失败留给预实验看） | 用户指示（本会话） |
 | 2026-10-22 | S19 | `s19-max` 审查后合并（1bcc2fa）：6 处 medium→max；合并后代码与审查过的分支头相同，沿用审查包的测试结果（1205 passed；只有已知的 `ciao`） | 编排者 |
 | 2026-10-22 | S19 | 部署 `s19-deploy-6`；服务器检出里的未跟踪文件 `framework/c.csv` 查明是预实验里 LLM 生成的 `COPY … TO 'c.csv'` 写出来的，挪进 `results/e1-pilot-glm2/stray-c.csv` 留证（属于实验产物，不删），检出恢复干净后起跑 `e1-pilot-glm3`。这个隔离漏洞记进 HANDOFF"S19 新发现"第 7 条，修不修、怎么修要用户定（涉及 harness 或 `experiments/`），E1 正式之前处理 | 编排者 |
+| 2026-10-22 | S19 | 用户选做法 A（"做A"）处理 SQL 写文件进检出的问题：只改启动脚本，让网格以 `results/<名字>.work/` 为工作目录（`results` 链接回去、`PYTHONPATH` 指向 `framework/`）。实现选择：链接用相对的 `..`；配置用绝对路径，其余相对路径不变；看守、状态、报告命令照旧。本机 1 分钟小网格验证通过。不改代码，所以不用重钉 S8、不用回放；在跑的 `e1-pilot-glm3` 用的是旧脚本，不受影响，新脚本随下一次部署生效 | 用户指示（本会话） |
