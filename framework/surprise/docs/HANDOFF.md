@@ -25,12 +25,12 @@
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
-## 交接分支 `handoff`（2026-10-22，给队友，已打 tag `handoff-2026-10-22`）
+## 交接分支 `handoff`（2026-10-22，给队友，tag `handoff-2026-10-22`；README 改中文后为 `handoff-2026-10-22-r2`）
 
 用户 2026-10-22 要把项目交接给队友，问给哪个版本、README 是否要更新，听过建议后说"那就按你的建议开始吧"。S16、S19 两个会话都没收尾，所以交接版本不在任何一条会话分支上做，另建分支 `handoff`（worktree `.claude/worktrees/handoff`），不动 `session/s16`、`session/s19`。
 
 - 合并：在 `session/s16`（7096d35）上合入 `session/s19`（8c73e93）。`session/s16` 已含 S19 到 4ae7884 的全部内容，S19 之后的提交里代码只有 `s19-max` 的一行 `providers.py` 与三个 S19 测试；代码无冲突。本文件与 DECISIONS 两边各加了行，都保留：状态表的 S19 行取 `session/s19` 较新的一行，DECISIONS 按日期稳定排序（同一天 S16 在前）。
-- README：根 `README.md` 改成项目入口（现状与 HANDOFF 的链接、文档阅读顺序、规则、仓库外的环境清单、测试与门槛命令），原来的 31 个缺陷家族表与复现说明保留在后面；`framework/README.md` 补上 `--engine postgres`（每个运行自起实例）、`--llm-tier glm-flash`（密钥仍读 `DEEPSEEK_API_KEY`）、看守与归档命令、`results/<名字>.work` 起跑，以及 S15–S16 新加的环境变量。都用英文，与原文一致。S12 `docs` 组通过（259 个路径都存在、必需的字样都在）。
+- README：根 `README.md` 改成项目入口（现状与 HANDOFF 的链接、文档阅读顺序、规则、仓库外的环境清单、测试与门槛命令），原来的 31 个缺陷家族表与复现说明保留在后面；`framework/README.md` 补上 `--engine postgres`（每个运行自起实例）、`--llm-tier glm-flash`（密钥仍读 `DEEPSEEK_API_KEY`）、看守与归档命令、`results/<名字>.work` 起跑，以及 S15–S16 新加的环境变量。起初用英文（与原文一致）；用户随后说"readme用中文写"，两份 README 全文改成中文（缺陷表的表现与状态也译了，SQL、函数名与上游编号照原样；去掉了指向英文标题的页内锚点）。S12 `docs` 组通过（260 个路径都存在、必需的字样都在），S19 `scope` 通过。
 - 门槛的已知问题（打交接 tag 前要解决）：
   1. S16 `scope` 在本分支不过：`providers.py` 与三个 S19 测试是 `s19-deploy-5` 之后 S19 改的，不在 S16 范围里。S16 打了 `s16-done` 之后此组改按 `s19-deploy-5..s16-done` 核对，自然消失。
   2. S19 `scope` 因 `README.md`、`framework/README.md` 不在 S19 范围里而不过。用户选"门槛放行两个 README"：本分支的 `gates/s19_cases.py` 在 `ALLOWED_CHANGES` 末尾加了这两个文件（只这两个文档，代码范围不变），此组已通过。`session/s19` 上没有这处改动，合并时带过去。

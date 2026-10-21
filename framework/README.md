@@ -1,199 +1,152 @@
-# CoevoDB — Surprise-driven DBMS bug finding
+# CoevoDB · 惊讶驱动的数据库缺陷发现
 
-The body of this tree is the surprise-driven framework in `surprise/`.
-A falsifiable theory predicts a failure probability for every experiment;
-Hunter selects the next case by information value; labels come only from
-seven oracles plus the CVE (Contract-Verified Evidence) pipeline. The LLM
-is **never the bug oracle**. The original CoevoDB (LLM Hunter/Fixer
-co-evolution) is kept as a baseline arm. Architecture:
-[surprise/ARCHITECTURE.md](surprise/ARCHITECTURE.md).
+这棵目录的主体是 `surprise/` 里的惊讶驱动框架：一个可证伪的理论给每个实验预测失败概率；Hunter 按信息价值挑下一个用例；标签只来自七类 oracle 加 CVE（Contract-Verified Evidence）流程，LLM **永远不当缺陷的裁判**。原来的 CoevoDB（LLM Hunter/Fixer 共同进化）作为基线臂保留。架构见 [surprise/ARCHITECTURE.md](surprise/ARCHITECTURE.md)。
 
-## Layout
+## 目录
 
-| path | role |
+| 路径 | 作用 |
 |---|---|
-| `surprise/` | surprise-driven framework (harness, features, theory, Hunter, Diagnoser, LLM roles, experiments, metrics, baselines, gates) |
-| `oracles/`, `targets/`, `diagnosis/`, `seeds/`, `util/` | shared runners, oracles, bisect/σ, corpus, machine-local paths |
-| `llm/`, `agents/base_agent.py`, `agents/bug_fixer.py`, `agents/json_utils.py`, `evolution/dce.py` | shared primitives (HTTP client, minimiser, DCE operators, call ledger) |
-| `campaigns/` | PostgreSQL campaign scripts (`campaigns/pg_*.py`), moved from `scripts/` in S1 |
-| `scripts/` | old-system experiment scripts plus the shared `scripts/cross_engine.py` |
-| `archive/` | archived `archive/coevo/` prototype and `archive/repair_bench/` patch/localization benchmark |
-| `tests/`, `testing/` | surprise-framework tests and the original CoevoDB tests |
+| `surprise/` | 惊讶驱动框架（harness、特征、理论、Hunter、Diagnoser、LLM 角色、实验、指标、基线、门槛） |
+| `oracles/`、`targets/`、`diagnosis/`、`seeds/`、`util/` | 共用的 runner、oracle、二分与 σ、种子语料、机器相关的路径 |
+| `llm/`、`agents/base_agent.py`、`agents/bug_fixer.py`、`agents/json_utils.py`、`evolution/dce.py` | 共用的底层件（HTTP 客户端、最小化器、DCE 算子、调用账本） |
+| `campaigns/` | PostgreSQL 测试脚本（`campaigns/pg_*.py`），S1 从 `scripts/` 挪过来 |
+| `scripts/` | 旧系统的实验脚本，以及共用的 `scripts/cross_engine.py` |
+| `archive/` | 归档的 `archive/coevo/` 原型与 `archive/repair_bench/` 补丁/定位基准 |
+| `tests/`、`testing/` | 惊讶驱动框架的测试与原 CoevoDB 的测试 |
 
-## Running the surprise framework
+## 运行惊讶驱动框架
 
-Commands below are run from `framework/` with the interpreter of the
-repository's main environment, `.venv` at the repository root (`python` below
-stands for it; the root README lists the environment). LLM roles are off by default;
-`--llm ROLE` turns one role on (repeatable) and requires `DEEPSEEK_API_KEY`.
+下面的命令都在 `framework/` 下执行，用仓库主环境（仓库根下的 `.venv`）的解释器，下文写作 `python`；环境见仓库根的 README。LLM 角色默认全关；`--llm ROLE` 打开一个角色（可重复），需要 `DEEPSEEK_API_KEY`。
 
-Target engines are `duckdb`, `datafusion` and `postgres`. With
-`--engine postgres` the run starts its own PostgreSQL 16.15 target and 15.19
-old-version instances (`surprise/experiments/pg_instance.py`) and removes
-them at the end; it reuses existing ones only when both
-`COEVO_TARGET_PG_DSN` and `COEVO_OLD_PG_DSN` are set.
+目标引擎有 `duckdb`、`datafusion` 与 `postgres`。用 `--engine postgres` 时，运行会自己起 PostgreSQL 16.15 目标实例与 15.19 旧版实例（`surprise/experiments/pg_instance.py`），结束时删掉；只有 `COEVO_TARGET_PG_DSN` 与 `COEVO_OLD_PG_DSN` 都设了，才改用已有的实例。
 
-`--llm-tier` picks the endpoint for every role call: `fast` and `strong` are
-DeepSeek; `glm-flash` is GLM 5.3 Flash through OpenRouter (provider order and
-reasoning effort in `surprise/roles/providers.py`), the tier the S19 runs use.
-Every tier reads its key from `DEEPSEEK_API_KEY`, so on a machine that runs
-`glm-flash` that variable holds an OpenRouter key (this is how the server is
-set up, `surprise/docs/SERVER.md` §5.2).
+`--llm-tier` 给所有角色调用选同一个端点：`fast` 与 `strong` 是 DeepSeek；`glm-flash` 是经 OpenRouter 调用的 GLM 5.3 Flash（服务商次序与推理强度在 `surprise/roles/providers.py`），S19 的运行用的就是这一档。每一档都从 `DEEPSEEK_API_KEY` 读密钥，所以跑 `glm-flash` 的机器上这个变量里放的是 OpenRouter 的密钥（服务器就是这样设的，见 `surprise/docs/SERVER.md` §5.2）。
 
 ```bash
-# API key is read from the environment; never put it in YAML.
+# 密钥从环境变量读，不要写进 YAML。
 export DEEPSEEK_API_KEY=...
 
-# Hunter loop (roles off)
+# Hunter 循环（角色全关）
 python -m surprise.experiments.loop --out DIR --seed 0 --engine duckdb --max-minutes 10
 
-# Same on PostgreSQL, with every role on the GLM tier
+# 同样的循环跑在 PostgreSQL 上，角色都用 GLM 档
 python -m surprise.experiments.loop --out DIR --seed 0 --engine postgres --max-minutes 10 \
     --llm prior --llm implementer --llm conjecturer --llm-tier glm-flash
 
-# Experiment grid, then a status dump
+# 实验网格，然后看状态
 python -m surprise.experiments.grid run CONFIG --out DIR
 python -m surprise.experiments.grid status DIR
 
-# RQ1–RQ6 report and figures from a finished grid
+# 对跑完的网格生成 RQ1–RQ6 报告与图
 python -m surprise.metrics.report GRID_DIR
 
-# Baseline arms
-# pure_llm calls the LLM and needs DEEPSEEK_API_KEY; --llm-offline answers from the cache only
+# 基线臂
+# pure_llm 会调用 LLM，需要 DEEPSEEK_API_KEY；加 --llm-offline 则只从缓存回答
 python -m surprise.baselines.pure_llm --out DIR --seed 0
 python -m surprise.baselines.old_no_llm --out DIR --minutes M --seed N
 ```
 
-`python -m surprise.experiments.loop --help` lists every flag (engines,
-oracles, freeze, Hunter policy, theory snapshots, LLM cache and cap).
-`python -m surprise.baselines.old_no_llm --help` lists `--mode` (default
-`no_llm`).
+`python -m surprise.experiments.loop --help` 列出全部参数（引擎、oracle、冻结、Hunter 策略、理论快照、LLM 缓存与调用上限）。`python -m surprise.baselines.old_no_llm --help` 列出 `--mode`（默认 `no_llm`）。
 
-Alerts and archives for grid runs:
+网格运行的提醒与归档：
 
 ```bash
-# Push alerts (credit exhausted, failing calls, stalls, grid finished) through pushplus;
-# reads results only, needs PUSHPLUS_TOKEN, stops when the grid ends
+# 经 pushplus 推送提醒（额度用完、调用连续失败、停滞、网格结束）；
+# 只读结果目录，需要 PUSHPLUS_TOKEN，网格结束后自己退出
 python -m surprise.notify.watch results/NAME --pid GRID_PID
 
-# Pack a finished grid, verify the archive, then prune the raw directory
+# 打包跑完的网格、核对归档，再精简原始目录
 python -m surprise.experiments.archive pack results/NAME --dest NAME.tar.gz
 python -m surprise.experiments.archive verify NAME.tar.gz
 python -m surprise.experiments.archive prune results/NAME --archive NAME.tar.gz
 ```
 
-On the experiment server, grids are started by the scripts in
-`surprise/docs/runs/`, following the runbooks next to them. The current ones
-(`surprise/docs/runs/e1.sh`, `surprise/docs/runs/e1_pilot_glm.sh`) run each
-grid from `results/NAME.work`, so SQL that an experiment generates cannot
-write files into the code checkout. `surprise/docs/SERVER.md` §5 is
-the full runbook.
+实验服务器上的网格由 `surprise/docs/runs/` 里的脚本起，照旁边的运行单做。现在用的两个脚本（`surprise/docs/runs/e1.sh`、`surprise/docs/runs/e1_pilot_glm.sh`）以 `results/NAME.work` 为工作目录起网格，这样实验生成的 SQL 写不了代码检出里的文件。完整的运行手册是 `surprise/docs/SERVER.md` §5。
 
-## Tests and gates
+## 测试与门槛
 
 ```bash
-# From framework/. Do not run bare `pytest`: framework/test_api.py
-# calls the DeepSeek API when the key is set.
+# 在 framework/ 下执行。不要直接敲 pytest：设置了密钥时
+# framework/test_api.py 会真的调用 DeepSeek API。
 python -m pytest -q testing tests
 
-# Every session gate; exit code 0 = pass
+# 全部会话的门槛；退出码 0 = 通过
 python -m surprise.gates.all
 ```
 
-Gates depend on machine-local resources (engine venvs, the PostgreSQL
-reference and binaries, source checkouts, the pinned S8 artifacts) listed in
-the root [README](../README.md#setting-up-a-machine), and several compare
-against session tags. Current gate results and known failures are in
-[surprise/docs/HANDOFF.md](surprise/docs/HANDOFF.md).
+门槛要用到机器上的资源（各引擎的 venv、PostgreSQL 参照与二进制、源码检出、S8 钉住的产物），清单在仓库根 [README](../README.md) 的"准备一台机器"一节；有些门槛还要和会话 tag 比对。当前的门槛结果与已知的失败见 [surprise/docs/HANDOFF.md](surprise/docs/HANDOFF.md)。
 
-## The old CoevoDB (baseline arm)
+## 旧 CoevoDB（基线臂）
 
-The original LLM Hunter/Fixer co-evolution loop lives in
-`surprise/baselines/coevodb_v1/`. `main.py` forwards to it, so
+原来的 LLM Hunter/Fixer 共同进化循环在 `surprise/baselines/coevodb_v1/`。`main.py` 转发到它，所以
 
 ```bash
 python main.py --engine duckdb --mode no_llm ...
 ```
 
-is the same as `python -m surprise.baselines.coevodb_v1.main ...`. Nine
-`--mode` values: `full`, `random_category`, `no_llm`, `coverage_only`,
-`dce_only`, `shuffled_diag`, `coevo`, `coevo_warm`, `coevo_frozen`. As a
-comparison arm, run it by wall-clock with
-`python -m surprise.baselines.old_no_llm --out DIR --minutes M --seed N [--mode no_llm]`.
+与 `python -m surprise.baselines.coevodb_v1.main ...` 相同。`--mode` 有九个取值：`full`、`random_category`、`no_llm`、`coverage_only`、`dce_only`、`shuffled_diag`、`coevo`、`coevo_warm`、`coevo_frozen`。作为对比臂时按墙钟时间跑：`python -m surprise.baselines.old_no_llm --out DIR --minutes M --seed N [--mode no_llm]`。
 
-Examples of the forwarded entry point:
+转发入口的例子：
 
 ```bash
-# Feedback-guided campaign on DuckDB
+# DuckDB 上的反馈引导测试
 python main.py --engine duckdb --mode full --iterations 100 \
     --queries-per-iter 8 --seed-mutations-per-iter 20
 
-# PostgreSQL (pgserver launches an embedded PG 16.2 automatically)
+# PostgreSQL（pgserver 自动起一个内嵌的 PG 16.2）
 python main.py --engine postgres --mode full --iterations 100 \
     --pg-datadir /tmp/coevo_pg
 
-# Ablations
-python main.py --engine duckdb --mode random_category ...   # no feedback
-python main.py --engine duckdb --mode no_llm ...            # seed-only
+# 消融
+python main.py --engine duckdb --mode random_category ...   # 没有反馈
+python main.py --engine duckdb --mode no_llm ...            # 只用种子
 ```
 
-### Bug verdict taxonomy
+### 缺陷判定分类
 
-| verdict | meaning |
+| 判定 | 含义 |
 |---|---|
-| `true_bug` | sound oracle hit or adjudicated mismatch, minimized + deduped |
-| `false_positive` | oracle fired but triage showed the test/rewrite was invalid |
-| `version_divergence` | old vs new DuckDB differ; not counted as a bug |
-| `cross_engine_divergence` | PG vs DuckDB differ; supporting evidence only |
-| `skipped_nondeterministic` | ordering ties / volatile functions make the test unjudgeable |
+| `true_bug` | 健全 oracle 命中或裁决后的不一致，已最小化并去重 |
+| `false_positive` | oracle 报了，但分诊发现测试或改写本身无效 |
+| `version_divergence` | 新旧 DuckDB 结果不同；不算缺陷 |
+| `cross_engine_divergence` | PG 与 DuckDB 结果不同；只作佐证 |
+| `skipped_nondeterministic` | 排序并列或易变函数使测试无法判定 |
 
-Only `true_bug` counts toward campaign goals. Version and cross-engine
-divergences are reported separately.
+只有 `true_bug` 计入测试目标。版本差异与跨引擎差异单独报告。
 
-### Honesty boundaries
+### 诚实的边界
 
-- The first confirmed bug (DuckDB deliminator `EXISTS` self-join, see
-  `results/run_20260913_234645`) was found in iteration 0, before feedback had
-  any effect — it validates the oracle pipeline, not the co-evolution claim.
-- `version_divergence` and `cross_engine_divergence` are never counted as bugs.
-- UCB1 regret bounds assume a fixed arm set and stationary rewards; Fixer-spawned
-  root-cause arms break stationarity, so the bandit guarantee is empirical, not
-  a theorem we claim for the full system.
+- 第一个确认的缺陷（DuckDB deliminator 的 `EXISTS` 自连接，见 `results/run_20260913_234645`）是在第 0 轮、反馈还没起作用时找到的——它验证的是 oracle 流水线，不是共同进化的说法。
+- `version_divergence` 与 `cross_engine_divergence` 从不计为缺陷。
+- UCB1 的遗憾界假设臂的集合固定、奖励平稳；Fixer 生成的根因臂破坏了平稳性，所以 bandit 的保证是经验上的，不是我们对整个系统声称的定理。
 
-See [RESEARCH_PLAN.md](RESEARCH_PLAN.md) for hypotheses and experiment gates,
-and [BRIEF_coevo_framework.md](BRIEF_coevo_framework.md) for the engineering spec.
+假设与实验门槛见 [RESEARCH_PLAN.md](RESEARCH_PLAN.md)，工程规格见 [BRIEF_coevo_framework.md](BRIEF_coevo_framework.md)。
 
-## Machine-local paths
+## 机器相关的路径
 
-A few entry points need resources that live outside the checkout. Every
-one is overridable via environment variables (`util/paths.py`); the
-fallbacks are the original developer layout (`~/work/db_safety/...`) and
-simply won't resolve on a fresh clone — set the variables instead of
-editing source.
+有几个入口要用检出目录以外的资源。每一个都能用环境变量覆盖（`util/paths.py`）；默认值是原开发者的目录布局（`~/work/db_safety/...`），在新克隆上找不到——设环境变量，不要改源码。
 
-| env var | resource |
+| 环境变量 | 资源 |
 |---|---|
-| `DEEPSEEK_API_KEY` | LLM credential (referenced as `${DEEPSEEK_API_KEY}` in config.yml) |
-| `COEVO_PGBLD` | root of PG assert/ASan build prefixes (`pg186_assert`, `pgmaster_inject`, ...) |
-| `COEVO_PG_PREFIX` | full install prefix used by PostgresRunner (overrides `--build` resolution) |
-| `COEVO_PG_EXTRA_OPTS` | extra postmaster `-c` opts for LocalPgServer |
-| `COEVO_OLD_VENV` | old-DuckDB venv for the differential oracle (or `--old-duckdb-venv`) |
-| `COEVO_DUCKDB_SRC` | DuckDB source checkout for `archive/repair_bench/run_localize.py` |
-| `COEVO_ARGUS_DIR` | sibling Argus checkout for `scripts/argus_*` |
-| `COEVO_KEYS_YML` | `{key, completion_url}` file for repair_bench drivers |
+| `DEEPSEEK_API_KEY` | LLM 凭据（config.yml 里写作 `${DEEPSEEK_API_KEY}`） |
+| `COEVO_PGBLD` | PG assert/ASan 构建前缀的根目录（`pg186_assert`、`pgmaster_inject` 等） |
+| `COEVO_PG_PREFIX` | PostgresRunner 用的完整安装前缀（覆盖 `--build` 的解析） |
+| `COEVO_PG_EXTRA_OPTS` | LocalPgServer 额外的 postmaster `-c` 选项 |
+| `COEVO_OLD_VENV` | 差分 oracle 用的旧版 DuckDB venv（或 `--old-duckdb-venv`） |
+| `COEVO_DUCKDB_SRC` | `archive/repair_bench/run_localize.py` 用的 DuckDB 源码检出 |
+| `COEVO_ARGUS_DIR` | `scripts/argus_*` 用的同级 Argus 检出 |
+| `COEVO_KEYS_YML` | repair_bench 驱动用的 `{key, completion_url}` 文件 |
 
-Script docstrings use `$COEVO_PGBLD/<build>` as the canonical prefix form.
+脚本的文档字符串统一把前缀写成 `$COEVO_PGBLD/<build>`。
 
-The surprise framework finds its resources under the repository root (through
-the git common directory, so every worktree shares one copy) and works on a
-fresh clone once they are in place. These variables override the defaults:
+惊讶驱动框架在仓库根下找它的资源（经 git 公共目录找，所以所有 worktree 共用一份），资源就位后新克隆可以直接用。下面的变量覆盖默认位置：
 
-| env var | resource |
+| 环境变量 | 资源 |
 |---|---|
-| `PUSHPLUS_TOKEN` | pushplus token for the `surprise.notify` alerts |
-| `COEVO_VENVS` | directory of the versioned interpreters (default `.venvs`) |
-| `SURPRISE_SOURCE_ROOT` | parent of the engine source checkouts the LLM roles read (default `.src`) |
-| `COEVO_REFERENCE_PG_DSN` | PostgreSQL reference for Cross-DBMS (default host 127.0.0.1, port 55432, user `coevo`) |
-| `COEVO_TARGET_PG_DSN`, `COEVO_OLD_PG_DSN` | PostgreSQL target (16.15) and old-version (15.19) instances; set by each run for its own instances, or set both to reuse running ones |
-| `COEVO_PG_BIN`, `COEVO_PG_OLD_BIN` | `bin` directories of 16.15 and 15.19 for the per-run instances (default under `.orch/pg16` and `.orch/pg15`) |
-| `COEVO_JAVA`, `COEVO_SQLANCER_HOME` | Java and the SQLancer build for the SQLancer arm (default `.orch/jdk` and `.orch/sqlancer`) |
+| `PUSHPLUS_TOKEN` | `surprise.notify` 提醒用的 pushplus token |
+| `COEVO_VENVS` | 各版本解释器所在目录（默认 `.venvs`） |
+| `SURPRISE_SOURCE_ROOT` | LLM 角色读的引擎源码检出的上级目录（默认 `.src`） |
+| `COEVO_REFERENCE_PG_DSN` | Cross-DBMS 用的 PostgreSQL 参照（默认主机 127.0.0.1、端口 55432、用户 `coevo`） |
+| `COEVO_TARGET_PG_DSN`、`COEVO_OLD_PG_DSN` | PostgreSQL 目标（16.15）与旧版（15.19）实例；每个运行给自己的实例设好，两个都设了则改用正在运行的实例 |
+| `COEVO_PG_BIN`、`COEVO_PG_OLD_BIN` | 每个运行起实例用的 16.15 与 15.19 的 `bin` 目录（默认在 `.orch/pg16` 与 `.orch/pg15` 下） |
+| `COEVO_JAVA`、`COEVO_SQLANCER_HOME` | SQLancer 臂用的 Java 与 SQLancer 构建（默认 `.orch/jdk` 与 `.orch/sqlancer`） |
