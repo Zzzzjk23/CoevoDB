@@ -1,0 +1,26 @@
+--java.lang.AssertionError: The size of the result sets mismatch (3 and 2)!
+--First query: "SELECT t0.c0 FROM t0", whose cardinality is: 3
+--Second query: "SELECT t0.c0 FROM t0 WHERE (t0.c0) IS NOT NULL UNION ALL SELECT t0.c0 FROM t0 WHERE (NOT ((t0.c0) IS NOT NULL)) UNION ALL SELECT t0.c0 FROM t0 WHERE (((t0.c0) IS NOT NULL)) IS NULL", whose cardinality is: 2
+--	at sqlancer.common.oracle.TLPWhereOracle.check(TLPWhereOracle.java:95)
+--	at sqlancer.ProviderAdapter.checkDatabase(ProviderAdapter.java:111)
+--	at sqlancer.ProviderAdapter.generateAndTestDatabase(ProviderAdapter.java:61)
+--	at sqlancer.Main$DBMSExecutor.run(Main.java:483)
+--	at sqlancer.Main$2.run(Main.java:747)
+--	at sqlancer.Main$2.runThread(Main.java:729)
+--	at sqlancer.Main$2.run(Main.java:720)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+--	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+--	at java.base/java.lang.Thread.run(Thread.java:1583)
+---- Time: 2026/10/22 00:31:00
+-- Database: database4
+-- Database version: 16.15
+-- seed value: 7
+\c test;
+DROP DATABASE FORCE IF EXISTS database4;
+DROP DATABASE IF EXISTS database4;
+CREATE DATABASE database4 WITH ENCODING 'utf8'  TEMPLATE template0;
+\c database4;
+CREATE TABLE t0(c0 TEXT);
+INSERT INTO t0(c0) VALUES('a');
+INSERT INTO t0(c0) VALUES(NULL);
+INSERT INTO t0(c0) VALUES('b');
