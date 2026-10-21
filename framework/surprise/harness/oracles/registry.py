@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 from surprise.harness.contracts import ORACLE_IDS, Label, SqlCase
 
-TARGET_ENGINES = ("duckdb", "datafusion")
+TARGET_ENGINES = ("duckdb", "datafusion", "postgres")
 REFERENCE_ENGINES = ("duckdb", "datafusion", "sqlite", "postgres")
 SOUND_ORACLE_IDS = ("tlp", "norec", "plan_variant")
 
@@ -88,6 +88,10 @@ def runner_factory_for(engine: str):
         from targets.datafusion_runner import DataFusionRunner
 
         return DataFusionRunner
+    if engine == "postgres":
+        from surprise.harness.oracles.pg_target import PostgresTargetRunner
+
+        return PostgresTargetRunner
     raise ValueError(
         f"engine: only {TARGET_ENGINES} are supported as targets, got {engine!r}"
     )
