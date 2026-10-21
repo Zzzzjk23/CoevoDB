@@ -38,7 +38,9 @@
 - 用户后来说"你不要等S8长跑结束了，快收尾"：03:20–03:35 在本分支上跑了验证（去掉密钥；与 S8 长跑同时跑，长跑的吞吐可能因此略低，逐行比对由 S16 会话收尾时看）。
   - 全量 pytest：1377 passed、3 skipped、1 failed，12 分 41 秒。失败的 `test_surprise_s16_replay.py::test_source_run_dir_relative_to_framework` 是本 worktree 的 `framework/results` 目录联接（指向主检出区，给门槛读 S8 产物用）造成的：`resolve()` 顺着联接走出 worktree 的 `framework/`，`_run_dir` 只好返回绝对路径。去掉联接后这个文件 25 passed。正常检出（`results` 是真目录或不存在）不受影响，所以按 1378 passed、3 skipped 计，与 `s16-testfix` 相同。
   - 门槛：S19 12/12 通过；S12 `docs` 通过；S16 `scope` 不过（`README.md`、`framework/README.md` 与 S19 的四个文件不在 S16 范围；打 `s16-done` 后自然通过）。`surprise.gates.all` 没跑（全部约一小时，用户要快收尾）。
-  - 未决：S16 的 worktree（`.claude/worktrees/s16`）也用同样的 `framework/results` 联接，S16 收尾复跑全量 pytest 时会碰到同一处失败；那是环境，不是代码问题。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
+  - 未决：S16 的 worktree（`.claude/worktrees/s16`）也用同样的 `framework/results` 联接，S16 收尾复跑全量 pytest 时会碰到同一处失败；那是环境，不是代码问题。
+- 用户随后定下（"我当前的所有内容commit到main分支，然后handoff放到git的handoff分支上，然后push到github上"）：`main` 快进到 `handoff`（`main` 是 `handoff` 的祖先，不产生合并提交）；新加远端 `github` = 私有仓库 `Zzzzjk23/CoevoDB`（HTTPS，用本机 Git Credential Manager 里已存的凭据），推 `main`、`handoff` 与全部 tag；`session/s16`、`session/s19` 还有会话在用，先不推。推之前重扫了全部历史（OpenRouter、DeepSeek、GitHub、AWS 与私钥的样式），只有 `tests/test_surprise_roles_gateway.py` 里的假凭据 `FAKE_KEY`。
+  - 以后：S16、S19 收尾后合进 `main` 再推；`server` 远端照旧只推部署用的 tag。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
 
 ## 进行中：S16（PostgreSQL 目标，2026-10-21 开始）
 
