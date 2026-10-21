@@ -69,10 +69,12 @@ ALLOWED_CHANGES = (
     # keys stored on the server (user's instruction, 2026-10-21): the rule in both files changed
     "CLAUDE.md",
     "framework/AGENTS.md",
+    # 429 retry (user's decision, 2026-10-21): one constant added; group `retry` checks that every
+    # constant of the base tag keeps its value
+    "framework/surprise/roles/constants.py",
 )
 FROZEN_PATHS = (
     "framework/surprise/harness",
-    "framework/surprise/roles/constants.py",
     OLD_PRICES_FILE,
     "framework/agents",
     "framework/llm",
@@ -107,3 +109,17 @@ CAUSES = {
     None: "other",
 }
 KINDS = ("start", "llm_errors", "llm_blocked", "cell_failed", "stall", "balance", "finished", "exited")
+
+# ---- 429 retried with backoff (user's decision, 2026-10-21: "同意，改成429退避重试") ------------------
+# The transport waits and retries when the answer is HTTP 429, and only then; every other failure is
+# still one attempt. The retries happen inside one gateway call: the cap, calls.jsonl and the
+# gateway's totals see one call. Each attempt keeps its own request deadline.
+
+CONSTANTS_FILE = "framework/surprise/roles/constants.py"
+RETRY_CONSTANT = "RATE_LIMIT_WAITS_S"
+# Seconds to wait before retry 1, 2, ...; four retries, five attempts, 220 s of waiting at most.
+RETRY_WAITS_S = [10.0, 30.0, 60.0, 120.0]
+# Written to stderr (the cell log) before each wait; ASCII, never the key or the response body.
+RETRY_LINE = "surprise.roles.transport: HTTP 429 for role {role}, model {model}; retry {attempt}/{retries} in {wait:g} s"
+# Answers that are not retried.
+NO_RETRY_STATUSES = (400, 401, 402, 403, 404, 500, 502, 503)

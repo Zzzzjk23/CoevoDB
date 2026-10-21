@@ -169,3 +169,4 @@ CVE 的另一半（测量 oracle 覆盖哪些缺陷：召回基准、上游回�
 - （2026-10-20 补充，用户，S19 期间）LLM 角色换模型：OpenRouter 上的 Z.ai GLM 5.3 Flash（`z-ai/glm-5.3-flash`），只用提供商 Open Inference（`open-inference/fp4`），不回退到别的提供商，开推理；接口与 OpenAI 兼容；密钥仍放在 `DEEPSEEK_API_KEY` 里（用户稍后换成 OpenRouter 的密钥）。实现为网关的新档 `glm-flash`，原来的 fast / strong 两档与默认行为不变（决策 10 仍成立）。
 - （2026-10-21 补充，用户，S19 期间）加提醒：额度不足、报错等经 pushplus 的一对一消息推给用户本人（用户的话："添加额度不足、报错等的提醒：使用pushplus的一对一消息功能"）。token 只放在环境变量 `PUSHPLUS_TOKEN`，同 `DEEPSEEK_API_KEY` 的规矩。实现为独立的看守进程 `surprise.notify.watch`，只读网格结果目录，实验代码不变。
 - （2026-10-21 补充，用户，S19 期间）GLM 的推理强度：这个端点不允许关推理，默认强度下复杂角色把 max_tokens 都花在推理上；用户定为与以前的 deepseek-flash 对齐（它默认就推理）：开推理、各角色 max_tokens 不变，`reasoning` 设为 `{"effort": "low"}`，取代上面换模型一条里的"开推理"（`enabled: true`）。
+- （2026-10-21 补充，用户，S19 期间）OpenRouter 回 HTTP 429（限流）时退避重试，不再算作一次失败的调用（用户的话："同意，改成429退避重试"）。只重试 429，别的错误照旧只试一次；重试在一次网关调用之内，调用上限与 `calls.jsonl` 仍按一次算。
