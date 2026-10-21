@@ -143,7 +143,7 @@ def test_two_rate_limits_then_success_keep_request_and_record_once(wire, make_tr
     expected = {"model": model, "messages": [{"role": "user", "content": "prompt"}],
                 "temperature": 0.2, "max_tokens": 100}
     if model == MODEL:
-        expected.update(reasoning={"effort": "low"},
+        expected.update(reasoning={"effort": "medium"},
                         provider={"only": [PROVIDERS[0]], "allow_fallbacks": False})
         url = "https://openrouter.ai/api/v1/chat/completions"
     else:
