@@ -20,7 +20,7 @@
 | S13 | 正式实验设计 | 完成 | s13-done；s13-done-r2（用户验收之后，之后的工作从这里起） | S13 7/7；pytest 935 passed, 3 skipped；GATES PASS 13/13 |
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
-| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2、s19-deploy-3；s19-deploy-4（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-4；s19-deploy-5（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -131,6 +131,9 @@ GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inf
 用户看过上面的推理量对比后说"改成medium，然后重新跑之前停下的实验"（PLAN §9 补充一条）。
 - 门槛 `s19_cases.NEW_PROFILE` 先改（0842798）；codex 的 6abadef 只改 `providers.py` 一处与 S19 三个测试文件里写死的值。审查红旗：S11 `ciao`（已知）与 2 处由 low 改成 medium 的断言，都无害。审查包在分支头上跑了 pytest 1205 passed、3 skipped 与全部门槛（只有 `ciao` 不过）；合并 73e1b0f 时 session/s19 没有新提交，合并后的代码与审查的分支头相同，所以没有再在本机重跑。归档 cc19a5f，worktree 已清理。
 - 小测（本机，进程内把档案临时改成 medium，仓库不动；同样三条 prompt）：三次都 `ok`、`sail-research/fp4` 回答、`stop`、JSON 字段与 DeepSeek 相同；推理 token prior 14、implementer 32、conjecturer 110（low 时 1、32、269），输出 90、197、564，5–29 秒。也就是说 Sail Research 的推理量基本不随 effort 变，medium 仍远少于 Open Inference 与以前的 deepseek-flash。没有出现推理吃光 max_tokens。
+- 部署 `s19-deploy-5`（77de03b；与 `s19-deploy-4` 的代码只差 `providers.py` 一行）。服务器上去掉密钥跑 S19 的四个测试文件 135 passed、`gates.s19` 12/12（代码只差一行，没有重跑全部测试）。
+- 重跑 `e1-pilot-glm2`（tmux 会话 `e1-glm2`，12:01:11 UTC 起，约 2.2 小时；`bash …/e1_pilot_glm.sh e1-pilot-glm2`）。结果 `results/e1-pilot-glm2/`，日志 `results/e1-pilot-glm2.log`，看守日志 `results/e1-pilot-glm2.notify.log`。按用户的话不监控。
+- 起跑检查（约 5 分钟后，只看这一次）：两格与看守都在，看守已发"开始看守"。头两分钟两格都卡在第一次 prior 调用上（137 秒、141 秒，进程空闲、连着 OpenRouter）；之后正常推进。到 12:06 两格共 9 次调用：7 次 `ok`，全部 `sail-research/fp4` 回答；2 次 prior 失败，原因 `TransportError: TypeError`（回复正文为 null，不重试也不切换），各用了 137 秒与 79 秒；有一次 prior 输出 4833 个 token（medium 下偶尔推理很长）。没有 429/503。样本还小，失败率要等跑完再算。
 
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
