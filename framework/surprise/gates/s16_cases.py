@@ -217,6 +217,19 @@ REPLAY_FULL = 2000
 REPLAY_LIVE = 200
 REPLAY_EVIDENCE = "replay_longrun.json"
 
+# ---- phi, the loop, the grid and the report (third wave) ------------------------------------------------
+
+PHI_CASES = ("PG-F", "plain_pred", "indexable", "PG-A")
+# PG-F's plan as 16.15 prints it (EXPLAIN (FORMAT JSON) node types, spaces as underscores).
+PGF_PLAN_LEAVES = ("plan:MEMOIZE", "plan:NESTED_LOOP", "plan:INDEX_SCAN", "plan:AGGREGATE", "plan:INDEX_ONLY_SCAN")
+LOOP_SEED = 7
+LOOP_EXPERIMENTS = 40
+LOOP_MAX_HARNESS_ERROR = 0.10
+GRID_MINUTES = 1.0
+GRID_SEEDS = (7, 8)
+KNOWN_CASES = "known_pg_cases.json"
+PGF_KEY = "fix|postgres|enable_memoize"
+
 # ---- roles ----------------------------------------------------------------------------------------------
 
 PG_SOURCE_DIR = "postgresql-16.15"

@@ -17,11 +17,15 @@ Groups (SESSIONS S16):
   seeds      the existing PostgreSQL seed corpus runs on the target
   replay     EXPERIMENT.md 8: the replay tool, a live sample of the old S8 long run, and the full
              2000-record replay recorded in s16_data
+  phi        phi of PostgreSQL cases has a plan layer and is the same in two processes
+  loop       the main loop on postgres starts, uses and removes its own instances, or reuses
+             exported DSNs; the Hunter offers native index presence
+  grid       two PostgreSQL cells on their own instances; the report scores recall against PG-F
   refreeze   the harness changed only in the allowed files and is frozen again
   scope      changes since the base tag stay in scope
 
-The groups for the main loop, the grid, phi, SQLancer and the report are added before the third
-wave of work packages is dispatched. PostgreSQL binaries: COEVO_PG_BIN / COEVO_PG_OLD_BIN or the
+The SQLancer group is added before its work package is dispatched. PostgreSQL binaries:
+COEVO_PG_BIN / COEVO_PG_OLD_BIN or the
 common checkout's .orch/pg16 and .orch/pg15 (see HANDOFF S16). Output is ASCII only.
 """
 
@@ -618,6 +622,131 @@ def check_replay() -> str:
             f"({len(live['strata'])} strata)")
 
 
+# ---- phi ----------------------------------------------------------------------------------------
+
+def check_phi() -> str:
+    from surprise.features.extract import extract_isolated
+
+    shown = {}
+    with instances("phi", old=False):
+        for name in C.PHI_CASES:
+            first, second = extract_isolated(case(name)), extract_isolated(case(name))
+            require(first.to_dict() == second.to_dict(), f"phi of {name} differs between two processes")
+            require(first.engine == "postgres" and first.layers.get("plan") == "ok",
+                    f"{name}: phi layers {dict(first.layers)}")
+            shown[name] = len(first.features)
+        pgf = extract_isolated(case("PG-F"))
+        missing = [leaf for leaf in C.PGF_PLAN_LEAVES if leaf not in pgf.features]
+        require(not missing, f"PG-F plan leaves missing {missing}: {[f for f in pgf.features if f.startswith('plan:')]}")
+        plain = extract_isolated(case("plain_pred"))
+        require(plain.layers.get("data") == "ok", f"plain_pred data layer {dict(plain.layers)}")
+    return f"phi stable across processes for {sorted(shown)}; PG-F plan has {list(C.PGF_PLAN_LEAVES)}"
+
+
+# ---- loop ---------------------------------------------------------------------------------------
+
+def _loop_argv(out: Path) -> list[str]:
+    return ["-m", "surprise.experiments.loop", "--out", str(out), "--seed", str(C.LOOP_SEED), "--engine", "postgres",
+            "--max-experiments", str(C.LOOP_EXPERIMENTS)]
+
+
+def check_loop() -> str:
+    from surprise.harness.contracts import ORACLE_IDS, SqlCase
+    from surprise.harness.ledger import Ledger
+    from surprise.harness.manifest import verify_manifest
+    from surprise.hunter.operators import oracle_options
+
+    P = pg_instance()
+    options = oracle_options(SqlCase(engine="postgres", setup=C.T_SETUP, query=C.T_QUERY), ORACLE_IDS)
+    require(("index_presence", None) in options, f"the Hunter must offer native index presence on postgres: {options}")
+    out = tmpdir("loop") / "run"
+    env = clean_env()
+    env.pop(C.TARGET_DSN_ENV, None)
+    env.pop(C.OLD_DSN_ENV, None)
+    proc = py(_loop_argv(out), timeout=3600, env=env)
+    require(proc.returncode == 0, f"loop on postgres exited {proc.returncode}: {_ascii((proc.stdout + proc.stderr)[-800:])}")
+    report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    require(report.get("experiments") == C.LOOP_EXPERIMENTS and report.get("engines") == ["postgres"],
+            f"loop report: {report.get('experiments')} experiments on {report.get('engines')}")
+    with Ledger(out / "ledger.sqlite") as ledger:
+        run_id = ledger.run_ids()[0]
+        records = list(ledger.records(run_id=run_id))
+        manifest = ledger.run_manifest(run_id)
+    require(all(record.case.engine == "postgres" for record in records), "every record is a PostgreSQL case")
+    errors = sum(1 for record in records if record.label.invalid_reason == "harness_error")
+    require(errors <= C.LOOP_MAX_HARNESS_ERROR * len(records), f"{errors} harness errors in {len(records)} records")
+    labels = {record.label.y for record in records}
+    require({"pass", "invalid"} <= labels, f"labels seen: {sorted(labels)}")
+    environment = manifest.get("environment") or {}
+    require((environment.get("engines") or {}).get("postgres") == C.TARGET_VERSION
+            and (environment.get("old_engines") or {}).get("postgres") == C.OLD_VERSION,
+            f"run manifest PostgreSQL versions: {environment.get('engines')} {environment.get('old_engines')}")
+    require(verify_manifest(manifest) == [], "the run manifest verifies")
+    info = json.loads((out / "pg" / "target" / "instance.json").read_text(encoding="utf-8"))
+    require(info.get("version") == C.TARGET_VERSION, f"the loop's own instance: {info}")
+    require(not (out / "pg" / "target" / "data").exists() and not (out / "pg" / "old" / "data").exists(),
+            "the loop must remove its instances' data directories")
+    require(P.stop_all(out) == [], "a PostgreSQL server under the run directory is still running")
+
+    reused = tmpdir("loop-reuse") / "run"
+    with instances("loop-dsn"):
+        proc = py(_loop_argv(reused), timeout=3600, env=clean_env())
+    require(proc.returncode == 0 and not (reused / "pg").exists(),
+            f"with DSNs exported the loop must use them and start nothing: exit {proc.returncode}")
+    oracles = sorted({record.label.oracle for record in records})
+    return (f"{len(records)} experiments on postgres ({sorted(labels)}, oracles {oracles}, {errors} harness errors); "
+            "own instances started and removed; exported DSNs reused")
+
+
+# ---- grid and report ----------------------------------------------------------------------------
+
+def _known_pg(tmp: Path) -> Path:
+    out = tmp / "known_pg.json"
+    with instances("known"):
+        proc = py(["-m", "surprise.metrics.recall", "known", "--cases", str(DATA / C.KNOWN_CASES), "--out", str(out)],
+                  timeout=3600)
+    require(proc.returncode == 0, f"recall known on PG-F: {_ascii((proc.stdout + proc.stderr)[-600:])}")
+    known = json.loads(out.read_text(encoding="utf-8"))
+    item = known["items"][0]
+    require(item["y"] == "fail" and item["key"] == C.PGF_KEY and known["engines"].get("postgres") == C.TARGET_VERSION,
+            f"known PG-F: {item} engines {known['engines']}")
+    return out
+
+
+def check_grid() -> str:
+    P = pg_instance()
+    tmp = tmpdir("grid")
+    known = _known_pg(tmp)
+    raw = {"schema": 1, "name": "s16-pg", "budget": {"minutes": C.GRID_MINUTES}, "seeds": list(C.GRID_SEEDS),
+           "concurrency": 2, "reference": "nollm", "known": str(known),
+           "arms": [{"name": "nollm", "kind": "surprise", "engines": ["postgres"]}]}
+    cfg = tmp / "grid.json"
+    cfg.write_text(json.dumps(raw), encoding="utf-8")
+    out = tmp / "out"
+    env = clean_env()
+    env.pop(C.TARGET_DSN_ENV, None)
+    env.pop(C.OLD_DSN_ENV, None)
+    proc = py(["-m", "surprise.experiments.grid", "run", str(cfg), "--out", str(out)], timeout=3600, env=env)
+    require(proc.returncode == 0, f"PostgreSQL grid exited {proc.returncode}: {_ascii((proc.stdout + proc.stderr)[-600:])}")
+    ports = set()
+    for seed in C.GRID_SEEDS:
+        cell = out / "cells" / "nollm" / f"s{seed}-r0"
+        info = json.loads((cell / "cell.json").read_text(encoding="utf-8"))
+        require(info.get("status") == "done" and info.get("returncode") == 0, f"cell s{seed}: {info.get('status')}")
+        instance = json.loads((cell / "pg" / "target" / "instance.json").read_text(encoding="utf-8"))
+        ports.add(instance["port"])
+    require(len(ports) == len(C.GRID_SEEDS), f"each cell needs its own instance: ports {ports}")
+    require(P.stop_all(out) == [], "a PostgreSQL server under the grid directory is still running")
+    proc = py(["-m", "surprise.metrics.report", str(out)], timeout=1800)
+    require(proc.returncode == 0, f"report on the PostgreSQL grid: {_ascii((proc.stdout + proc.stderr)[-600:])}")
+    report = json.loads((out / "report" / "report.json").read_text(encoding="utf-8"))
+    cells = report["arms"]["nollm"]["cells"]
+    require(sorted(cells) == [f"nollm/s{seed}-r0" for seed in C.GRID_SEEDS], f"report cells {cells}")
+    recall = report["rq6"]["arms"]["nollm"]["recall"]
+    require(recall.get("n") == len(C.GRID_SEEDS), f"recall must be scored per PostgreSQL cell against PG-F: {recall}")
+    return f"two PostgreSQL cells done on their own instances (ports {sorted(ports)}); report with recall against PG-F"
+
+
 # ---- refreeze -----------------------------------------------------------------------------------
 
 def check_refreeze() -> str:
@@ -676,6 +805,9 @@ GROUPS: dict[str, Callable[[], str]] = {
     "m1": check_m1,
     "seeds": check_seeds,
     "replay": check_replay,
+    "phi": check_phi,
+    "loop": check_loop,
+    "grid": check_grid,
     "refreeze": check_refreeze,
     "scope": check_scope,
 }

@@ -1,0 +1,29 @@
+[
+ {
+  "name": "PG-F",
+  "case": {
+   "engine": "postgres",
+   "setup": [
+    "CREATE TABLE t0(ten int PRIMARY KEY)",
+    "CREATE TABLE t1(unique1 int, hundred int, twenty int)",
+    "CREATE TABLE t2(hundred int, x int)",
+    "CREATE INDEX t1u ON t1(unique1)",
+    "CREATE INDEX t2h ON t2(hundred)",
+    "INSERT INTO t0 SELECT generate_series(0,9)",
+    "INSERT INTO t1 SELECT i, i%10, i%5 FROM generate_series(0,999) i",
+    "INSERT INTO t2 SELECT i%10, i  FROM generate_series(0,999) i",
+    "ANALYZE t0",
+    "ANALYZE t1",
+    "ANALYZE t2",
+    "SET enable_seqscan = off",
+    "SET enable_mergejoin = off",
+    "SET enable_hashjoin = off",
+    "SET work_mem = '64kB'"
+   ],
+   "query": "SELECT t0.ten, (SELECT count(*) FROM t1 JOIN t2 ON t2.hundred + t0.ten = t1.unique1 WHERE t1.twenty = t0.ten) FROM t0 ORDER BY 1",
+   "predicate": null
+  },
+  "oracle": "plan_variant",
+  "rule": null
+ }
+]
