@@ -258,6 +258,27 @@ def _version_ladder(
 
     from surprise.harness.oracles.version_differential import _query_old, _resolve_old_python
 
+    if engine == "postgres":
+        import os
+
+        from surprise.harness.oracles.pg_target import OLD_DSN_ENV
+        from surprise.harness.oracles.version_differential import _query_old_postgres
+
+        if not os.environ.get(OLD_DSN_ENV):
+            return "unavailable"
+        import subprocess
+
+        try:
+            remote = _query_old_postgres(list(setup), query, timeout_s)
+        except subprocess.TimeoutExpired:
+            return "unknown"
+        if remote.protocol_error or remote.setup_error:
+            return "unknown"
+        if remote.error:
+            return "unknown" if any(marker in remote.error for marker in _PARSER_MARKERS) else "recent"
+        if local_rows is None:
+            return "unknown"
+        return "longstanding" if loose_bag(remote.rows) == loose_bag(local_rows) else "recent"
     if engine not in ("duckdb", "datafusion"):
         return "unavailable"
     try:

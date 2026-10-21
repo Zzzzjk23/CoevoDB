@@ -32,6 +32,7 @@ from .common import invalid_label, multiset_difference, pass_label
 from .cross_dbms import collect_reference_results, default_reference_factories
 from .forms import full_query
 from .norec import norec_applies
+from .pg_target import OLD_DSN_ENV, PostgresTargetRunner
 from .registry import OracleOptions, register
 from .tlp import tlp_form
 
@@ -87,8 +88,9 @@ def judge_case(
             error=new_result.error,
         )
 
-    python = _resolve_old_python(case.engine, options.old_python)
-    if python is None:
+    postgres = case.engine == "postgres"
+    python = None if postgres else _resolve_old_python(case.engine, options.old_python)
+    if (postgres and not os.environ.get(OLD_DSN_ENV)) or (not postgres and python is None):
         return _invalid(
             "harness_error",
             full,
@@ -96,10 +98,13 @@ def judge_case(
             new_version=new_version,
             old_rows=[],
             new_rows=new_rows,
-            error="old interpreter is missing",
+            error="old server is missing" if postgres else "old interpreter is missing",
         )
     try:
-        old = _query_old(python, case.engine, list(case.setup), full, timeout_s)
+        if postgres:
+            old = _query_old_postgres(list(case.setup), full, timeout_s)
+        else:
+            old = _query_old(python, case.engine, list(case.setup), full, timeout_s)
     except subprocess.TimeoutExpired:
         return _invalid(
             "timeout",
@@ -436,6 +441,31 @@ def _run_new(
         close = getattr(runner, "close", None)
         if close is not None:
             close()
+
+
+def _query_old_postgres(setup: list[str], query: str, timeout_s: float) -> _OldResult:
+    """Execute the old PG server in a private schema, shared with CVE tier 3."""
+    import psycopg2
+
+    runner = PostgresTargetRunner(env=OLD_DSN_ENV)
+    version = None
+    try:
+        version = runner.engine_version
+        error = _first_setup_error(runner.setup(setup))
+        if error is not None:
+            if error.startswith("TimeoutError:"):
+                raise subprocess.TimeoutExpired("old PostgreSQL execution", timeout_s)
+            return _OldResult(version, [], None, error, None)
+        result = runner.run(query, timeout_s=timeout_s)
+        if result.timed_out:
+            raise subprocess.TimeoutExpired("old PostgreSQL execution", timeout_s)
+        return _OldResult(version, normalize_rows(result.rows) if result.ok else [],
+                          result.error, None, None)
+    except psycopg2.Error:
+        # Connection errors can contain DSN fields; keep protocol text fixed.
+        return _OldResult(version, [], None, None, "old server execution failed")
+    finally:
+        runner.close()
 
 
 def _query_old(

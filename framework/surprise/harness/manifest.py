@@ -259,6 +259,24 @@ def _package_versions() -> dict[str, str | None]:
     return {name: _engine_version(name) for name in _PACKAGE_NAMES}
 
 
+def _target_postgres_version(env: str) -> dict[str, str | None]:
+    if not os.environ.get(env):
+        return {}
+    import psycopg2
+
+    try:
+        connection = psycopg2.connect(os.environ[env])
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SHOW server_version")
+                version = cursor.fetchone()[0]
+        finally:
+            connection.close()
+    except psycopg2.Error:
+        version = None
+    return {"postgres": version}
+
+
 def build_manifest(run_id: str, *, root: str | Path | None = None) -> dict:
     """JSON-safe description of one run and the harness that produced it."""
     base = _framework_root() if root is None else Path(root)
@@ -275,10 +293,12 @@ def build_manifest(run_id: str, *, root: str | Path | None = None) -> dict:
                 "duckdb": _engine_version("duckdb"),
                 "datafusion": _engine_version("datafusion"),
                 "sqlite": sqlite3.sqlite_version,
+                **_target_postgres_version("COEVO_TARGET_PG_DSN"),
             },
             "old_engines": {
                 "duckdb": _old_engine_version("duckdb"),
                 "datafusion": _old_engine_version("datafusion"),
+                **_target_postgres_version("COEVO_OLD_PG_DSN"),
             },
             "references": {"postgres": _postgres_server_version()},
             "packages": _package_versions(),

@@ -52,6 +52,8 @@ def judge_case(
     """Compare one read-only statement with and without DuckDB ART indexes."""
     del options  # shared signature; index presence has no rewrite options
     full = full_query(case)
+    if case.engine == "postgres":
+        return _judge_postgres(case, factory, timeout_s, full)
     if case.engine != "duckdb":
         return invalid_label(ORACLE, "not_applicable", full, extra={"applicability": "no_secondary_index"})
     if not is_read_only_query(full):
@@ -63,6 +65,74 @@ def judge_case(
     runner = factory()
     try:
         return _judge_indexed(case, runner, timeout_s, full, plans)
+    finally:
+        runner.close()
+
+
+def _judge_postgres(case: SqlCase, factory, timeout_s: float, full: str) -> Label:
+    from oracles.index_variant import IndexVariantOracle
+
+    compared: list[str] = []
+    skipped: list[dict[str, str]] = []
+    extra = {"index_variants_compared": compared, "index_variants_skipped": skipped}
+
+    def invalid(reason: str, **kwargs) -> Label:
+        return invalid_label(ORACLE, reason, full, extra={**extra, **kwargs})
+
+    if not is_read_only_query(full):
+        return invalid("not_applicable", applicability="not_select")
+    if not parse_tables(list(case.setup)):
+        return invalid("not_applicable", applicability="no_base_table")
+    runner = factory()
+    try:
+        for _statement, error in runner.setup(list(case.setup)):
+            if error is not None:
+                return invalid("setup_error", error=error)
+        baseline = runner.run(full, timeout_s=timeout_s)
+        label = _baseline_label(case, full, baseline)
+        if label is not None:
+            label.detail.update(extra)
+            return label
+        for name, setup, teardown in IndexVariantOracle().variants_for(list(case.setup)):
+            variant = None
+            reason = None
+            try:
+                for statement in setup:
+                    if not runner.run(statement, timeout_s=timeout_s).ok:
+                        reason = "setup_failed"
+                        break
+                if reason is None:
+                    explain = runner.run(f"EXPLAIN {full}", timeout_s=timeout_s)
+                    if explain.ok and "Index" not in repr(explain.rows) and "Bitmap" not in repr(explain.rows):
+                        reason = "no_index_path"
+                    else:
+                        variant = runner.run(full, timeout_s=timeout_s)
+            finally:
+                for statement in teardown:
+                    runner.run(statement, timeout_s=timeout_s)
+            if variant is not None:
+                if variant.timed_out:
+                    reason = "timeout"
+                elif _is_internal(variant):
+                    compared.append(name)
+                    return _crash(case, full, baseline, variant,
+                                  f"internal error under index variant {name}", (name,), extra)
+                elif not variant.ok and is_value_dependent_error(variant.error):
+                    reason = "value_error"
+                else:
+                    compared.append(name)
+                    if not variant.ok or not bags_equal(baseline, variant):
+                        kind = KIND_ERROR_MISMATCH if not variant.ok else ORACLE
+                        candidate = _candidate(case, full, kind, baseline, variant,
+                                               f"result differs under index variant {name}", None)
+                        return fail_label(ORACLE, candidate, full,
+                                          behavior=multiset_difference(baseline, variant) if variant.ok else None,
+                                          switches=(name,), extra=extra)
+            if reason is not None:
+                skipped.append({"variant": name, "reason": reason})
+        if compared:
+            return pass_label(ORACLE, full, extra=extra)
+        return invalid("not_applicable", applicability="no_index_path")
     finally:
         runner.close()
 
