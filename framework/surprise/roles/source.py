@@ -6,10 +6,13 @@ import os
 import re
 import stat
 import subprocess
+import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from .constants import SOURCE_COMMITS, SOURCE_DIRS, SOURCE_MAX_FILE_BYTES, SOURCE_ROOT_ENV
+from .sources_map import EXTRA_SOURCE_COMMITS, EXTRA_SOURCE_DIRS
 
 _DEFAULT_SUFFIXES = (".cpp", ".hpp", ".h", ".c", ".rs")
 
@@ -183,6 +186,38 @@ def open_sources(*, verify: bool = True) -> dict[str, SourceReader]:
                     f"{engine} checkout commit {commit!r} does not match {expected!r}"
                 )
         readers[engine] = reader
+    return readers
+
+
+def open_extra_sources(engines: Iterable[str], *, verify: bool = True) -> dict[str, SourceReader]:
+    """Open requested optional checkouts; their absence never blocks other engines."""
+    requested = set(engines) & EXTRA_SOURCE_DIRS.keys()
+    if not requested:
+        return {}
+    override = os.environ.get(SOURCE_ROOT_ENV)
+    parent = Path(override) if override else _default_source_parent()
+    readers: dict[str, SourceReader] = {}
+    for engine, directory in EXTRA_SOURCE_DIRS.items():
+        if engine not in requested:
+            continue
+        try:
+            reader = SourceReader(parent / directory)
+            if verify and reader.commit != EXTRA_SOURCE_COMMITS[engine]:
+                raise SourceError("commit mismatch")
+        except SourceError:
+            print(f"optional source checkout unavailable for {engine}: missing directory or commit mismatch", file=sys.stderr)
+            continue
+        readers[engine] = reader
+    return readers
+
+
+def readers_for(engines: Iterable[str]) -> dict[str, SourceReader]:
+    """Keep the legacy readers and add only the requested optional engines."""
+    try:
+        readers = open_sources()
+    except SourceError:
+        readers = {}
+    readers.update(open_extra_sources(engines))
     return readers
 
 

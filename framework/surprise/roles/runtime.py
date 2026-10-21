@@ -24,7 +24,7 @@ from .constants import IMPLEMENTER_PER_CHOICE, TIERS
 from .gateway import UNLIMITED, Gateway
 from .implementer import Implementer
 from .providers import endpoint_for_tier
-from .source import SourceError, open_sources
+from .source import readers_for
 
 _CALL_STATUSES = ("ok", "rejected", "blocked", "miss", "error")
 ROLES = ("implementer", "conjecturer", "prior", "translator", "vocab_inventor", "oracle_inventor")
@@ -407,10 +407,7 @@ def build_roles(
         tier=config.get("tier"),
     )
     book = ConjectureBook(llm / "conjectures.jsonl")
-    try:
-        readers = open_sources()
-    except SourceError:
-        readers = {}
+    readers = readers_for(engines)
     implementer = None
     conjecturer = None
     if "implementer" in chosen:

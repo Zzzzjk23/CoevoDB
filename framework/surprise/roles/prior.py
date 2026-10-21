@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import math
+import re
+from itertools import islice
 from typing import Any
 
 from surprise.features.units import _CONSTRUCTS
@@ -26,7 +28,7 @@ from .constants import (
     PRIOR_TIER,
     PRIOR_UNITS_PER_CALL,
 )
-from .source import SourceError
+from .source import Hit, SourceError
 
 # Keyword regex per construct name in features.units._CONSTRUCTS, plus "plain".
 # `(?i)` because SourceReader.grep compiles the pattern with no flags of its own.
@@ -48,6 +50,7 @@ _CONSTRUCT_PATTERNS: dict[str, str | None] = {
 _ENGINE_SEARCH: dict[str, tuple[str, tuple[str, ...]]] = {
     "datafusion": ("dev/changelog", (".md",)),
     "duckdb": ("test/issues", (".test",)),
+    "postgres": ("doc/src/sgml", (".sgml",)),
 }
 
 _UNPRICED_MISSING = "missing"
@@ -127,12 +130,23 @@ def prior_evidence(units, readers) -> tuple[str, ...]:
             continue
         under, suffixes = search
         try:
-            hits = reader.grep(
-                pattern,
-                under=under,
-                suffixes=suffixes,
-                max_hits=PRIOR_EVIDENCE_PER_CONSTRUCT,
-            )
+            if engine == "postgres":
+                # Read only the pinned 16.x release notes, never adjacent SGML.
+                path = f"{under}/release-16.sgml"
+                notes = reader.read(path)
+                compiled = re.compile(pattern)
+                hits = tuple(islice(
+                    (Hit(path, line, text) for line, text in enumerate(notes.text.splitlines(), 1)
+                     if compiled.search(text)),
+                    PRIOR_EVIDENCE_PER_CONSTRUCT,
+                ))
+            else:
+                hits = reader.grep(
+                    pattern,
+                    under=under,
+                    suffixes=suffixes,
+                    max_hits=PRIOR_EVIDENCE_PER_CONSTRUCT,
+                )
         except SourceError:
             continue
         for hit in tuple(hits)[:PRIOR_EVIDENCE_PER_CONSTRUCT]:

@@ -7,6 +7,9 @@ DataFusion rows are ``(feature-id prefix, regex, subdirectory)``.
 
 from __future__ import annotations
 
+EXTRA_SOURCE_DIRS = {"postgres": "postgresql-16.15"}
+EXTRA_SOURCE_COMMITS = {"postgres": "7d3e000c5961a544302072058a1184e9a588837b"}
+
 # Enum order. A fix set is walked in this order, not in the order it was stored.
 DUCKDB_OPTIMIZER_FILES: dict[str, str] = {
     "expression_rewriter": "src/optimizer/expression_rewriter.cpp",
@@ -55,4 +58,44 @@ DATAFUSION_SOURCE_RULES: tuple[tuple[str, str, str], ...] = (
     ("ast:agg", r"pub fn aggregate\(", "datafusion/expr/src/logical_plan"),
     ("ast:group:", r"pub fn aggregate\(", "datafusion/expr/src/logical_plan"),
     ("ast:clause:order_by", r"pub fn sort\(", "datafusion/expr/src/logical_plan"),
+)
+
+# Intervention-basis order, excluding switches absent from PostgreSQL 16.15.
+POSTGRES_GUC_FILES: dict[str, tuple[str, ...]] = {
+    "enable_hashjoin": ("src/backend/executor/nodeHashjoin.c", "src/backend/optimizer/path/joinpath.c"),
+    "enable_mergejoin": ("src/backend/executor/nodeMergejoin.c", "src/backend/optimizer/path/joinpath.c"),
+    "enable_nestloop": ("src/backend/executor/nodeNestloop.c", "src/backend/optimizer/path/joinpath.c"),
+    "enable_seqscan": ("src/backend/executor/nodeSeqscan.c", "src/backend/optimizer/path/costsize.c"),
+    "enable_indexscan": ("src/backend/executor/nodeIndexscan.c", "src/backend/optimizer/path/costsize.c"),
+    "enable_bitmapscan": ("src/backend/executor/nodeBitmapHeapscan.c", "src/backend/optimizer/path/costsize.c"),
+    "enable_indexonlyscan": ("src/backend/executor/nodeIndexonlyscan.c", "src/backend/optimizer/path/costsize.c"),
+    "enable_hashagg": ("src/backend/executor/nodeAgg.c", "src/backend/optimizer/plan/planner.c"),
+    "enable_sort": ("src/backend/executor/nodeSort.c", "src/backend/optimizer/path/costsize.c"),
+    "enable_incremental_sort": ("src/backend/executor/nodeIncrementalSort.c", "src/backend/optimizer/plan/planner.c"),
+    "enable_memoize": ("src/backend/executor/nodeMemoize.c",),
+    "enable_material": ("src/backend/executor/nodeMaterial.c", "src/backend/optimizer/path/joinpath.c"),
+    "enable_gathermerge": ("src/backend/executor/nodeGatherMerge.c", "src/backend/optimizer/path/costsize.c"),
+    "enable_partitionwise_join": ("src/backend/optimizer/path/joinrels.c",),
+    "enable_partitionwise_aggregate": ("src/backend/optimizer/plan/planner.c",),
+    "enable_parallel_append": ("src/backend/executor/nodeAppend.c", "src/backend/optimizer/path/allpaths.c"),
+    "jit": ("src/backend/jit/jit.c", "src/backend/optimizer/plan/planner.c"),
+    "geqo": ("src/backend/optimizer/geqo/geqo_main.c", "src/backend/optimizer/path/allpaths.c"),
+    "parallel": ("src/backend/optimizer/path/allpaths.c", "src/backend/executor/nodeGather.c"),
+    "enable_presorted_aggregate": ("src/backend/optimizer/plan/planner.c", "src/backend/executor/nodeAgg.c"),
+    "enable_async_append": ("src/backend/optimizer/plan/createplan.c", "src/backend/executor/nodeAppend.c"),
+    "debug_parallel_query": ("src/backend/optimizer/plan/planner.c",),
+}
+
+POSTGRES_SOURCE_RULES: tuple[tuple[str, str, str], ...] = (
+    ("ast:set_op:", r"^generate_nonunion_paths\(", "src/backend/optimizer/prep"),
+    ("ast:join:", r"^add_paths_to_joinrel\(", "src/backend/optimizer/path"),
+    ("ast:join_cond:", r"^add_paths_to_joinrel\(", "src/backend/optimizer/path"),
+    ("ast:join_trait:", r"^add_paths_to_joinrel\(", "src/backend/optimizer/path"),
+    ("ast:subquery:", r"^pull_up_sublinks\(", "src/backend/optimizer/prep"),
+    ("ast:subquery_pos:", r"^pull_up_sublinks\(", "src/backend/optimizer/prep"),
+    ("ast:subquery_trait:", r"^pull_up_sublinks\(", "src/backend/optimizer/prep"),
+    ("ast:window", r"^create_window_paths\(", "src/backend/optimizer/plan"),
+    ("ast:agg", r"^create_grouping_paths\(", "src/backend/optimizer/plan"),
+    ("ast:group:", r"^create_grouping_paths\(", "src/backend/optimizer/plan"),
+    ("ast:clause:order_by", r"^create_ordered_paths\(", "src/backend/optimizer/plan"),
 )

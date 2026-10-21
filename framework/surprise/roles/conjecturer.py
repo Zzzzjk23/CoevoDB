@@ -31,7 +31,12 @@ from .constants import (
 )
 from .gateway import Gateway
 from .source import Snippet, SourceError
-from .sources_map import DATAFUSION_SOURCE_RULES, DUCKDB_OPTIMIZER_FILES
+from .sources_map import (
+    DATAFUSION_SOURCE_RULES,
+    DUCKDB_OPTIMIZER_FILES,
+    POSTGRES_GUC_FILES,
+    POSTGRES_SOURCE_RULES,
+)
 
 # Lines of context on each side of a DataFusion hit. Window and aggregate overlap; a
 # set-operation hit a hundred lines later stays its own span unless the gap is one line.
@@ -305,6 +310,45 @@ def _pack(reader: Any, spans: list[tuple[str, int, int]]) -> tuple[Snippet, ...]
     return tuple(chosen)
 
 
+def _postgres_sources(reader: Any, interventions: tuple, phi: Any) -> tuple[Snippet, ...]:
+    if interventions:
+        wanted = set(interventions)
+        paths: list[str] = []
+        for name, candidates in POSTGRES_GUC_FILES.items():
+            if name not in wanted:
+                continue
+            for path in candidates:
+                try:
+                    if path in paths or not reader.exists(path):
+                        continue
+                except SourceError:
+                    continue
+                paths.append(path)
+        paths = paths[:SOURCE_MAX_FILES]
+        if not paths:
+            return ()
+        head = SOURCE_MAX_LINES // len(paths)
+        return _pack(reader, [(path, 1, head) for path in paths])
+    features = _feature_ids(phi)
+    cache: dict[tuple[str, str], tuple] = {}
+    raw: list[tuple[str, int, int]] = []
+    for prefix, regex, under in POSTGRES_SOURCE_RULES:
+        if not any(feature_id.startswith(prefix) for feature_id in features):
+            continue
+        key = (regex, under)
+        if key not in cache:
+            try:
+                cache[key] = tuple(reader.grep(regex, under=under, max_hits=1))
+            except SourceError:
+                cache[key] = ()
+        hits = cache[key]
+        if not hits:
+            continue
+        hit = hits[0]
+        raw.append((hit.path, max(1, hit.line - _FEATURE_RADIUS), hit.line + _FEATURE_RADIUS))
+    return _pack(reader, _merge_spans(raw))
+
+
 def select_sources(engine: str, hypothesis: Any, phi: Any, readers: Any) -> tuple[Snippet, ...]:
     """Read-only snippets for one failure. A missing checkout yields an empty tuple.
 
@@ -317,6 +361,8 @@ def select_sources(engine: str, hypothesis: Any, phi: Any, readers: Any) -> tupl
         return ()
     reader = readers[engine]
     interventions = tuple(getattr(hypothesis, "interventions", ()) or ())
+    if engine == "postgres":
+        return _postgres_sources(reader, interventions, phi)
     if engine == "duckdb" and interventions:
         wanted = set(interventions)
         paths: list[str] = []
