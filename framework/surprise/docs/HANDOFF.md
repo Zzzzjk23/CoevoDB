@@ -143,6 +143,17 @@ GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inf
   - 与 DeepSeek `full` 逐格比（用户"对比一下这次GLM跑的full的结果和之前deepseek跑的full的结果"；DeepSeek 5 格：c8、c4 各两格完整，c1 的 s9101 第 113.3 分钟起欠费，比到 113 分钟为止）：家族数 GLM 7、5，DeepSeek 5、4、4、4、5；113 分钟时的执行数 GLM 1734、2028，DeepSeek 1461、981、1226、251、891（c1 只有它一格在跑，负载最轻，仍只有 GLM 的一半；`nollm` 在三种并发下都是 5000 以上，所以差别来自 LLM 延迟而不是 CPU）；首个家族 GLM 39、30 分钟，DeepSeek 10–41 分钟。所有格找到的都是同一组 7 个已知家族里的若干个（`nollm` 也一样，而且都在约 1 小时内找到 5–7 个）。LLM 方面：调用 479、489 对 242–346，解析失败 0.6%–1.5% 对 11%–15%，输出 token 约 1/5–1/7，花费 $0.06 对 $1.3–1.8；但猜想存活率 33%、55% 对 67%–86%，预测准确率 62%、78% 对 70%–92%（GLM 推理少，猜想多而准头差一些）。按家族来源算，两种模型的 LLM 车道（bet、implement、translate 等）在 2 小时内几乎都没有直接带来家族（只有 GLM s9101 的 implement 1 个）。n=2 对 5、每格 2 小时，统计上分不出差别。
   - 结论：GLM（sail-research/fp4，medium）可以用于 E1 正式；并发 6 时同时跑的 `full` 格与这次一样是 2 个，限流压力相同。`s19-deploy-5` 已含 `e1.json` 与 `e1.sh`，起跑不用再部署。E1 正式等用户说。
 
+### GLM 的推理强度档位与小测（2026-10-22）
+
+- OpenRouter 的 `/api/v1/models` 对 `z-ai/glm-5.3-flash` 给的是 `reasoning: {mandatory: true, default_enabled: true, supported_efforts: [max, high, low], default_effort: max}`，没有 `supports_max_tokens`。所以只有 low、high、max 三档，不能关，默认是 max（上午 Open Inference 默认强度吃光 max_tokens 就是 max）。不支持的档位按文档映射到最近的一档：现在配置里的 `medium` 实测与 low 一样（见上一节小测），`e1-pilot-glm2` 实际大概率是 low。
+- 小测（用户"做小测，测low、high和max"；同样三条 prompt，进程内改档案，仓库不动，全部 `sail-research/fp4` 回答、`stop`、JSON 字段与 DeepSeek 相同）：
+  | 档 | prior 输出/推理 token，秒 | implementer | conjecturer |
+  |---|---|---|---|
+  | low | 90/13，5 | 166/35，2 | 674/227，34 |
+  | high | 185/95，4 | 428/275，14 | 2026/1400，74 |
+  | max | 3613/3542，109 | 4311/4129，49 | 12770/12055，165 |
+- 对照 DeepSeek 预实验 `full` 每次调用的平均输出（几乎都是推理）：prior 约 3900–4000，implementer 约 3500–4700，conjecturer 约 5900–7300 token，成功调用延迟中位约 16 秒。按推理量，只有 max 接近 DeepSeek（conjecturer 还多一倍，已用到 max_tokens 16000 的 80%）；但 max 每次 49–165 秒，比 DeepSeek 慢 3–10 倍。上午 Open Inference 在默认（max）下 implementer 与 conjecturer 吃光了 max_tokens，所以 max 下一旦切换到 Open Inference 很可能失败。每档每个角色只测了一次，波动大。要用哪档由用户定。
+
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
 用户在 GLM 预实验跑着时问本机能做什么，选了"做第1件，第2件等E1正式起来再说"（第 1 件：写 E1 正式配置；第 2 件：S16 的本机代码部分，等 E1 正式起跑后再开）。
