@@ -1,5 +1,7 @@
 # CoevoDB
 
+！！！注意：旧的框架和新的框架以各种方式杂糅在一起，严格按照下面的阅读顺序阅读。下面的**已确认的缺陷复现（31 个家族）**和**运行复现**是旧框架的产物，新框架还没有跑出过完整的实验。
+
 寻找数据库引擎逻辑缺陷的研究代码，以及它确认过的缺陷的复现用例。
 
 - `framework/` 是代码。现在的系统是 `framework/surprise/` 里的惊讶驱动框架：一个可证伪的理论给每个实验预测失败概率，Hunter 按信息价值挑下一个实验，标签只来自七类 oracle 加 CVE（Contract-Verified Evidence）流程，LLM 永远不当缺陷的裁判。原来的 CoevoDB（LLM Hunter/Fixer 共同进化）作为基线臂保留在 `framework/surprise/baselines/coevodb_v1/`。架构见 [framework/surprise/ARCHITECTURE.md](framework/surprise/ARCHITECTURE.md)。
