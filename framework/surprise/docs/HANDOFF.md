@@ -21,8 +21,28 @@
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
 | S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-4；s19-deploy-5（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
+| S16 | PostgreSQL 目标（解冻 harness 第一批） | **进行中**（只做本机代码；服务器部署与回放检查等用户说） | — | — |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
+
+## 进行中：S16（PostgreSQL 目标，2026-10-21 开始）
+
+用户的指示："开始 S16（PostgreSQL 接入）的本机代码部分"。服务器仍按 2026-10-20 的决定不部署；S16 的部署（装 PG 15.19、每格独立实例）与 §8 回放检查等用户说。
+
+- 会话分支 `session/s16` 从 `session/s19` 的 4ae7884 建立（S19 的 GLM、提醒、重试代码 E2 也要用；S19 剩下的只是结果分析，不改代码）。本会话是后台任务，在 `.claude/worktrees/s16` 里隔离：派发脚本用 `ORCH_ROOT` 指向这个 worktree（`.orch/`、`.worktrees/`、归档都在它下面），`framework/results` 是指向主检出区同名目录的目录联接（S8 钉住的产物只读）。
+- 环境（编排者做，不入库）：PG 15.19 的 EDB 免安装包解压到公共的 `.orch/pg15/binaries/pgsql`；PG 源码 `REL_16_15` 浅克隆到公共的 `.src/postgresql-16.15`（commit 7d3e000c5961a544302072058a1184e9a588837b，给 LLM 角色读）。
+- 开工前在 16.15 上实测了 `postgres/` 七条复现（临时实例，不是项目代码）：只有 PG-F 能判 fail，而且要在 setup 里加 `ANALYZE` 计划才选上 Memoize（memoize 开时 1–5 都是 100，关掉是 200/0）；手工按第 3 档的流程测得 fix set 只有 `enable_memoize`，计划差异含 `MEMOIZE`。PG-C 只有 DuckDB 一个参照能投票（DataFusion 溢出、SQLite 没有 time），不够法定数；PG-B 是值依赖报错；PG-A、PG-G 结果比较类 oracle 判不出；PG-D、PG-E 是两个会话的 SSI 时序，单会话用例表达不了。`seeds/pg_recall.py` 的 30 条（16.x 里修掉的缺陷）在 16.15 上都不复现。PG 种子 308 条里 102 条 setup 能过（多数失败是引用了别的回归测试文件里建的表），Hunter 会跳过失败的种子。
+
+拆包清单（按文件归属不重叠，三波；每波的门槛组在派发前写好）：
+
+| 包号 | 目标 | 允许路径（摘要） | 依赖 | 状态 |
+|---|---|---|---|---|
+| s16-core | 每格 PG 实例管理；harness 的 PG 目标 runner；registry 认 `postgres` 为目标 | `experiments/pg_instance.py`、`harness/oracles/pg_target.py`、`harness/oracles/registry.py`、新测试 | — | 待派发 |
+| s16-roles | LLM 角色的 PG 源码检出与 PG 专用部分（prior 证据、conjecturer 的 GUC→源码表、implementer 提示） | `roles/` | — | 待派发 |
+| s16-oracles | Index presence 原生（旧 `IndexVariantOracle`）、Version differential 连 15.19、CVE 的单线程开关与版本梯、manifest 的 PG 版本 | `harness/oracles/index_presence.py`、`version_differential.py`、`harness/cve/`、`harness/manifest.py`、新测试 | s16-core | 待派发 |
+| s16-replay | §8 回放工具 | `metrics/replay.py`、新测试 | — | 待派发 |
+| s16-loop | φ 计划层的 PG 分支、Hunter 对 PG 开 Index presence、主循环 / pure_llm 自起实例、网格清理残留实例、报告与召回认 PG | `features/`、`hunter/`、`experiments/`、`baselines/pure_llm.py`、`metrics/`、新测试 | s16-oracles | 待派发 |
+| s16-sqlancer | SQLancer 臂的 PG 模式 | `baselines/sqlancer_run.py`、新测试 | s16-core | 待派发 |
 
 ## 暂停中：S19（E1 DuckDB 主对比，2026-10-20 开始）
 
