@@ -65,7 +65,7 @@ def test_implemented_is_the_seven_plan_ids() -> None:
         "cross_dbms",
     )
     assert SOUND_ORACLE_IDS == ("tlp", "norec", "plan_variant")
-    assert TARGET_ENGINES == ("duckdb", "datafusion")
+    assert TARGET_ENGINES == ("duckdb", "datafusion", "postgres")
     assert REFERENCE_ENGINES == ("duckdb", "datafusion", "sqlite", "postgres")
     assert INVALID_REASONS[7:11] == (
         "untrusted_rewrite",
@@ -175,7 +175,8 @@ def test_validation_happens_before_any_runner_opens() -> None:
 
 
 def test_sound_oracles_pass_on_both_target_engines() -> None:
-    for engine in TARGET_ENGINES:
+    # PostgreSQL checks live in tests/test_surprise_s16_target.py / test_surprise_s16_oracles.py and the S16 gate; each run needs its own instance.
+    for engine in ("duckdb", "datafusion"):
         case = _case(engine=engine)
         for oracle in SOUND_ORACLE_IDS:
             first = judge(case, oracle)
