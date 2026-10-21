@@ -314,3 +314,14 @@ cd ~/CoevoDB/.orch && tar -xzf dl/sqlancer.tar.gz && cat sqlancer/COMMIT
 **驱动怎么跑。** 网格的 `sqlancer` 臂写成 `{"name": "sqlancer", "kind": "sqlancer", "engine": "duckdb", "run": true}`（可选 `"run": {"oracles": ["NOREC", "WHERE"], "threads": 1}`），每格起 `python -m surprise.baselines.sqlancer_run`：它在格目录的 `sqlancer/` 下起 java（`--log-each-select false --log-execution-time false`、`--num-tries` 设得很大、`--timeout-seconds` 为预算），每两秒收一次新的缺陷日志，当场分类（结果不一致 `mismatch`、预期外的报错 `unexpected_error`、SQLancer 或驱动自己的问题 `tool_error`）、把能拆成"`SELECT <列> FROM <表或连接>` + 谓词"的转成 `SqlCase`（NoREC → `norec`，TLP WHERE → `tlp`）、评判。`report.json` 的 `executions` 是 SQLancer 实际执行的查询数，"每千次执行的家族数"用它算。每份日志的分类与去向在 `sqlancer/reports.jsonl`。`--replay-logs <目录>` 可以不起 java、只评判已有的日志。
 
 **DataFusion。** SQLancer 有 DataFusion 支持，但不是经 Python：它连自己仓库里的一个 Rust 写的 Arrow Flight SQL 服务端（`src/sqlancer/datafusion/server/datafusion_server`），那个服务端钉在 DataFusion 40.0.0、arrow 52.1.0。要测 DataFusion 54.0.0，得先把服务端移植到 54.0.0 的 API 并在服务器上装 Rust 工具链编出来；做不做由 S17 决定，不做的话 E5 少 5 格（`EXPERIMENT.md` §6 已写明）。
+
+## 9. S16 部署：PostgreSQL 目标（编排者；未部署，等用户说）
+
+S16 的本机代码做完之后，服务器上要补两样环境，再照 §3 部署新 tag。2026-10-20 起服务器暂停，这一节等用户说了再做。
+
+1. **PG 源码检出（先做）。** `git clone --depth 1 --branch REL_16_15 https://github.com/postgres/postgres .src/postgresql-16.15`，HEAD 必须是 `7d3e000c5961a544302072058a1184e9a588837b`（`roles/sources_map.py` 的 `EXTRA_SOURCE_COMMITS`）。缺它或 commit 不对时，PG 运行的 LLM 角色拿不到 PG 源码（stderr 有一行说明），DuckDB 运行不受影响。
+2. **PG 15.19（Version differential 与 CVE 版本梯的旧版）。** 照 §4 第 6 步编 16.15 的办法：官方源码包 `postgresql-15.19.tar.bz2`（下载后核对官网公布的 SHA256，记进 DECISIONS），同样的 `configure` 参数，只把 `--prefix` 换成 `$HOME/CoevoDB/.orch/pg15/pgsql`；`make -j16 world-bin && make install-world-bin`。不要 initdb：每格的实例由代码自己建。
+3. **核对。** `cd framework && ../.venv/bin/python -m surprise.experiments.pg_instance check` 应打印 `target 16.15 port=…` 与 `old 15.19 port=…` 并退出 0。二进制默认从 `.orch/pg16/pgsql/bin`、`.orch/pg15/pgsql/bin` 找（Windows 是 `.orch/pg16|pg15/binaries/pgsql/bin`），`COEVO_PG_BIN` / `COEVO_PG_OLD_BIN` 可覆盖。
+4. **每格实例不用手工管。** PG 的格（主循环、pure_llm、SQLancer 臂）在格目录的 `pg/target`、`pg/old` 下各起一个实例：initdb 参数与 §2 的参照相同（UTF8、`C`、`Australia/Sydney`、`iso, mdy`、`english`），另加 `fsync`/`autovacuum` 关、`lc_messages = 'C'`，只听 127.0.0.1、不开 unix socket；scram 认证，口令只在实例目录里权限 0600 的 `pgpass`，DSN 只带它的路径；用例以非超级用户 `coevo_target` 执行。格结束时停掉并删数据目录（留 `server.log` 与 `instance.json`），网格在格结束后再用 `stop_all` 清一次残留。SQLancer 臂的命令行里有 `coevo_target` 的口令（同机其他账号的 `ps` 看得见），这个口令只对这一格的实例、非超级用户有效，日志与报告里写的是 `<hidden>`。
+5. **回放检查（EXPERIMENT §8）。** 部署后、开跑 E2 之前：`../.venv/bin/python -m surprise.metrics.replay <账本所在的运行目录> --sample 2000 --seed 16 --workers 4 --out <文件>`，退出码 0 且 `different` 为空才算通过。§8 写的是用 E1 的账本；E1 正式还没跑，用哪份（预实验 c8、c4 的格）要先问用户。本机已用解冻前的 S8 长跑做过一遍（`gates/s16_data/replay_longrun.json`）。
+6. **门槛。** `../.venv/bin/python -m pytest -q testing tests` 与 `../.venv/bin/python -m surprise.gates.all`，结果记进 HANDOFF。
