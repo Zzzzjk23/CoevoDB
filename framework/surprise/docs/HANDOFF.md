@@ -154,6 +154,11 @@ GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inf
   | max | 3613/3542，109 | 4311/4129，49 | 12770/12055，165 |
 - 对照 DeepSeek 预实验 `full` 每次调用的平均输出（几乎都是推理）：prior 约 3900–4000，implementer 约 3500–4700，conjecturer 约 5900–7300 token，成功调用延迟中位约 16 秒。按推理量，只有 max 接近 DeepSeek（conjecturer 还多一倍，已用到 max_tokens 16000 的 80%）；但 max 每次 49–165 秒，比 DeepSeek 慢 3–10 倍。上午 Open Inference 在默认（max）下 implementer 与 conjecturer 吃光了 max_tokens，所以 max 下一旦切换到 Open Inference 很可能失败。每档每个角色只测了一次，波动大。要用哪档由用户定。
 
+### 推理强度改为 max，工作包 `s19-max`（2026-10-22，已合并），预实验 `e1-pilot-glm3`
+
+用户看过上面的小测后说"用max挡，做一下两小时预实验"（PLAN §9 补充一条）。
+- 门槛 `NEW_PROFILE` 先改（d315831，同时加了配置 `grids/e1_pilot_glm3.json`）；codex 的 272c630 只把 6 处 medium 改成 max（`providers.py` 一处、S19 三个测试文件）。审查红旗：`ciao`（已知）与 2 处由 medium 改成 max 的断言，都无害；审查包在分支头上 pytest 1205 passed、3 skipped。合并 1bcc2fa 时 session/s19 没有新提交，代码与审查的分支头相同。归档 d42b077，worktree 已清理。
+
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
 用户在 GLM 预实验跑着时问本机能做什么，选了"做第1件，第2件等E1正式起来再说"（第 1 件：写 E1 正式配置；第 2 件：S16 的本机代码部分，等 E1 正式起跑后再开）。
