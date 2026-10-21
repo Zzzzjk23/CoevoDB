@@ -88,14 +88,19 @@ PGF_QUERY = ("SELECT t0.ten, (SELECT count(*) FROM t1 JOIN t2 ON t2.hundred + t0
              "WHERE t1.twenty = t0.ten) FROM t0 ORDER BY 1")
 PGF_WRONG = [[0, 200], [1, 100], [2, 100], [3, 100], [4, 100], [5, 100], [6, 0], [7, 0], [8, 0], [9, 0]]
 PGF_RIGHT = [[0, 200], [1, 200], [2, 200], [3, 200], [4, 200], [5, 0], [6, 0], [7, 0], [8, 0], [9, 0]]
-# Measured identity of PG-F (plan variant, tier 3).
+# Measured identity of PG-F through the whole CVE pipeline (plan variant, tier 3; two runs, equal labels,
+# 2026-10-22). Tier 3 first minimises the setup from 15 statements to 8 (the SETs, t2h and two of the
+# ANALYZEs go; ANALYZE t2 stays) and profiles the minimised case, so the fix set has three single
+# interventions; the orchestrator's earlier hand measurement profiled the unminimised case and found only
+# enable_memoize. The label's identity switches are the fix set, as for the DuckDB cases of S4.
 PGF_PROFILE = {
     "witness_switches": ["no_memoize"],
     "fix_kind": "single",
-    "fix_set": ["enable_memoize"],
+    "fix_set": ["enable_indexscan", "enable_memoize", "enable_nestloop"],
     "plan_diff_has": "MEMOIZE",
     "version_ladder": "longstanding",  # 15.19 returns the same wrong rows
     "behavior_shape": "both",          # five rows missing, five extra
+    "setup_after": 8,
 }
 # The single-thread rerun prelude for PostgreSQL (CVE tier 1), from diagnosis.bisect.
 SINGLE_THREAD_PRELUDE = ("SET max_parallel_workers_per_gather = 0",)
@@ -140,6 +145,9 @@ CASES = {
 
 # Every oracle must label these cases with one of the three values (never harness_error).
 EVERY_ORACLE_CASES = ("plain", "plain_pred", "PG-F", "PG-A", "PG-B", "no_table", "indexable")
+# Native index variants that reach an index path for the indexable query (measured by s16-oracles; the
+# btree on a and the other variants do not change the plan of `WHERE b > 3`).
+INDEXABLE_COMPARED = ["t.btree_b", "t.covering_ios"]
 
 # ---- M1 through evaluate_final -----------------------------------------------------------------------
 
@@ -197,7 +205,8 @@ RECALL_GAPS = {
     "PG-C": "only DuckDB votes (DataFusion overflows, SQLite has no time type): fewer than three engines",
     "PG-D": "two SERIALIZABLE sessions in a fixed order; a single-session case cannot express it",
     "PG-E": "two SERIALIZABLE sessions in a fixed order; a single-session case cannot express it",
-    "PG-F": "as written 16.15 plans without Memoize (pass); with ANALYZE it fails with fix set enable_memoize",
+    "PG-F": "as written 16.15 plans without Memoize (pass); with ANALYZE it fails (fix set of the minimised case: "
+            "enable_indexscan, enable_memoize, enable_nestloop)",
     "PG-G": "a diagnostic-only mismatch; the reference engines lack pg_input_error_info",
 }
 
@@ -212,7 +221,10 @@ MIN_SEED_QUERIES_OK = 85  # measured 93
 # The long run pinned at the base tag (S19 code, the harness before the unfreeze). S16's own long run is
 # written next to it (results/s08/longrun-s16), so this directory is not moved.
 REPLAY_RUN = "results/s08/longrun"
+# The plain SHA-256 that s08_runs.json pins at the base tag, and manifest.file_digest of the same file
+# (CRLF normalised), which is what the replay tool records.
 REPLAY_LEDGER_SHA256 = "22724758fe8d1de02a3313fd6eab7d6cbb18ef61c38cec1463cd89d14b8e4c51"
+REPLAY_LEDGER_DIGEST = "6c9c868eee1514b54998a6fb146e9e73d9a3aa543b050fccf76f510f1a1b5ed4"
 REPLAY_FULL = 2000
 REPLAY_LIVE = 200
 REPLAY_EVIDENCE = "replay_longrun.json"
@@ -228,7 +240,7 @@ LOOP_MAX_HARNESS_ERROR = 0.10
 GRID_MINUTES = 1.0
 GRID_SEEDS = (7, 8)
 KNOWN_CASES = "known_pg_cases.json"
-PGF_KEY = "fix|postgres|enable_memoize"
+PGF_KEY = "fix|postgres|enable_indexscan,enable_memoize,enable_nestloop"
 
 # ---- SQLancer's PostgreSQL mode ---------------------------------------------------------------------------
 

@@ -196,8 +196,8 @@ def check_pgf_profile(label: Any, where: str) -> None:
     from surprise.harness.cve import behavior_shape
 
     expect(label, "fail", "wrong_result", where)
-    require(tuple(label.identity.switches) == tuple(C.PGF_PROFILE["witness_switches"]),
-            f"{where}: switches {list(label.identity.switches)}")
+    require(list(label.identity.switches) == C.PGF_PROFILE["fix_set"],
+            f"{where}: identity switches {list(label.identity.switches)} must be the fix set")
     require(behavior_shape(label.identity.behavior) == C.PGF_PROFILE["behavior_shape"],
             f"{where}: behavior {label.identity.behavior}")
     cve = label.cve
@@ -209,6 +209,9 @@ def check_pgf_profile(label: Any, where: str) -> None:
                 f"expected {C.PGF_PROFILE[key]!r}")
     require(C.PGF_PROFILE["plan_diff_has"] in (profile.get("plan_diff") or []),
             f"{where}: plan_diff {profile.get('plan_diff')}")
+    minimize = cve.get("minimize") or {}
+    require(minimize.get("reproduced") is True and minimize.get("setup_after") == C.PGF_PROFILE["setup_after"],
+            f"{where}: minimised case {({k: v for k, v in minimize.items() if k != 'case'})}")
 
 
 # ---- instances ----------------------------------------------------------------------------------
@@ -475,7 +478,7 @@ def check_oracles() -> str:
         index = judge(case("indexable"), "index_presence")
         expect(index, "pass", None, "index presence on an indexable query")
         compared = index.detail.get("index_variants_compared") or []
-        require(len(compared) >= 4, f"native index variants compared: {index.detail}")
+        require(compared == C.INDEXABLE_COMPARED, f"native index variants compared: {index.detail}")
         expect(judge(case("no_table"), "index_presence"), "invalid", "not_applicable", "index presence without a table")
         version = judge(case("plain"), "version_differential")
         expect(version, "pass", None, "version differential on a plain query")
@@ -607,15 +610,16 @@ def check_replay() -> str:
     full = json.loads(evidence.read_text(encoding="utf-8"))
     require(full.get("harness") == harness_hash()["hash"], "the recorded replay ran on a different harness")
     require(full.get("sampled") == C.REPLAY_FULL and full.get("different") == []
-            and full.get("source", {}).get("ledger_sha256") == C.REPLAY_LEDGER_SHA256,
+            and full.get("source", {}).get("ledger_sha256") == C.REPLAY_LEDGER_DIGEST,
             f"full replay: sampled {full.get('sampled')}, {len(full.get('different') or [])} different, "
             f"source {full.get('source')}")
-    from surprise.harness.manifest import file_digest
+    import hashlib
 
     run_dir = FRAMEWORK / C.REPLAY_RUN
     require(run_dir.is_dir(), f"{C.REPLAY_RUN} is missing on this machine")
-    require(file_digest(run_dir / "ledger.sqlite") == C.REPLAY_LEDGER_SHA256,
-            f"{C.REPLAY_RUN}/ledger.sqlite is not the long run pinned at {C.BASE_TAG}")
+    with (run_dir / "ledger.sqlite").open("rb") as handle:
+        plain = hashlib.file_digest(handle, "sha256").hexdigest()
+    require(plain == C.REPLAY_LEDGER_SHA256, f"{C.REPLAY_RUN}/ledger.sqlite is not the long run pinned at {C.BASE_TAG}")
     out = tmpdir("replay") / "replay.json"
     proc = py(["-m", "surprise.metrics.replay", str(run_dir), "--sample", str(C.REPLAY_LIVE), "--seed", "16",
                "--out", str(out), "--workers", "2"], timeout=3600)
