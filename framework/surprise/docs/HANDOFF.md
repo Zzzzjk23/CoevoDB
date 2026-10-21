@@ -126,6 +126,12 @@ GLM 预实验中止后，用户说"1. 添加退避重试 2. 服务商由open-inf
 - **新发现：同样 `effort: low`，Sail Research 推理得少得多**：prior 91 个输出 token（推理 1），9 秒；implementer 148 个（推理 32），5 秒；conjecturer 766 个（推理 269），30 秒（含 10 秒等待）。上午 Open Inference 的复测是 1113（推理 1029）、2219（2074）、2295（1851）；以前 deepseek-flash 的 implementer 平均约 2500、conjecturer 约 6600 个输出 token。用户定 low 的理由是"与 deepseek-flash 对齐"，换服务商后对齐不再成立；要不要调推理强度（例如 medium）要用户定。三家混用时推理量也会随服务商变。
 - 部署 `s19-deploy-4`（d8736cb，照 SERVER.md §3；部署前服务器空闲、检出 `s19-deploy-3`、干净）。服务器上去掉密钥跑：pytest 1205 passed、3 skipped；S19 12/12；`gates.all` 13/16，没过的仍是服务器上 S8 长跑产物旧或缺的那几组（S08 `longrun`、`sawtooth`、`duplicates`，S11 `ciao`，S15 `stream`），与代码无关。服务器上什么都没跑。
 
+### 推理强度改为 medium，工作包 `s19-medium`（2026-10-21，已合并）
+
+用户看过上面的推理量对比后说"改成medium，然后重新跑之前停下的实验"（PLAN §9 补充一条）。
+- 门槛 `s19_cases.NEW_PROFILE` 先改（0842798）；codex 的 6abadef 只改 `providers.py` 一处与 S19 三个测试文件里写死的值。审查红旗：S11 `ciao`（已知）与 2 处由 low 改成 medium 的断言，都无害。审查包在分支头上跑了 pytest 1205 passed、3 skipped 与全部门槛（只有 `ciao` 不过）；合并 73e1b0f 时 session/s19 没有新提交，合并后的代码与审查的分支头相同，所以没有再在本机重跑。归档 cc19a5f，worktree 已清理。
+- 小测（本机，进程内把档案临时改成 medium，仓库不动；同样三条 prompt）：三次都 `ok`、`sail-research/fp4` 回答、`stop`、JSON 字段与 DeepSeek 相同；推理 token prior 14、implementer 32、conjecturer 110（low 时 1、32、269），输出 90、197、564，5–29 秒。也就是说 Sail Research 的推理量基本不随 effort 变，medium 仍远少于 Open Inference 与以前的 deepseek-flash。没有出现推理吃光 max_tokens。
+
 ### E1 正式的配置（2026-10-21 写好，没部署）
 
 用户在 GLM 预实验跑着时问本机能做什么，选了"做第1件，第2件等E1正式起来再说"（第 1 件：写 E1 正式配置；第 2 件：S16 的本机代码部分，等 E1 正式起跑后再开）。
