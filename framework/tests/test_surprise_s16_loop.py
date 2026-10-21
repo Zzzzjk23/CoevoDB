@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from surprise.baselines import pure_llm
 from surprise.experiments import grid, loop, pg_instance
+from surprise.features.data import extract_data, _describe_postgres
 from surprise.features.extract import extract_isolated
 from surprise.features.plan import extract_plan
 from surprise.gates import s16_cases
@@ -135,3 +136,47 @@ def test_report_engine_and_legacy_reports(tmp_path):
     bugs = tmp_path / "bugs.jsonl"
     bugs.write_text(json.dumps({"root_key": "one", "candidate": {"kind": "wrong_result"}}) + "\n")
     assert old_reports(bugs, engine="postgres")[0]["engine"] == "postgres"
+
+
+_PG_TYPES = (
+    ("smallint", "integer"),
+    ("integer", "integer"),
+    ("bigint", "integer"),
+    ("real", "float"),
+    ("double precision", "float"),
+    ("numeric(12, 3)", "decimal"),
+    ("numeric", "decimal"),
+    ("boolean", "boolean"),
+    ("character varying(20)", "string"),
+    ("character(4)", "string"),
+    ("text", "string"),
+    ("name", "string"),
+    ("date", "date"),
+    ("timestamp without time zone", "timestamp"),
+    ("timestamp(3) with time zone", "timestamp"),
+    ("uuid", "other"),
+    ("integer[]", "other"),
+)
+
+
+def test_pg_data_catalog_types_and_quoted_relation(tmp_path, no_dsns):
+    with pg_instance.running(tmp_path / "instances", old=False):
+        runner = PostgresTargetRunner()
+        try:
+            for index, (sql_type, expected) in enumerate(_PG_TYPES):
+                ref = f'"type_{index}\'quoted"'
+                assert runner.run(f"CREATE TABLE {ref} (a {sql_type})").ok
+                features, status = extract_data(runner, f"SELECT * FROM {ref}", "postgres")
+                assert status == "ok", sql_type
+                assert {leaf for leaf in features if leaf.startswith("data:type:")} == {
+                    "data:type:" + expected
+                }, sql_type
+            assert _describe_postgres(runner, '"missing\'relation"') is None
+            assert _describe_postgres(runner, '"unterminated') is None
+        finally:
+            runner.close()
+        setup = ("CREATE TABLE types (s character varying(20), f double precision, n numeric(12,3))",)
+        case = SqlCase(engine="postgres", setup=setup, query="SELECT * FROM types")
+        phi = extract_isolated(case)
+        assert phi.layers["data"] == "ok"
+        assert {"data:type:string", "data:type:float", "data:type:decimal"} <= set(phi.features)
