@@ -171,3 +171,4 @@ CVE 的另一半（测量 oracle 覆盖哪些缺陷：召回基准、上游回�
 - （2026-10-21 补充，用户，S19 期间）GLM 的推理强度：这个端点不允许关推理，默认强度下复杂角色把 max_tokens 都花在推理上；用户定为与以前的 deepseek-flash 对齐（它默认就推理）：开推理、各角色 max_tokens 不变，`reasoning` 设为 `{"effort": "low"}`，取代上面换模型一条里的"开推理"（`enabled: true`）。
 - （2026-10-21 补充，用户，S19 期间）OpenRouter 回 HTTP 429（限流）时退避重试，不再算作一次失败的调用（用户的话："同意，改成429退避重试"）。只重试 429，别的错误照旧只试一次；重试在一次网关调用之内，调用上限与 `calls.jsonl` 仍按一次算。
 - （2026-10-21 补充，用户，S19 期间；GLM 预实验里 Open Inference 成串回 HTTP 503）用户的话："1. 添加退避重试 2. 服务商由open-inference/fp4更换为为sail-research/fp4 3. 若退避重试仍然不行可以更换别的服务商，优先尝试open-inference/fp4和sail-research/us"，并选定"每次调用自动切换"：503 也退避重试；每次调用先找 `sail-research/fp4`，它的重试用完仍 429/503 就换 `open-inference/fp4`，再换 `sail-research/us`，三家都不行才算失败（三家都是 fp4）。每次调用记下实际回答的服务商。取代上面换模型一条里的"只用 Open Inference"。
+- （2026-10-21 补充，用户，S19 期间）换到 Sail Research 后，`effort: low` 下推理只有几到几百个 token（Open Inference 是一两千），用户定为 `{"effort": "medium"}`（"改成medium"），取代上面推理强度一条里的 low。

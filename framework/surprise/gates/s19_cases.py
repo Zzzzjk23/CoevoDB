@@ -21,8 +21,10 @@ NEW_PROFILE = {
     "body": {
         # 2026-10-21 (user): reasoning effort low, aligned with deepseek-flash, which reasons by default.
         # The endpoint refuses to disable reasoning (enabled false / effort none: HTTP 400); with the
-        # default effort the implementer and conjecturer spent all of max_tokens on reasoning.
-        "reasoning": {"effort": "low"},
+        # default effort the implementer and conjecturer spent all of max_tokens on reasoning (that was
+        # open-inference/fp4). Later the same day, after sail-research/fp4 reasoned 1-269 tokens at low,
+        # the user chose medium ("改成medium").
+        "reasoning": {"effort": "medium"},
     },
 }
 NEW_URL = "https://openrouter.ai/api/v1/chat/completions"
