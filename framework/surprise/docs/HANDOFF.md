@@ -21,7 +21,7 @@
 | S14 | 服务器部署与双平台门槛 | 完成 | s14-done；s14-done-r2（编排者按用户指示自行验收，之后的工作从这里起） | S14 5/5；pytest 935 passed, 3 skipped（两个平台）；GATES PASS 14/14（两个平台） |
 | S15 | 实验基础设施 | 完成 | s15-done；s15-done-r2（编排者照惯例自行验收）；s15-done-r3（用户同意 CLAUDE.md 的改动，之后的工作从这里起） | S15 11/11；pytest 1070 passed, 3 skipped（两个平台）；GATES PASS 15/15（本机） |
 | S19 | E1 DuckDB 主对比 | **暂停**（预实验已跑完；用户 2026-10-20 指示服务器什么都不跑，等用户说；2026-10-21 用户让跑 GLM 小预实验 `e1-pilot-glm`，约 18 分钟后用户让中止（要调试调用的模型）；改了服务商与推理强度后 12:01 UTC 重跑为 `e1-pilot-glm2`；换模型、提醒、推理强度、429 重试已合并，2026-10-21 部署为 s19-deploy-2） | s19-deploy-1（预实验部署）；s19-deploy-2 至 s19-deploy-4；s19-deploy-5（当前部署） | S19 12/12（换模型、提醒、推理强度、重试与服务商切换的门槛）；pytest 1205 passed, 3 skipped；GATES PASS 16/16（本机） |
-| S16 | PostgreSQL 目标（解冻 harness 第一批） | **进行中**（只做本机代码；服务器部署与回放检查等用户说） | — | — |
+| S16 | PostgreSQL 目标（解冻 harness 第一批） | **暂停**（本机代码全部合并；用户 2026-10-22 指示：S8 长跑跑完后停下，重钉与收尾等用户说；服务器部署与回放检查另等用户说） | — | S16 15 组在会话分支上分别通过；收尾复跑未做 |
 
 以前各会话的交接全文在对应 tag 的本文件里（S0：`s00-done-r2`；S1：`s01-done-r2`）；其中仍然有效的未决问题已并入下面的清单。
 
@@ -45,6 +45,23 @@
 | s16-replay | §8 回放工具 | `metrics/replay.py`、新测试 | — | 已合并（09e3471，一次通过） |
 | s16-loop | φ 计划层的 PG 分支、Hunter 对 PG 开 Index presence、主循环 / pure_llm 自起实例、网格清理残留实例、报告与召回认 PG | `features/`、`hunter/`、`experiments/`、`baselines/pure_llm.py`、`metrics/`、新测试 | s16-oracles | 已派发 |
 | s16-sqlancer | SQLancer 臂的 PG 模式 | `baselines/sqlancer_run.py`、新测试 | s16-core | 已合并（e319097，一次通过；网格实跑等 s16-loop） |
+| s16-testfix | 两个旧测试跟上"PG 是第三个目标"（用户 2026-10-22 决定） | `tests/test_surprise_s03_registry.py` 两处 | 全部 | 已合并（一次通过；全量 pytest 1378 passed, 3 skipped, 0 failed） |
+
+### 当前状态（2026-10-22，暂停）
+
+用户先问"S8为什么要长跑"，接着说"等长跑结束后暂停，后续步骤之后我让你开始做的时候再做"。
+
+已做完（都在 `session/s16` 上，提交见 git log）：
+- 六个工作包加 `s16-testfix` 全部合并；harness 重新冻结（4cd0003，哈希 `80b92846bce1`，52 个文件，冻结清单记下 PG 16.15 与 15.19）。
+- S16 门槛 15 组在会话分支上分别跑过、全部通过：`instances`、`runner`、`registry`、`seeds`、`roles`（各包合并后）、`oracles`、`cve`、`m1`、`replay`、`phi`、`loop`、`grid`、`sqlancer`、`refreeze`、`scope`。
+- §8 回放的本机部分：新 harness 对解冻前的 S8 长跑按层抽 2000 条，2000 条全部相同（`gates/s16_data/replay_longrun.json`）；门槛现场再抽 200 条也全部相同。
+- 用户 2026-10-22 决定"全部照你的建议改"之后：S10 `frozen`、S14 `smoke` 改为按各自 tag 核对，S19 `scope` 把 S16 列明的路径交给 S16 门槛（0e7fc17），三组都已通过；两个旧测试由 `s16-testfix` 改。
+- `SERVER.md` §9 写好了 S16 的部署步骤（未部署）。
+
+在跑 / 剩下的（等用户说"开始"再做）：
+1. S8 长跑（种子 0、DuckDB 1.5.5、七类 oracle、180 分钟、角色全关）在本机跑，输出 `framework/results/s08/longrun-s16`（日志同目录 `longrun-s16.log`）；原长跑 `results/s08/longrun` 不动。跑到第 2361 行时与旧长跑逐行相同。
+2. 长跑结束后：与旧长跑逐行比对；把 `gates/s08_runs.json` 的 `longrun` 改指 `results/s08/longrun-s16`、更新三个文件的 SHA-256（原始字节）；跑 S8 的 `longrun`、`sawtooth`、`duplicates`、`recall` 与 S11 的 `ciao`。
+3. 收尾复跑：全量 pytest 与 `surprise.gates.all`（约一小时）；更新本节与 DECISIONS；提交、打 `s16-done`，按收尾协议汇报。主分支怎么合并（S19 还没收尾，`session/s16` 叠在它上面）收尾时再定。
 
 ## 暂停中：S19（E1 DuckDB 主对比，2026-10-20 开始）
 
