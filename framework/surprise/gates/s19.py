@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -749,12 +750,27 @@ def check_scope() -> str:
         changed += git("ls-files", "--others", "--exclude-standard").split("\n")
         frozen = git("diff", "--name-only", C.BASE_TAG, "--", *C.FROZEN_PATHS).split("\n")
         where = f"{C.BASE_TAG}..work tree"
+    later_allowed, later_harness = _later("ALLOWED_CHANGES"), _later("HARNESS_CHANGED")
     changed = sorted({path.strip() for path in changed if path.strip()})
-    frozen = sorted({path.strip() for path in frozen if path.strip()})
+    frozen = sorted({path.strip() for path in frozen if path.strip()} - set(later_harness))
     require(not frozen, f"frozen paths changed ({where}): {frozen[:10]}")
-    outside = [path for path in changed if not any(path.startswith(prefix) for prefix in C.ALLOWED_CHANGES)]
+    outside = [path for path in changed
+               if not any(path.startswith(prefix) for prefix in C.ALLOWED_CHANGES + later_allowed)]
     require(not outside, f"changes outside S19 scope ({where}): {outside[:10]}")
-    return f"{len(changed)} paths changed ({where}), all in scope; harness untouched"
+    handed = f"; paths of {', '.join(C.LATER_CASES)} left to their gates" if later_allowed else ""
+    return f"{len(changed)} paths changed ({where}), all in scope; harness untouched{handed}"
+
+
+def _later(name: str) -> tuple[str, ...]:
+    """Paths that later sessions built on this branch list and check in their own gates (S16)."""
+    found: list[str] = []
+    for module in C.LATER_CASES:
+        try:
+            cases = importlib.import_module(f"{__package__}.{module}")
+        except ModuleNotFoundError:
+            continue
+        found.extend(getattr(cases, name, ()))
+    return tuple(found)
 
 
 # ---- retry --------------------------------------------------------------------------------------

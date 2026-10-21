@@ -89,6 +89,10 @@ HARNESS_CHANGED = (
     "framework/surprise/harness/oracles/equivalent_query.py",
 )
 UNFREEZE_BASE = "s09-done-r2"
+# Once this tag exists the S10 unfreeze is judged between UNFREEZE_BASE and it: later sessions unfreeze
+# other harness files with the user's consent and re-freeze (S16, 2026-10-22, user's decision).
+DONE_TAG = "s10-done"
+FROZEN_FILES_AT_DONE = 51
 FROZEN_RULES = ("double_negation", "demorgan", "case_to_coalesce")
 
 # apply_rule on the three frozen rules, measured on the frozen code at s09-done-r2.

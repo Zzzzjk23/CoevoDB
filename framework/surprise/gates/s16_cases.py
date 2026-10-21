@@ -306,6 +306,14 @@ ALLOWED_CHANGES = HARNESS_CHANGED + (
     "framework/surprise/gates/s16_cases.py",
     "framework/surprise/gates/s16_fixtures.py",
     "framework/surprise/gates/s16_data/",
+    # Old checks that hard-coded "the harness stays as S10 left it", "S14's evidence against today's
+    # freeze", "S19 alone on its branch" and "two target engines" (user's decision, 2026-10-22).
+    "framework/surprise/gates/s10.py",
+    "framework/surprise/gates/s10_cases.py",
+    "framework/surprise/gates/s14.py",
+    "framework/surprise/gates/s19.py",
+    "framework/surprise/gates/s19_cases.py",
+    "framework/tests/test_surprise_s03_registry.py",
     # re-frozen after the unfreeze; S8 long run re-pinned after harness/ and experiments/ changed
     "framework/surprise/gates/s04_frozen.json",
     "framework/surprise/gates/s08_runs.json",

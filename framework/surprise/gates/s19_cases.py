@@ -88,6 +88,10 @@ ALLOWED_CHANGES = (
     # constant of the base tag keeps its value
     "framework/surprise/roles/constants.py",
 )
+# Sessions built on session/s19 before S19 ends (S16, PostgreSQL target, user's decision 2026-10-22): the
+# paths their case tables list (ALLOWED_CHANGES, and HARNESS_CHANGED for the unfreeze) are checked by
+# their own gates' scope groups and are left out of this one.
+LATER_CASES = ("s16_cases",)
 FROZEN_PATHS = (
     "framework/surprise/harness",
     OLD_PRICES_FILE,

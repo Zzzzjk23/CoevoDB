@@ -453,7 +453,11 @@ def check_smoke() -> str:
         if (root / "status.txt").is_file() else []
     want = [f"{cell} done" for cell in C.SMOKE_CELLS] + [f"done {len(C.SMOKE_CELLS)}/{len(C.SMOKE_CELLS)}"]
     require([line for line in status if line] == want, f"smoke status {status!r} != {want!r}")
-    frozen = load_json(REPO / C.FROZEN_MANIFEST, "frozen manifest")["harness"]["hash"]
+    if ref:
+        # The harness frozen at the tag: later sessions re-freeze after an unfreeze the user allowed (S16).
+        frozen = json.loads(git("show", f"{ref}:{C.FROZEN_MANIFEST}"))["harness"]["hash"]
+    else:
+        frozen = load_json(REPO / C.FROZEN_MANIFEST, "frozen manifest")["harness"]["hash"]
     pg_version = table["postgres"]["server_version_num"]
     pg_text = f"{int(pg_version) // 10000}.{int(pg_version) % 10000}"
     for cell in C.SMOKE_CELLS:

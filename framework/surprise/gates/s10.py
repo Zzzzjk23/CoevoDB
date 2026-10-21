@@ -11,8 +11,9 @@ Exit code 0 = pass. Groups, following the S10 section of SESSIONS.md:
                     Diagnoser and the harness never import the roles;
 ``constants``       the S10 role constants and the harness library constants as planned;
 ``frozen``          the unfreeze the user allowed (2026-10-15): only rewrites.py and
-                    equivalent_query.py changed since s09-done-r2, the harness is re-frozen,
-                    the three frozen rules give the outputs they gave before;
+                    equivalent_query.py changed between s09-done-r2 and s10-done (the work
+                    tree before that tag exists), the tree is frozen, the three frozen rules
+                    give the outputs they gave before;
 ``library``         the second rewrite layer: templates, the library file, and judgements of
                     library rules (references must agree; a rewrite error is never a bug);
 ``frame``           the hooks the roles use: the Hunter's prior and extra rules, the run
@@ -273,19 +274,32 @@ def check_frozen() -> str:
     from surprise.harness import constants as HC
     from surprise.harness.manifest import verify_manifest
 
-    proc = subprocess.run(["git", "diff", "--name-only", C.UNFREEZE_BASE, "--", "framework/surprise/harness"],
+    tags = subprocess.run(["git", "tag", "--list", C.DONE_TAG], cwd=REPO, capture_output=True, text=True,
+                          timeout=120).stdout.split()
+    done = C.DONE_TAG if C.DONE_TAG in tags else None
+    span = [C.UNFREEZE_BASE] + ([done] if done else [])
+    proc = subprocess.run(["git", "diff", "--name-only", *span, "--", "framework/surprise/harness"],
                           cwd=REPO, capture_output=True, text=True, timeout=120)
     require(proc.returncode == 0, f"git diff failed: {proc.stderr[-400:]}")
     changed = sorted(line.strip() for line in proc.stdout.splitlines() if line.strip())
     require(set(changed) <= set(C.HARNESS_CHANGED),
-            f"the unfreeze allows only {list(C.HARNESS_CHANGED)}; changed since {C.UNFREEZE_BASE}: {changed}")
-    untracked = subprocess.run(["git", "status", "--porcelain", "--", "framework/surprise/harness"], cwd=REPO,
-                               capture_output=True, text=True, timeout=120).stdout.strip()
-    require(untracked == "", f"no uncommitted change under the harness: {untracked[:300]}")
+            f"the unfreeze allows only {list(C.HARNESS_CHANGED)}; changed in {'..'.join(span)}: {changed}")
+    if done is None:
+        untracked = subprocess.run(["git", "status", "--porcelain", "--", "framework/surprise/harness"], cwd=REPO,
+                                   capture_output=True, text=True, timeout=120).stdout.strip()
+        require(untracked == "", f"no uncommitted change under the harness: {untracked[:300]}")
     frozen = json.loads(FROZEN.read_text(encoding="utf-8"))
     problems = verify_manifest(frozen)
     require(problems == [], f"the harness is re-frozen (gates/s04_frozen.json): {problems[:3]}")
-    require(len(frozen["harness"]["files"]) == 51, f"the frozen list still covers 51 files: {len(frozen['harness']['files'])}")
+    if done is None:
+        at_done = frozen
+    else:
+        shown = subprocess.run(["git", "show", f"{done}:framework/surprise/gates/s04_frozen.json"], cwd=REPO,
+                               capture_output=True, text=True, timeout=120)
+        require(shown.returncode == 0, f"git show {done}:s04_frozen.json failed: {shown.stderr[-300:]}")
+        at_done = json.loads(shown.stdout)
+    require(len(at_done["harness"]["files"]) == C.FROZEN_FILES_AT_DONE,
+            f"the S10 freeze covers {C.FROZEN_FILES_AT_DONE} files: {len(at_done['harness']['files'])}")
     require(frozen.get("constants") == HC.as_dict(), "the frozen harness constants are unchanged")
     W = rewrites()
     require(tuple(W.RULES) == C.FROZEN_RULES, f"the frozen layer is the three rules: {tuple(W.RULES)}")
