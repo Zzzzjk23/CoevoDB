@@ -33,8 +33,8 @@
 - README：根 `README.md` 改成项目入口（现状与 HANDOFF 的链接、文档阅读顺序、规则、仓库外的环境清单、测试与门槛命令），原来的 31 个缺陷家族表与复现说明保留在后面；`framework/README.md` 补上 `--engine postgres`（每个运行自起实例）、`--llm-tier glm-flash`（密钥仍读 `DEEPSEEK_API_KEY`）、看守与归档命令、`results/<名字>.work` 起跑，以及 S15–S16 新加的环境变量。都用英文，与原文一致。S12 `docs` 组通过（259 个路径都存在、必需的字样都在）。
 - 门槛的已知问题（打交接 tag 前要解决）：
   1. S16 `scope` 在本分支不过：`providers.py` 与三个 S19 测试是 `s19-deploy-5` 之后 S19 改的，不在 S16 范围里。S16 打了 `s16-done` 之后此组改按 `s19-deploy-5..s16-done` 核对，自然消失。
-  2. S19 `scope` 会因 `README.md`、`framework/README.md` 不在 S19 范围里而不过，直到 `s19-done`（E1 正式跑完之后）。要用户定：在 `gates/s19_cases.py` 的 `ALLOWED_CHANGES` 加这两个文档文件，或者接受交接 tag 上这一组不过并写明原因。
-- 剩下的步骤：S8 长跑结束后 S16 会话收尾、打 `s16-done`（等用户说）；把 `s16-done` 与 S19 的新提交合进本分支；全量 pytest 与 `surprise.gates.all`；打 `handoff-2026-10-22`，用 `git bundle`（分支 `handoff`、`session/s16`、`session/s19` 与全部 tag）交给队友。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
+  2. S19 `scope` 因 `README.md`、`framework/README.md` 不在 S19 范围里而不过。用户选"门槛放行两个 README"：本分支的 `gates/s19_cases.py` 在 `ALLOWED_CHANGES` 末尾加了这两个文件（只这两个文档，代码范围不变），此组已通过。`session/s19` 上没有这处改动，合并时带过去。
+- 用户选"不等，现在的状态就交"：不等 `s16-done`。S8 长跑（S16 会话起的，约 04:55 结束）跑完之后，在本分支上跑全量 pytest 与 `surprise.gates.all`（之前不跑，免得抢 CPU、扰乱长跑的逐行比对），结果与不过的组写进本节，打 `handoff-2026-10-22`，用 `git bundle`（分支 `handoff`、`session/s16`、`session/s19` 与全部 tag）交给队友。S16 的比对、重钉与收尾仍由 S16 会话在用户说"开始"后做，队友之后再拉 `s16-done`。仓库外的东西（环境、源码、PG、SQLancer、S8 钉住的产物）照根 README 的 "Setting up a machine" 另外交；密钥各用各的；服务器只由一个人动。
 
 ## 进行中：S16（PostgreSQL 目标，2026-10-21 开始）
 

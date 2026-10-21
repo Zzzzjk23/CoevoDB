@@ -89,6 +89,9 @@ ALLOWED_CHANGES = (
     # 429 retry (user's decision, 2026-10-21): one constant added; group `retry` checks that every
     # constant of the base tag keeps its value
     "framework/surprise/roles/constants.py",
+    # READMEs rewritten for the teammate handoff (user's decision, 2026-10-22): the two docs only
+    "README.md",
+    "framework/README.md",
 )
 # Sessions built on session/s19 before S19 ends (S16, PostgreSQL target, user's decision 2026-10-22): the
 # paths their case tables list (ALLOWED_CHANGES, and HARNESS_CHANGED for the unfreeze) are checked by
